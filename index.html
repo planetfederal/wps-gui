@@ -6,9 +6,12 @@
   </head>
   <body>
     <div id="main-container" class="sidebar-closed">
-      <div id="palette">
+      <div id="palette"></div>
+      <div id="sidebar">
+        <div id="sidebar-content"></div>
       </div>
     </div>
+
     <script src="OpenLayers.js"></script>
     <script src="jquery-1.11.1.min.js"></script>
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
@@ -32,7 +35,24 @@
                 var content = $('<div class="palette-content"></div>');
                 $(category).append(content);
                 for (var i=0, ii=groups[group].length; i<ii; ++i) {
-                    $(content).append('<div class="palette_node ui-draggable">' + groups[group][i] + '</div>');
+                    var offering = info.processOfferings[group+':'+groups[group][i]];
+                    var summary = offering['abstract'];
+                    var title = offering.title;
+                    var d = $('<div class="palette_node ui-draggable">' + groups[group][i] + '</div>');
+                    $(content).append(d);
+                    $(d).popover({
+                        title: title,
+                        placement:"right",
+                        trigger: "hover",
+                        delay: { show: 750, hide: 50 },
+                        html: true,
+                        container:'body',
+                        content: summary
+                    });
+                    $(d).click(summary, function(evt) {
+                        var help = '<div class="node-help">'+evt.data+"</div>";
+                        $("#sidebar-content").html(help);
+                     });
                 }
             }
         });

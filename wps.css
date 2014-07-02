@@ -1,3 +1,8 @@
+#sidebar {
+    width: 305px;
+    position: absolute;
+    right: 10px; top: 5px; bottom:10px;
+}
 .palette-content {
     background: #fff;
     border-top: 1px solid #aaa;
