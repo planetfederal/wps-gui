@@ -1,0 +1,41 @@
+<html>
+  <head>
+    <title>WPS GUI prototype</title>
+    <link rel="stylesheet" type="text/css" href="wps.css">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+  </head>
+  <body>
+    <div id="main-container" class="sidebar-closed">
+      <div id="palette">
+      </div>
+    </div>
+    <script src="OpenLayers.js"></script>
+    <script src="jquery-1.11.1.min.js"></script>
+    <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+    <script>
+        var url = '/geoserver/wps';
+        $.ajax(url + '?service=WPS&request=GetCapabilities&version=1.0.0').then(function(response) {
+            var format = new OpenLayers.Format.WPSCapabilities();
+            var info = format.read(response);
+            var groups = {};
+            for (var key in info.processOfferings) {
+                var names = key.split(':');
+                var group = names[0];
+                if (!groups[group]) {
+                    groups[group] = [];
+                }
+                groups[group].push(names[1]);
+            }
+            for (var group in groups) {
+                var category = $('<div class="palette-category"><div class="palette-header"><i class="glyphicon glyphicon-chevron-down expanded"></i><span>'+group+'</span></div></div>');
+                $('#palette').append(category);
+                var content = $('<div class="palette-content"></div>');
+                $(category).append(content);
+                for (var i=0, ii=groups[group].length; i<ii; ++i) {
+                    $(content).append('<div class="palette_node ui-draggable">' + groups[group][i] + '</div>');
+                }
+            }
+        });
+    </script>
+  </body>
+</html>  
