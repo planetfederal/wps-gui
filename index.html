@@ -1,14 +1,39 @@
+<!DOCTYPE html>
 <html>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <head>
     <title>WPS GUI prototype</title>
-    <link rel="stylesheet" type="text/css" href="wps.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
     <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
   </head>
   <body>
     <div id="main-container" class="sidebar-closed">
-      <div id="palette"></div>
-      <div id="sidebar">
-        <div id="sidebar-content"></div>
+      <div id="palette">
+        <div class="palette-scroll" style="display:block;"></div>
+        <div id="palette-search" style="display:block;">
+            <i class="glyphicon glyphicon-search"></i><input id="palette-search-input" type="text" placeholder="filter"><a href="#" id="palette-search-clear"><i class="glyphicon glyphicon-remove"></i></a></input>
+        </div>
+      </div>
+    <div id="workspace">
+        <ul id="workspace-tabs"></ul>
+        <div id="workspace-add-tab"><a id="btn-workspace-add-tab" href="#"><i class="glyphicon glyphicon-plus"></i></a></div>
+        <div id="chart"></div>
+    </div>
+
+    <div id="chart-zoom-controls">
+        <div class="btn-group">
+            <a class="btn btn-mini" id="btn-zoom-out" href="#"><i class="glyphicon glyphicon-zoom-out"></i></a>
+            <a class="btn btn-mini" id="btn-zoom-zero" href="#"><i class="glyphicon glyphicon-th"></i></a>
+            <a class="btn btn-mini" id="btn-zoom-in" href="#"><i class="glyphicon glyphicon-zoom-in"></i></a>
+        </div>
+    </div>
+
+        <div id="sidebar">
+          <div id="sidebar-content"></div>
+        </div>
       </div>
     </div>
 
@@ -31,7 +56,7 @@
             }
             for (var group in groups) {
                 var category = $('<div class="palette-category"><div class="palette-header"><i class="glyphicon glyphicon-chevron-down expanded"></i><span>'+group+'</span></div></div>');
-                $('#palette').append(category);
+                $($('.palette-scroll')[0]).append(category);
                 var content = $('<div class="palette-content"></div>');
                 $(category).append(content);
                 for (var i=0, ii=groups[group].length; i<ii; ++i) {
@@ -55,6 +80,55 @@
                      });
                 }
             }
+            $(".palette-header").click(function(e) {
+                $(this).next().slideToggle();
+                $(this).children("i").toggleClass("expanded");
+            });
+    function filterChange() {
+        var val = $("#palette-search-input").val();
+        if (val == "") {
+            $("#palette-search-clear").hide();
+        } else {
+            $("#palette-search-clear").show();
+        }
+
+        var re = new RegExp(val);
+        $(".palette_node").each(function(i,el) {
+            if (val == "" || re.test(el.innerHTML)) {
+                $(this).show();
+            } else {
+                $(this).hide();
+            }
+        });
+    }
+
+    $("#palette-search-input").focus(function(e) {
+        // TODO maybe inclde public/red/ui/keyboard.js
+        //RED.keyboard.disable();
+    });
+    $("#palette-search-input").blur(function(e) {
+        // TODO maybe inclde public/red/ui/keyboard.js
+        //RED.keyboard.enable();
+    });
+
+    $("#palette-search-clear").on("click",function(e) {
+        e.preventDefault();
+        $("#palette-search-input").val("");
+        filterChange();
+        $("#palette-search-input").focus();
+    });
+
+    $("#palette-search-input").val("");
+    $("#palette-search-input").on("keyup",function() {
+        filterChange();
+    });
+
+    $("#palette-search-input").on("focus",function() {
+        $("body").one("mousedown",function() {
+            $("#palette-search-input").blur();
+        });
+    });
+
         });
     </script>
   </body>
