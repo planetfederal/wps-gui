@@ -103,7 +103,7 @@ a.brand img {
 
 #palette {
    background: #f3f3f3;
-   width: 140px;
+   width: 230px; /* was 140px bartvde */
    text-align: center;
    -webkit-user-select: none;
    -khtml-user-select: none;
@@ -228,7 +228,7 @@ a.brand img {
    border: 2px solid #999;
    background-position: 5% 50%;
    background-repeat: no-repeat;
-   width: 90px;
+   width: 180px; /* bartvde more width was 90px */
    background-size: contain;
    position: relative;
 }
@@ -281,7 +281,7 @@ a.brand img {
 #workspace {
     position: absolute;
     margin: 0;
-    top:5px; left:160px; bottom: 10px; right: 330px;
+    top:5px; left:250px; /*bartvde was 160px */ bottom: 10px; right: 330px;
 }
 #chart-zoom-controls {
     position: absolute;
