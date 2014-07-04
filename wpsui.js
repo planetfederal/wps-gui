@@ -29,6 +29,41 @@ wps.client.prototype.getGroupedProcesses = function(callback) {
 wps.ui = function(options) {
   this.parentContainer_ = options.parentContainer;
   this.sideBar_ = options.sideBar;
+  wps.ui.createSearch();
+};
+
+wps.ui.createSearch = function() {
+  var filterChange = function() {
+    var val = $("#palette-search-input").val();
+    if (val === "") {
+      $("#palette-search-clear").hide();
+    } else {
+      $("#palette-search-clear").show();
+    }
+    var re = new RegExp(val, 'i');
+    $(".palette_node").each(function(i,el) {
+      if (val === "" || re.test(el.innerHTML)) {
+        $(this).show();
+      } else {
+        $(this).hide();
+      }
+    });
+  };
+  $("#palette-search-clear").on("click",function(e) {
+    e.preventDefault();
+    $("#palette-search-input").val("");
+    filterChange();
+    $("#palette-search-input").focus();
+  });
+  $("#palette-search-input").val("");
+  $("#palette-search-input").on("keyup",function() {
+    filterChange();
+  });
+  $("#palette-search-input").on("focus",function() {
+    $("body").one("mousedown",function() {
+      $("#palette-search-input").blur();
+    });
+  });
 };
 
 wps.ui.prototype.createProcessCategory = function(group) {
