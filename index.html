@@ -46,45 +46,16 @@
     <script>
         var nodes = [];
         var url = '/geoserver/wps';
-        var wps = new wps.client({url: url});
-        wps.getGroupedProcesses(function(groups, info) {
+        var wpsclient = new wps.client({url: url});
+        var wpsui = new wps.ui({parentContainer: $('.palette-scroll'), sideBar: $("#sidebar-content")});
+        wpsclient.getGroupedProcesses(function(groups, info) {
             for (var group in groups) {
-                var category = $('<div class="palette-category"><div class="palette-header"><i class="glyphicon glyphicon-chevron-down expanded"></i><span>'+group+'</span></div></div>');
-                $($('.palette-scroll')[0]).append(category);
-                var content = $('<div class="palette-content"></div>');
-                $(category).append(content);
+                var content = wpsui.createProcessCategory(group);
                 for (var i=0, ii=groups[group].length; i<ii; ++i) {
                     var offering = info.processOfferings[group+':'+groups[group][i]];
-                    var summary = offering['abstract'];
-                    var title = offering.title;
-                    var d = $('<div class="palette_node ui-draggable">' + groups[group][i] + '</div>');
-                    $(d).data('type', group+':'+groups[group][i]);
-                    $(content).append(d);
-                    $(d).popover({
-                        title: title,
-                        placement:"right",
-                        trigger: "hover",
-                        delay: { show: 750, hide: 50 },
-                        html: true,
-                        container:'body',
-                        content: summary
-                    });
-                    $(d).click(summary, function(evt) {
-                        var help = '<div class="node-help">'+evt.data+"</div>";
-                        $("#sidebar-content").html(help);
-                    });
-                    $(d).draggable({
-                        helper: 'clone',
-                        appendTo: 'body',
-                        revert: true,
-                        revertDuration: 50
-                    });
+                    $(content).append(wpsui.createProcess(offering));
                 }
             }
-            $(".palette-header").click(function(e) {
-                $(this).next().slideToggle();
-                $(this).children("i").toggleClass("expanded");
-            });
     function filterChange() {
         var val = $("#palette-search-input").val();
         if (val == "") {
