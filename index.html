@@ -42,21 +42,12 @@
     <script src="//code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
     <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script src="wpsui.js"></script>
     <script>
         var nodes = [];
         var url = '/geoserver/wps';
-        $.ajax(url + '?service=WPS&request=GetCapabilities&version=1.0.0').then(function(response) {
-            var format = new OpenLayers.Format.WPSCapabilities();
-            var info = format.read(response);
-            var groups = {};
-            for (var key in info.processOfferings) {
-                var names = key.split(':');
-                var group = names[0];
-                if (!groups[group]) {
-                    groups[group] = [];
-                }
-                groups[group].push(names[1]);
-            }
+        var wps = new wps.client({url: url});
+        wps.getGroupedProcesses(function(groups, info) {
             for (var group in groups) {
                 var category = $('<div class="palette-category"><div class="palette-header"><i class="glyphicon glyphicon-chevron-down expanded"></i><span>'+group+'</span></div></div>');
                 $($('.palette-scroll')[0]).append(category);
