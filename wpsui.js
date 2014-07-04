@@ -36,10 +36,41 @@ wps.ui = function(options) {
   this.nodeWidth = options.nodeWidth || 100;
   this.nodeHeight = options.nodeHeight || 30;
   this.nodes = [];
-  wps.ui.createSearch();
+  this.createSearch();
   this.createCanvas();
   this.createDropTarget();
+  this.createZoomToolbar();
 };
+
+wps.ui.prototype.zoomIn = function(evt) {
+  var me = evt.data;
+  if (me.scaleFactor < 2) {
+    me.scaleFactor += 0.1;
+    me.redraw();
+  }
+};
+
+wps.ui.prototype.zoomOut = function(evt) {
+  var me = evt.data;
+  if (me.scaleFactor > 0.3) {
+    me.scaleFactor -= 0.1;
+    me.redraw();
+  }
+};
+
+wps.ui.prototype.resetZoom = function(evt) {
+  var me = evt.data;
+  me.scaleFactor = 1;
+  me.redraw();
+};
+
+wps.ui.prototype.createZoomToolbar = function() {
+  $('#btn-zoom-out').click(this, this.zoomOut);
+  $('#btn-zoom-zero').click(this, this.resetZoom);
+  $('#btn-zoom-in').click(this, this.zoomIn);
+};
+
+
 
 wps.ui.prototype.createCanvas = function() {
   this.outer = d3.select("#chart").
@@ -188,7 +219,7 @@ wps.ui.prototype.createButton = function(node) {
     attr("cursor","pointer");
 };
 
-wps.ui.createSearch = function() {
+wps.ui.prototype.createSearch = function() {
   var filterChange = function() {
     var val = $("#palette-search-input").val();
     if (val === "") {
