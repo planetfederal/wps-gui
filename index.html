@@ -20,7 +20,7 @@
     <div id="workspace">
         <ul id="workspace-tabs"></ul>
         <div id="workspace-add-tab"><a id="btn-workspace-add-tab" href="#"><i class="glyphicon glyphicon-plus"></i></a></div>
-        <div id="chart"></div>
+        <div id="chart" class="ui-droppable"></div>
     </div>
 
     <div id="chart-zoom-controls">
@@ -39,8 +39,11 @@
 
     <script src="OpenLayers.js"></script>
     <script src="jquery-1.11.1.min.js"></script>
+    <script src="//code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
     <script>
+        var nodes = [];
         var url = '/geoserver/wps';
         $.ajax(url + '?service=WPS&request=GetCapabilities&version=1.0.0').then(function(response) {
             var format = new OpenLayers.Format.WPSCapabilities();
@@ -64,6 +67,7 @@
                     var summary = offering['abstract'];
                     var title = offering.title;
                     var d = $('<div class="palette_node ui-draggable">' + groups[group][i] + '</div>');
+                    $(d).data('type', group+':'+groups[group][i]);
                     $(content).append(d);
                     $(d).popover({
                         title: title,
@@ -77,7 +81,13 @@
                     $(d).click(summary, function(evt) {
                         var help = '<div class="node-help">'+evt.data+"</div>";
                         $("#sidebar-content").html(help);
-                     });
+                    });
+                    $(d).draggable({
+                        helper: 'clone',
+                        appendTo: 'body',
+                        revert: true,
+                        revertDuration: 50
+                    });
                 }
             }
             $(".palette-header").click(function(e) {
@@ -127,6 +137,224 @@
         $("body").one("mousedown",function() {
             $("#palette-search-input").blur();
         });
+    });
+
+    var space_width = 5000,
+        space_height = 5000,
+        scaleFactor = 1,
+        node_width = 100,
+        node_height = 30;
+
+    var activeWorkspace = 0;
+
+    var outer = d3.select("#chart")
+        .append("svg:svg")
+        .attr("width", space_width)
+        .attr("height", space_height)
+        .attr("pointer-events", "all")
+        .style("cursor","crosshair");
+
+     var vis = outer
+        .append('svg:g')
+        .on("dblclick.zoom", null)
+        .append('svg:g');
+
+    var outer_background = vis.append('svg:rect')
+        .attr('width', space_width)
+        .attr('height', space_height)
+        .attr('fill','#fff');
+
+    // TODO
+    var nodeMouseUp = function() {};
+    var nodeMouseDown = function() {};
+
+    function nodeButtonClicked(d) {
+        if (d._def.button.toggle) {
+            d[d._def.button.toggle] = !d[d._def.button.toggle];
+            d.dirty = true;
+        }
+        if (d._def.button.onclick) {
+            d._def.button.onclick.call(d);
+        }
+        if (d.dirty) {
+            redraw();
+        }
+        d3.event.preventDefault();
+    }
+
+    var redraw = function() {
+        vis.attr("transform","scale("+scaleFactor+")");
+        outer.attr("width", space_width*scaleFactor).attr("height", space_height*scaleFactor);
+        var node = vis.selectAll(".nodegroup").data(nodes, function(d){ return d.id; });
+        node.exit().remove();
+        var nodeEnter = node.enter().insert("svg:g").attr("class", "node nodegroup");
+        nodeEnter.each(function(d,i) {
+            var node = d3.select(this);
+            node.attr("id",d.id);
+            var l = d._def.label;
+            l = (typeof l === "function" ? l.call(d) : l)||"";
+            d.w = Math.max(node_width,calculateTextWidth(l)+(d._def.inputs>0?7:0) );
+            d.h = Math.max(node_height,(d.outputs||0) * 15);
+                    if (d._def.button) {
+                        var nodeButtonGroup = node.append('svg:g')
+                            .attr("transform",function(d) { return "translate("+((d._def.align == "right") ? 94 : -25)+",2)"; })
+                            .attr("class",function(d) { return "node_button "+((d._def.align == "right") ? "node_right_button" : "node_left_button"); });
+                        nodeButtonGroup.append('rect')
+                            .attr("rx",8)
+                            .attr("ry",8)
+                            .attr("width",32)
+                            .attr("height",node_height-4)
+                            .attr("fill","#eee");//function(d) { return d._def.color;})
+                        nodeButtonGroup.append('rect')
+                            .attr("x",function(d) { return d._def.align == "right"? 10:5})
+                            .attr("y",4)
+                            .attr("rx",5)
+                            .attr("ry",5)
+                            .attr("width",16)
+                            .attr("height",node_height-12)
+                            .attr("fill",function(d) { return d._def.color;})
+                            .attr("cursor","pointer")
+                            .on("mousedown",function(d) {if (!lasso) { d3.select(this).attr("fill-opacity",0.2);d3.event.preventDefault(); d3.event.stopPropagation();}})
+                            .on("mouseup",function(d) {if (!lasso) { d3.select(this).attr("fill-opacity",0.4);d3.event.preventDefault();d3.event.stopPropagation();}})
+                            .on("mouseover",function(d) {if (!lasso) { d3.select(this).attr("fill-opacity",0.4);}})
+                            .on("mouseout",function(d) {if (!lasso) {
+                                var op = 1;
+                                if (d._def.button.toggle) {
+                                    op = d[d._def.button.toggle]?1:0.2;
+                                }
+                                d3.select(this).attr("fill-opacity",op);
+                            }})
+                            .on("click",nodeButtonClicked)
+                            .on("touchstart",nodeButtonClicked)
+                    }
+                    var mainRect = node.append("rect")
+                        .attr("class", "node")
+                        .classed("node_unknown",function(d) { return d.type == "unknown"; })
+                        .attr("rx", 6)
+                        .attr("ry", 6)
+                        .attr("fill",function(d) { return d._def.color;})
+                        .on("mouseup",nodeMouseUp)
+                        .on("mousedown",nodeMouseDown)
+                        .on("touchstart",function(d) {
+                            var obj = d3.select(this);
+                            var touch0 = d3.event.touches.item(0);
+                            var pos = [touch0.pageX,touch0.pageY];
+                            startTouchCenter = [touch0.pageX,touch0.pageY];
+                            startTouchDistance = 0;
+                            touchStartTime = setTimeout(function() {
+                                showTouchMenu(obj,pos);
+                            },touchLongPressTimeout);
+                            nodeMouseDown.call(this,d)
+                        })
+                        .on("touchend", function(d) {
+                            clearTimeout(touchStartTime);
+                            touchStartTime = null;
+                            if  (RED.touch.radialMenu.active()) {
+                                d3.event.stopPropagation();
+                                return;
+                            }
+                            nodeMouseUp.call(this,d);
+                        })
+                        .on("mouseover",function(d) {
+                                //if (mouse_mode == 0) {
+                                    var node = d3.select(this);
+                                    node.classed("node_hovered",true);
+                                //}
+                        })
+                        .on("mouseout",function(d) {
+                                var node = d3.select(this);
+                                node.classed("node_hovered",false);
+                        });
+
+                    var text = node.append('svg:text').attr('class','node_label').attr('x', 38).attr('dy', '.35em').attr('text-anchor','start');
+                    if (d._def.align) {
+                        text.attr('class','node_label node_label_'+d._def.align);
+                        text.attr('text-anchor','end');
+                    }
+
+
+            node.each(function(d,i) {
+// TODO decide when it should be dirty
+d.dirty = true;
+                    if (d.dirty) {
+                        //if (d.x < -50) deleteSelection();  // Delete nodes if dragged back to palette
+                        if (d.resize) {
+                            var l = d._def.label;
+                            l = (typeof l === "function" ? l.call(d) : l)||"";
+                            d.w = Math.max(node_width,calculateTextWidth(l)+(d._def.inputs>0?7:0) );
+                            d.h = Math.max(node_height,(d.outputs||0) * 15);
+                        }
+                        var thisNode = d3.select(this);
+                        //thisNode.selectAll(".centerDot").attr({"cx":function(d) { return d.w/2;},"cy":function(d){return d.h/2}});
+                        thisNode.attr("transform", function(d) { return "translate(" + (d.x-d.w/2) + "," + (d.y-d.h/2) + ")"; });
+                        thisNode.selectAll(".node")
+                            .attr("width",function(d){return d.w})
+                            .attr("height",function(d){return d.h})
+                            .classed("node_selected",function(d) { return d.selected; })
+                            .classed("node_highlighted",function(d) { return d.highlighted; })
+                        ;
+                        thisNode.selectAll('text.node_label').text(function(d,i){
+                                if (d._def.label) {
+                                    if (typeof d._def.label == "function") {
+                                        return d._def.label.call(d);
+                                    } else {
+                                        return d._def.label;
+                                    }
+                                }
+                                return "";
+                        })
+                            .attr('y', function(d){return (d.h/2)-1;})
+                            .attr('class',function(d){
+                                return 'node_label'+
+                                (d._def.align?' node_label_'+d._def.align:'')+
+                                (d._def.label?' '+(typeof d._def.labelStyle == "function" ? d._def.labelStyle.call(d):d._def.labelStyle):'') ;
+                        });
+                        d.dirty = false;
+                    }
+            });
+
+        });
+    };
+
+    function calculateTextWidth(str) {
+        var sp = document.createElement("span");
+        sp.className = "node_label";
+        sp.style.position = "absolute";
+        sp.style.top = "-1000px";
+        sp.innerHTML = (str||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        document.body.appendChild(sp);
+        var w = sp.offsetWidth;
+        document.body.removeChild(sp);
+        return 50+w;
+    }
+
+    $("#chart").droppable({
+            accept:".palette_node",
+            drop: function( event, ui ) {
+                d3.event = event;
+                var selected_tool = $(ui.draggable[0]).data('type');
+                var mousePos = d3.touches(this)[0]||d3.mouse(this);
+                mousePos[1] += this.scrollTop;
+                mousePos[0] += this.scrollLeft;
+                mousePos[1] /= scaleFactor;
+                mousePos[0] /= scaleFactor;
+
+                var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:node_width,z:activeWorkspace};
+
+                nn.type = selected_tool;
+                // TODO make dynamic
+                nn._def = {
+                    category: "process",
+                    color: "rgb(231, 231, 74)",
+                    label: selected_tool,
+                    inputs: 0,
+                    outputs: 0,
+                    button: {}
+                };
+                nodes.push(nn);
+                // here we should probably do a DescribeProcess action
+                redraw();
+            }
     });
 
         });
