@@ -6,6 +6,11 @@ var wps = window.wps;
 wps.client = function(options) {
   this.url_ = options.url;
   this.format_ = new OpenLayers.Format.WPSCapabilities();
+  this.client_ = new OpenLayers.WPSClient({
+    servers: {
+      'wpsgui': this.url_
+    }
+  });
 };
 
 wps.client.prototype.getGroupedProcesses = function(callback) {
@@ -30,6 +35,7 @@ wps.ui = function(options) {
   this.parentContainer_ = options.parentContainer;
   this.sideBar_ = options.sideBar;
   this.dropZone_ = options.dropZone;
+  this.client_ = options.client;
   this.spaceWidth = options.spaceWidth || 5000;
   this.spaceHeight = options.spaceHeight || 5000;
   this.scaleFactor = options.scaleFactor || 1;
@@ -96,26 +102,27 @@ wps.ui.prototype.createDropTarget = function() {
     drop: function( event, ui ) {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
-      var mousePos = d3.touches(this)[0]||d3.mouse(this);
-      mousePos[1] += this.scrollTop;
-      mousePos[0] += this.scrollLeft;
-      mousePos[1] /= me.scaleFactor;
-      mousePos[0] /= me.scaleFactor;
-      /* TODO no workspaces as yet, so z is 0 */
-      var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
-      nn.type = selected_tool;
-      // TODO make dynamic
-      nn._def = {
-        category: "process",
-        color: "rgb(231, 231, 74)",
-        label: selected_tool,
-        inputs: 0,
-        outputs: 0,
-        button: {}
-      };
-      me.nodes.push(nn);
-      // here we should probably do a DescribeProcess action
-      me.redraw();
+      var process = me.client_.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
+        var mousePos = d3.touches(this)[0]||d3.mouse(this);
+        mousePos[1] += this.scrollTop;
+        mousePos[0] += this.scrollLeft;
+        mousePos[1] /= me.scaleFactor;
+        mousePos[0] /= me.scaleFactor;
+        /* TODO no workspaces as yet, so z is 0 */
+        var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
+        nn.type = selected_tool;
+        // TODO make dynamic
+        nn._def = {
+          category: "process",
+          color: "rgb(231, 231, 74)",
+          label: selected_tool,
+          inputs: info.dataInputs.length,
+          outputs: info.processOutputs.length,
+          button: {}
+        };
+        me.nodes.push(nn);
+        me.redraw();
+      }, scope: this});
     }
   });
 };
@@ -260,7 +267,7 @@ wps.ui.prototype.createProcessCategory = function(group) {
   this.parentContainer_.append(category);
   var content = $('<div class="palette-content"></div>');
   $(category).append(content);
-  $(".palette-header").click(function(e) {
+  $(category).children('.palette-header').click(function(e) {
     $(this).next().slideToggle();
     $(this).children("i").toggleClass("expanded");
   });

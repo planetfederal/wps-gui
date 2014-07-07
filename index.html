@@ -52,6 +52,7 @@
         var wpsclient = new wps.client({url: url});
         wpsclient.getGroupedProcesses(function(groups, info) {
           var wpsui = new wps.ui({
+            client: wpsclient,
             parentContainer: $('.palette-scroll'),
             sideBar: $("#sidebar-content"),
             dropZone: $("#chart")

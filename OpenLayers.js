@@ -10382,6 +10382,252 @@ OpenLayers.Geometry.Polygon.createRegularPolygon = function(origin, radius, side
     return new OpenLayers.Geometry.Polygon([ring]);
 };
 /* ======================================================================
+    OpenLayers/Format/WPSDescribeProcess.js
+   ====================================================================== */
+
+/* Copyright (c) 2006-2013 by OpenLayers Contributors (see authors.txt for
+ * full list of contributors). Published under the 2-clause BSD license.
+ * See license.txt in the OpenLayers distribution or repository for the
+ * full text of the license. */
+ 
+/**
+ * @requires OpenLayers/Format/XML/VersionedOGC.js
+ */
+
+/**
+ * Class: OpenLayers.Format.WPSDescribeProcess
+ * Read WPS DescribeProcess responses. 
+ *
+ * Inherits from:
+ *  - <OpenLayers.Format.VersionedOGC>
+ */
+OpenLayers.Format.WPSDescribeProcess = OpenLayers.Class(
+    OpenLayers.Format.XML.VersionedOGC, {
+ 
+
+    /**
+     * APIProperty: defaultVersion
+     * {String} Version number to assume if none found.  Default is "1.0.0".
+     */
+    defaultVersion: "1.0.0",
+
+    /**
+     * Constructor: OpenLayers.Format.WPSDescribeProcess
+     * Create a new parser for WPS DescribeProcess.
+     *
+     * Parameters:
+     * options - {Object} An optional object whose properties will be set on
+     *     this instance.
+     */
+
+    /**
+     * APIMethod: read
+     * Parse a WPS DescribeProcess and return an object with its information.
+     *
+     * Parameters:
+     * data - {String} or {DOMElement} data to read/parse.
+     *
+     * Returns:
+     * {Object}
+     */
+
+    CLASS_NAME: "OpenLayers.Format.WPSDescribeProcess" 
+
+});
+/* ======================================================================
+    OpenLayers/Format/WPSDescribeProcess/v1_0_0.js
+   ====================================================================== */
+
+/* Copyright (c) 2006-2013 by OpenLayers Contributors (see authors.txt for
+ * full list of contributors). Published under the 2-clause BSD license.
+ * See license.txt in the OpenLayers distribution or repository for the
+ * full text of the license. */
+ 
+/**
+ * @requires OpenLayers/Format/XML.js
+ * @requires OpenLayers/Format/WPSDescribeProcess.js
+ * @requires OpenLayers/Format/OWSCommon/v1_1_0.js
+ */
+
+/**
+ * Class: OpenLayers.Format.WPSDescribeProcess.v1_0_0
+ * Read WPS DescribeProcess 1.0.0 responses. 
+ *
+ * Inherits from:
+ *  - <OpenLayers.Format.XML>
+ */
+OpenLayers.Format.WPSDescribeProcess.v1_0_0 = OpenLayers.Class(
+    OpenLayers.Format.XML, {
+    
+    /**
+     * Property: namespaces
+     * {Object} Mapping of namespace aliases to namespace URIs.
+     */
+    namespaces: {
+        wps: "http://www.opengis.net/wps/1.0.0",
+        ows: "http://www.opengis.net/ows/1.1",
+        xsi: "http://www.w3.org/2001/XMLSchema-instance"
+    },
+
+    /**
+     * APIProperty: errorProperty
+     * {String} Which property of the returned object to check for in order to
+     * determine whether or not parsing has failed. In the case that the
+     * errorProperty is undefined on the returned object, the document will be
+     * run through an OGCExceptionReport parser.
+     */
+    errorProperty: "processDescriptions",
+
+    /**
+     * Property: schemaLocation
+     * {String} Schema location
+     */
+    schemaLocation: "http://www.opengis.net/wps/1.0.0 http://schemas.opengis.net/wps/1.0.0/wpsAll.xsd",
+
+    /**
+     * Property: defaultPrefix
+     */
+    defaultPrefix: "wps",
+
+    /**
+     * Property: regExes
+     * Compiled regular expressions for manipulating strings.
+     */
+    regExes: {
+        trimSpace: (/^\s*|\s*$/g),
+        removeSpace: (/\s*/g),
+        splitSpace: (/\s+/),
+        trimComma: (/\s*,\s*/g)
+    },
+    
+    /**
+     * Constructor: OpenLayers.Format.WPSDescribeProcess
+     *
+     * Parameters:
+     * options - {Object} An optional object whose properties will be set on
+     *     this instance.
+     */
+
+    /**
+     * APIMethod: read
+     * Parse a WPS DescribeProcess and return an object with its information.
+     * 
+     * Parameters: 
+     * data - {String} or {DOMElement} data to read/parse.
+     *
+     * Returns:
+     * {Object}
+     */
+    read: function(data) {
+        if(typeof data == "string") {
+            data = OpenLayers.Format.XML.prototype.read.apply(this, [data]);
+        }
+        if(data && data.nodeType == 9) {
+            data = data.documentElement;
+        }
+        var info = {};
+        this.readNode(data, info);
+        return info;
+    },
+
+    /**
+     * Property: readers
+     * Contains public functions, grouped by namespace prefix, that will
+     *     be applied when a namespaced node is found matching the function
+     *     name.  The function will be applied in the scope of this parser
+     *     with two arguments: the node being read and a context object passed
+     *     from the parent.
+     */
+    readers: {
+        "wps": {
+            "ProcessDescriptions": function(node, obj) {
+                obj.processDescriptions = {};
+                this.readChildNodes(node, obj.processDescriptions);
+            },
+            "ProcessDescription": function(node, processDescriptions) {
+                var processVersion = this.getAttributeNS(node, this.namespaces.wps, "processVersion");
+                var processDescription = {
+                    processVersion: processVersion,
+                    statusSupported: (node.getAttribute("statusSupported") === "true"),
+                    storeSupported: (node.getAttribute("storeSupported") === "true")
+                };
+                this.readChildNodes(node, processDescription);
+                processDescriptions[processDescription.identifier] = processDescription;
+            },
+            "DataInputs": function(node, processDescription) {
+                processDescription.dataInputs = [];
+                this.readChildNodes(node, processDescription.dataInputs);
+            },
+            "ProcessOutputs": function(node, processDescription) {
+                processDescription.processOutputs = [];
+                this.readChildNodes(node, processDescription.processOutputs);
+            },
+            "Output": function(node, processOutputs) {
+                var output = {};
+                this.readChildNodes(node, output);
+                processOutputs.push(output);
+            },
+            "ComplexOutput": function(node, output) {
+                output.complexOutput = {};
+                this.readChildNodes(node, output.complexOutput);
+            },
+            "LiteralOutput": function(node, output) {
+                output.literalOutput = {};
+                this.readChildNodes(node, output.literalOutput);
+            },
+            "Input": function(node, dataInputs) {
+                var input = {
+                    maxOccurs: parseInt(node.getAttribute("maxOccurs")),
+                    minOccurs: parseInt(node.getAttribute("minOccurs"))
+                };
+                this.readChildNodes(node, input);
+                dataInputs.push(input);
+            },
+            "BoundingBoxData": function(node, input) {
+                input.boundingBoxData = {};
+                this.readChildNodes(node, input.boundingBoxData);
+            },
+            "CRS": function(node, obj) {
+                if (!obj.CRSs) {
+                    obj.CRSs = {};
+                }
+                obj.CRSs[this.getChildValue(node)] = true;
+            },
+            "LiteralData": function(node, input) {
+                input.literalData = {};
+                this.readChildNodes(node, input.literalData);
+            },
+            "ComplexData": function(node, input) {
+                input.complexData = {};
+                this.readChildNodes(node,  input.complexData);
+            },
+            "Default": function(node, complexData) {
+                complexData["default"] = {};
+                this.readChildNodes(node,  complexData["default"]);
+            },
+            "Supported": function(node, complexData) {
+                complexData["supported"] = {};
+                this.readChildNodes(node,  complexData["supported"]);
+            },
+            "Format": function(node, obj) {
+                var format = {};
+                this.readChildNodes(node, format);
+                if (!obj.formats) {
+                    obj.formats = {};
+                }
+                obj.formats[format.mimeType] = true;
+            },
+            "MimeType": function(node, format) {
+                format.mimeType = this.getChildValue(node);
+            }
+        },
+        "ows": OpenLayers.Format.OWSCommon.v1_1_0.prototype.readers["ows"]
+    },
+    
+    CLASS_NAME: "OpenLayers.Format.WPSDescribeProcess" 
+
+});
+/* ======================================================================
     OpenLayers/Format/WFST.js
    ====================================================================== */
 
@@ -18667,59 +18913,6 @@ OpenLayers.Events = OpenLayers.Class({
     CLASS_NAME: "OpenLayers.Events"
 });
 /* ======================================================================
-    OpenLayers/Format/WPSDescribeProcess.js
-   ====================================================================== */
-
-/* Copyright (c) 2006-2013 by OpenLayers Contributors (see authors.txt for
- * full list of contributors). Published under the 2-clause BSD license.
- * See license.txt in the OpenLayers distribution or repository for the
- * full text of the license. */
- 
-/**
- * @requires OpenLayers/Format/XML/VersionedOGC.js
- */
-
-/**
- * Class: OpenLayers.Format.WPSDescribeProcess
- * Read WPS DescribeProcess responses. 
- *
- * Inherits from:
- *  - <OpenLayers.Format.VersionedOGC>
- */
-OpenLayers.Format.WPSDescribeProcess = OpenLayers.Class(
-    OpenLayers.Format.XML.VersionedOGC, {
- 
-
-    /**
-     * APIProperty: defaultVersion
-     * {String} Version number to assume if none found.  Default is "1.0.0".
-     */
-    defaultVersion: "1.0.0",
-
-    /**
-     * Constructor: OpenLayers.Format.WPSDescribeProcess
-     * Create a new parser for WPS DescribeProcess.
-     *
-     * Parameters:
-     * options - {Object} An optional object whose properties will be set on
-     *     this instance.
-     */
-
-    /**
-     * APIMethod: read
-     * Parse a WPS DescribeProcess and return an object with its information.
-     *
-     * Parameters:
-     * data - {String} or {DOMElement} data to read/parse.
-     *
-     * Returns:
-     * {Object}
-     */
-
-    CLASS_NAME: "OpenLayers.Format.WPSDescribeProcess" 
-
-});
-/* ======================================================================
     OpenLayers/Request/XMLHttpRequest.js
    ====================================================================== */
 
@@ -19852,7 +20045,7 @@ OpenLayers.WPSProcess = OpenLayers.Class({
                                 //TODO For now we assume a spatial output
                                 result = me.formats[mimeType].read(response.responseText);
                                 if (result instanceof OpenLayers.Feature.Vector) {
-                                    result = [features];
+                                    result = [result];
                                 }
                             }
                             if (options.success) {
@@ -20279,18 +20472,24 @@ OpenLayers.WPSClient = OpenLayers.Class({
      * serverID - {String} Local identifier from the servers that this instance
      *     was constructed with.
      * processID - {String} Process identifier known to the server.
+     * options - {Object} Options for the getProcess operation.
+     *
+     * Available options:
+     * callback - {Function} Callback to call when the operation is complete.
+     *     This function is called with the parsed process description.
+     * scope - {Object} Optional scope for the callback.
      *
      * Returns:
      * {<OpenLayers.WPSProcess>}
      */
-    getProcess: function(serverID, processID) {
+    getProcess: function(serverID, processID, options) {
         var process = new OpenLayers.WPSProcess({
             client: this,
             server: serverID,
             identifier: processID
         });
         if (!this.lazy) {
-            process.describe();
+            process.describe(options);
         }
         return process;
     },
@@ -20324,6 +20523,7 @@ OpenLayers.WPSClient = OpenLayers.Class({
                             identifier: processID,
                             raw: response.responseText
                         });
+                        callback.call(scope, response.responseText);
                     },
                     scope: this
                 });
