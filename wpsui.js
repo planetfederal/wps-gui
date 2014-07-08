@@ -103,6 +103,7 @@ wps.ui.prototype.createDropTarget = function() {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
       var process = me.client_.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
+        window.console.log(info);
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;
@@ -111,15 +112,35 @@ wps.ui.prototype.createDropTarget = function() {
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
         nn.type = selected_tool;
+        nn.inputs = info.dataInputs.length;
+        nn.outputs = info.processOutputs.length;
         // TODO make dynamic
         nn._def = {
           category: "process",
           color: "rgb(231, 231, 74)",
-          label: selected_tool,
-          inputs: info.dataInputs.length,
-          outputs: info.processOutputs.length,
-          button: {}
+          label: selected_tool
         };
+        var i, ii;
+        for (i=0, ii=info.dataInputs.length; i<ii; ++i) {
+          var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1],w:this.nodeWidth,z:0};
+          input.type = info.dataInputs[i].title;
+          input._def = {
+            category: "input",
+            color: "rgb(255, 0, 0)",
+            label: input.type
+          };
+          me.nodes.push(input);
+        }
+        for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
+          var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
+          output.type = info.processOutputs[i].title;
+          output._def = { 
+            category: "output",
+            color: "rgb(0, 255, 0)",
+            label: output.type
+          };
+          me.nodes.push(output);
+        }
         me.nodes.push(nn);
         me.redraw();
       }, scope: this});
@@ -139,17 +160,26 @@ wps.ui.prototype.redraw = function() {
     node.attr("id",d.id);
     var l = d._def.label;
     l = (typeof l === "function" ? l.call(d) : l)||"";
-    d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d._def.inputs>0?7:0) );
+    d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d.inputs>0?7:0) );
     d.h = Math.max(me.nodeHeight,(d.outputs||0) * 15);
     if (d._def.button) {
       me.createButton(node);
     }
     me.createProcessRect(node);
-    me.createProcessText(node, d);
+    var text = me.createProcessText(node, d);
+    me.createInputLink(node, d, text);
     node.each(function(d,i) {
       me.updateNode.call(this, d);
     });
   });
+};
+
+wps.ui.prototype.createInputLink = function(node, d, text) {
+  if (d.inputs > 0) {
+    text.attr("x",38);
+    node.append("rect").attr("class","port port_input").attr("rx",3).attr("ry",3).attr("x",-5).attr("width",10).attr("height",10).
+      attr("y", 10);
+  }
 };
 
 wps.ui.prototype.calculateTextWidth = function(str) {
@@ -184,6 +214,21 @@ wps.ui.prototype.updateNode = function(d) {
             (d._def.align?' node_label_'+d._def.align:'')+
             (d._def.label?' '+(typeof d._def.labelStyle == "function" ? d._def.labelStyle.call(d):d._def.labelStyle):'');
         });
+      var numOutputs = d.outputs;
+      var y = (d.h/2)-((numOutputs-1)/2)*13;
+      d.ports = d.ports || d3.range(numOutputs);
+      d._ports = thisNode.selectAll(".port_output").data(d.ports);
+      d._ports.enter().append("rect").attr("class","port port_output").attr("rx",3).attr("ry",3).attr("width",10).attr("height",10);
+      d._ports.exit().remove();
+      if (d._ports) {
+        var numOutputs = d.outputs || 1;
+        var y = (d.h/2)-((numOutputs-1)/2)*13;
+        var x = d.w - 5;
+        d._ports.each(function(d,i) {
+          var port = d3.select(this);
+          port.attr("y",(y+13*i)-5).attr("x",x);
+        });
+      }
       d.dirty = false;
     }
 };
@@ -203,6 +248,7 @@ wps.ui.prototype.createProcessText = function(node, d) {
     text.attr('class','node_label node_label_'+d._def.align);
     text.attr('text-anchor','end');
   }
+  return text;
 };
 
 wps.ui.prototype.createButton = function(node) {
