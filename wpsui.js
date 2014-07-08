@@ -125,6 +125,7 @@ wps.ui.prototype.createDropTarget = function() {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
           input.type = info.dataInputs[i].title;
+          input.outputs = 1;
           input._def = {
             category: "input",
             color: "rgb(255, 0, 0)",
@@ -135,6 +136,7 @@ wps.ui.prototype.createDropTarget = function() {
         for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
           output.type = info.processOutputs[i].title;
+          output.inputs = 1;
           output._def = { 
             category: "output",
             color: "rgb(0, 255, 0)",
