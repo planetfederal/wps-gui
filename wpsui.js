@@ -120,9 +120,10 @@ wps.ui.prototype.createDropTarget = function() {
           color: "rgb(231, 231, 74)",
           label: selected_tool
         };
-        var i, ii;
+        var i, ii, delta = 50, span = delta * info.dataInputs.length, deltaY = (span-delta)/2;
         for (i=0, ii=info.dataInputs.length; i<ii; ++i) {
-          var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1],w:this.nodeWidth,z:0};
+          var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
+          deltaY -= delta;
           input.type = info.dataInputs[i].title;
           input._def = {
             category: "input",
