@@ -39,7 +39,7 @@ wps.ui = function(options) {
   this.spaceWidth = options.spaceWidth || 5000;
   this.spaceHeight = options.spaceHeight || 5000;
   this.scaleFactor = options.scaleFactor || 1;
-  this.nodeWidth = options.nodeWidth || 100;
+  this.nodeWidth = options.nodeWidth || 70;
   this.nodeHeight = options.nodeHeight || 30;
   this.nodes = [];
   this.createSearch();
@@ -165,9 +165,6 @@ wps.ui.prototype.redraw = function() {
     l = (typeof l === "function" ? l.call(d) : l)||"";
     d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d.inputs>0?7:0) );
     d.h = Math.max(me.nodeHeight,(d.outputs||0) * 15);
-    if (d._def.button) {
-      me.createButton(node);
-    }
     me.createProcessRect(node);
     var text = me.createProcessText(node, d);
     me.createInputLink(node, d, text);
@@ -179,7 +176,7 @@ wps.ui.prototype.redraw = function() {
 
 wps.ui.prototype.createInputLink = function(node, d, text) {
   if (d.inputs > 0) {
-    text.attr("x",38);
+    text.attr("x",8);
     node.append("rect").attr("class","port port_input").attr("rx",3).attr("ry",3).attr("x",-5).attr("width",10).attr("height",10).
       attr("y", 10);
   }
@@ -194,7 +191,7 @@ wps.ui.prototype.calculateTextWidth = function(str) {
   document.body.appendChild(sp);
   var w = sp.offsetWidth;
   document.body.removeChild(sp);
-  return 50+w;
+  return 20+w;
 };
 
 wps.ui.prototype.updateNode = function(d) {
@@ -246,33 +243,12 @@ wps.ui.prototype.createProcessRect = function(node) {
 };
 
 wps.ui.prototype.createProcessText = function(node, d) {
-  var text = node.append('svg:text').attr('class','node_label').attr('x', 38).attr('dy', '.35em').attr('text-anchor','start');
+  var text = node.append('svg:text').attr('class','node_label').attr('x', 8).attr('dy', '.35em').attr('text-anchor','start');
   if (d._def.align) {
     text.attr('class','node_label node_label_'+d._def.align);
     text.attr('text-anchor','end');
   }
   return text;
-};
-
-wps.ui.prototype.createButton = function(node) {
-  var nodeButtonGroup = node.append('svg:g').
-    attr("transform",function(d) { return "translate("+((d._def.align == "right") ? 94 : -25)+",2)"; }).
-    attr("class",function(d) { return "node_button "+((d._def.align == "right") ? "node_right_button" : "node_left_button"); });
-  nodeButtonGroup.append('rect').
-    attr("rx",8).
-    attr("ry",8).
-    attr("width",32).
-    attr("height",this.nodeHeight-4).
-    attr("fill","#eee");
-  nodeButtonGroup.append('rect').
-    attr("x",function(d) { return d._def.align == "right"? 10:5;}).
-    attr("y",4).
-    attr("rx",5).
-    attr("ry",5).
-    attr("width",16).
-    attr("height",this.nodeHeight-12).
-    attr("fill",function(d) { return d._def.color;}).
-    attr("cursor","pointer");
 };
 
 wps.ui.prototype.createSearch = function() {
