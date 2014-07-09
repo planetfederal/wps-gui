@@ -41,6 +41,7 @@ wps.ui = function(options) {
   this.scaleFactor = options.scaleFactor || 1;
   this.nodeWidth = options.nodeWidth || 70;
   this.nodeHeight = options.nodeHeight || 30;
+  this.lineCurveScale = options.lineCurveScale || 0.75;
   this.nodes = [];
   this.createSearch();
   this.createCanvas();
@@ -120,7 +121,7 @@ wps.ui.prototype.createDropTarget = function() {
           color: "rgb(231, 231, 74)",
           label: selected_tool
         };
-        var i, ii, delta = 50, span = delta * info.dataInputs.length, deltaY = (span-delta)/2;
+        var link, i, ii, delta = 50, span = delta * info.dataInputs.length, deltaY = (span-delta)/2;
         for (i=0, ii=info.dataInputs.length; i<ii; ++i) {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
@@ -132,6 +133,12 @@ wps.ui.prototype.createDropTarget = function() {
             label: input.type
           };
           me.nodes.push(input);
+          // create a link as well between input and process
+          link = {
+            source: input,
+            target: nn
+          };
+          me.nodes.push(link);
         }
         for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
@@ -143,11 +150,59 @@ wps.ui.prototype.createDropTarget = function() {
             label: output.type
           };
           me.nodes.push(output);
+          // create a link as well between process and output
+          link = {
+            source: nn,
+            target: output
+          };
+          me.nodes.push(link);
         }
         me.nodes.push(nn);
         me.redraw();
       }, scope: this});
     }
+  });
+};
+
+wps.ui.prototype.createLinkPaths = function() {
+  var me = this;
+  var link = this.vis.selectAll(".link").data(this.nodes);
+  var linkEnter = link.enter().insert("g",".node").attr("class","link");
+  linkEnter.each(function(d,i) {
+    var l = d3.select(this);
+    l.append("svg:path").attr("class","link_background link_path");
+    l.append("svg:path").attr("class","link_outline link_path");
+    l.append("svg:path").attr("class","link_line link_path");
+  });
+  link.exit().remove();
+  var links = this.vis.selectAll(".link_path")
+  links.attr("d",function(d) {
+    if (!d.source || !d.target) return;
+    var numOutputs = d.source.outputs || 1;
+    var sourcePort = d.sourcePort || 0;
+    var y = -((numOutputs-1)/2)*13 +13*sourcePort;
+    var dy = d.target.y-(d.source.y+y);
+    var dx = (d.target.x-d.target.w/2)-(d.source.x+d.source.w/2);
+    var delta = Math.sqrt(dy*dy+dx*dx);
+    var scale = me.lineCurveScale;
+    var scaleY = 0;
+    if (delta < me.nodeWidth) {
+      scale = 0.75-0.75*((me.nodeWidth-delta)/me.nodeWidth);
+    }
+    if (dx < 0) {
+      scale += 2*(Math.min(5*me.nodeWidth,Math.abs(dx))/(5*me.nodeWidth));
+      if (Math.abs(dy) < 3*me.nodeHeight) {
+        scaleY = ((dy>0)?0.5:-0.5)*(((3*me.nodeHeight)-Math.abs(dy))/(3*me.nodeHeight))*(Math.min(me.nodeWidth,Math.abs(dx))/(me.nodeWidth)) ;
+      }
+    }
+    d.x1 = d.source.x+d.source.w/2;
+    d.y1 = d.source.y+y;
+    d.x2 = d.target.x-d.target.w/2;
+    d.y2 = d.target.y;
+    return "M "+(d.source.x+d.source.w/2)+" "+(d.source.y+y)+
+      " C "+(d.source.x+d.source.w/2+scale*me.nodeWidth)+" "+(d.source.y+y+scaleY*me.nodeHeight)+" "+
+      (d.target.x-d.target.w/2-scale*me.nodeWidth)+" "+(d.target.y-scaleY*me.nodeHeight)+" "+
+      (d.target.x-d.target.w/2)+" "+d.target.y;
   });
 };
 
@@ -159,6 +214,7 @@ wps.ui.prototype.redraw = function() {
   var nodeEnter = node.enter().insert("svg:g").attr("class", "node nodegroup");
   var me = this;
   nodeEnter.each(function(d,i) {
+    if (d._def) {
     var node = d3.select(this);
     node.attr("id",d.id);
     var l = d._def.label;
@@ -171,7 +227,9 @@ wps.ui.prototype.redraw = function() {
     node.each(function(d,i) {
       me.updateNode.call(this, d);
     });
+    }
   });
+  this.createLinkPaths();
 };
 
 wps.ui.prototype.createInputLink = function(node, d, text) {
