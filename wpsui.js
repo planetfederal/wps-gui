@@ -43,6 +43,14 @@ wps.ui = function(options) {
   this.nodeHeight = options.nodeHeight || 30;
   this.lineCurveScale = options.lineCurveScale || 0.75;
   this.nodes = [];
+  this.clickElapsed = 0;
+  this.clickTime = 0;
+  this.movingSet = [];
+  this.mouseOffset = [0,0];
+  this.mouseMode = 0;
+  this.mousePosition = null;
+  this.selectedLink = null;
+  this.mousedownNode = null;
   this.createSearch();
   this.createCanvas();
   this.createDropTarget();
@@ -77,7 +85,69 @@ wps.ui.prototype.createZoomToolbar = function() {
   $('#btn-zoom-in').click(this, this.zoomIn);
 };
 
+wps.ui.prototype.canvasMouseMove = function(ui) {
+  var me = ui;
+  me.mousePosition = d3.touches(this)[0]||d3.mouse(this);
+  // MOVING
+  if (me.mouseMode == 1) {
+    var m = me.mousePosition;
+    var d = (me.mouseOffset[0]-m[0])*(me.mouseOffset[0]-m[0]) + (me.mouseOffset[1]-m[1])*(me.mouseOffset[1]-m[1]);
+    if (d > 2) {
+      // MOVING_ACTIVE
+      me.mouseMode = 3;
+      me.clickElapsed = 0;
+    }
+  } else if (me.mouseMode == 3) {
+    var mousePos = me.mousePosition;
+    var minX = 0;
+    var minY = 0;
+    var n, node;
+    for (n = 0; n<me.movingSet.length; n++) {
+      node = me.movingSet[n];
+      node.n.x = mousePos[0]+node.dx;
+      node.n.y = mousePos[1]+node.dy;
+      node.n.dirty = true;
+      minX = Math.min(node.n.x-node.n.w/2-5,minX);
+      minY = Math.min(node.n.y-node.n.h/2-5,minY);
+    }
+    if (minX !== 0 || minY !== 0) {
+      for (n = 0; n<me.movingSet.length; n++) {
+        node = me.movingSet[n];
+        node.n.x -= minX;
+        node.n.y -= minY;
+      }
+    }
+  }
+  me.redraw();
+};
 
+wps.ui.prototype.canvasMouseUp = function(ui) {
+  var me = ui;
+  if (me.mouseMode == 3) {
+    for (var i=0;i<me.movingSet.length;i++) {
+      delete me.movingSet[i].ox;
+      delete me.movingSet[i].oy;
+    }
+  }
+  me.redraw();
+  me.resetMouseVars();
+};
+
+wps.ui.prototype.canvasMouseDown = function(ui) {
+  var me = ui;
+  if (!me.mousedownNode && !me.mousedownLink) {
+    me.selectedLink = null;
+    me.updateSelection();
+  }
+};
+
+wps.ui.prototype.resetMouseVars = function() {
+  this.mousedownNode = null;
+  this.mouseupNode = null;
+  this.mousedownLink = null;
+  this.mouseMode = 0;
+  this.mousedownPortType = 0;
+};
 
 wps.ui.prototype.createCanvas = function() {
   this.outer = d3.select("#chart").
@@ -89,7 +159,10 @@ wps.ui.prototype.createCanvas = function() {
   this.vis = this.outer.
     append('svg:g').
     on("dblclick.zoom", null).
-    append('svg:g');
+    append('svg:g').
+    on("mousedown", $.proxy(this.canvasMouseDown, null, this)).
+    on("mouseup", $.proxy(this.canvasMouseUp, null, this)).
+    on("mousemove", $.proxy(this.canvasMouseMove, null, this));
   var outer_background = this.vis.append('svg:rect').
     attr('width', this.spaceWidth).
     attr('height', this.spaceHeight).
@@ -104,7 +177,6 @@ wps.ui.prototype.createDropTarget = function() {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
       var process = me.client_.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
-        window.console.log(info);
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;
@@ -215,19 +287,19 @@ wps.ui.prototype.redraw = function() {
   var me = this;
   nodeEnter.each(function(d,i) {
     if (d._def) {
-    var node = d3.select(this);
-    node.attr("id",d.id);
-    var l = d._def.label;
-    l = (typeof l === "function" ? l.call(d) : l)||"";
-    d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d.inputs>0?7:0) );
-    d.h = Math.max(me.nodeHeight,(d.outputs||0) * 15);
-    me.createProcessRect(node);
-    var text = me.createProcessText(node, d);
-    me.createInputLink(node, d, text);
-    node.each(function(d,i) {
-      me.updateNode.call(this, d);
-    });
+      var node = d3.select(this);
+      node.attr("id",d.id);
+      var l = d._def.label;
+      l = (typeof l === "function" ? l.call(d) : l)||"";
+      d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d.inputs>0?7:0) );
+      d.h = Math.max(me.nodeHeight,(d.outputs||0) * 15);
+      me.createProcessRect(node);
+      var text = me.createProcessText(node, d);
+      me.createInputLink(node, d, text);
     }
+  });
+  node.each(function(d,i) {
+    me.updateNode.call(this, d);
   });
   this.createLinkPaths();
 };
@@ -255,7 +327,8 @@ wps.ui.prototype.calculateTextWidth = function(str) {
 wps.ui.prototype.updateNode = function(d) {
   // TODO decide when dirty
   d.dirty = true;
-  if (d.dirty) {
+  // TODO check in what cases d.w or d.h are undefined
+  if (d.dirty && d.w && d.h) {
     var thisNode = d3.select(this);
     thisNode.attr("transform", function(d) { return "translate(" + (d.x-d.w/2) + "," + (d.y-d.h/2) + ")"; });
     thisNode.selectAll(".node").
@@ -291,13 +364,67 @@ wps.ui.prototype.updateNode = function(d) {
     }
 };
 
+wps.ui.prototype.clearSelection = function() {
+  // TODO
+};
+
+wps.ui.prototype.nodeMouseUp = function(ui, d) {
+  var me = ui;
+  if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 750) {
+    me.clickElapsed = 0;
+    d3.event.stopPropagation();
+    return;
+  }
+};
+
+wps.ui.prototype.updateSelection = function() {
+  // TODO
+};
+
+wps.ui.prototype.nodeMouseDown = function(ui, d) {
+  var me = ui;
+  me.mousedownNode = d;
+  var now = Date.now();
+  me.clickElapsed = now-me.clickTime;
+  me.clickTime = now;
+  if (!d.selected) {
+    me.clearSelection();
+  }
+  me.mousedownNode.selected = true;
+  me.movingSet.push({n:me.mousedownNode});
+  me.selectedLink = null;
+  if (d3.event.button != 2) {
+    // MOVING
+    me.mouseMode = 1;
+    var mouse = d3.touches(this)[0]||d3.mouse(this);
+    mouse[0] += d.x-d.w/2;
+    mouse[1] += d.y-d.h/2;
+    for (var i in me.movingSet) {
+      me.movingSet[i].ox = me.movingSet[i].n.x;
+      me.movingSet[i].oy = me.movingSet[i].n.y;
+      me.movingSet[i].dx = me.movingSet[i].n.x-mouse[0];
+      me.movingSet[i].dy = me.movingSet[i].n.y-mouse[1];
+    }
+    me.mouseOffset = d3.mouse(document.body);
+    if (isNaN(me.mouseOffset[0])) {
+      me.mouseOffset = d3.touches(document.body)[0];
+    }
+  }
+  d.dirty = true;
+  me.updateSelection();
+  me.redraw();
+  d3.event.stopPropagation();
+};
+
 wps.ui.prototype.createProcessRect = function(node) {
   var mainRect = node.append("rect").
     attr("class", "node").
     classed("node_unknown",function(d) { return d.type == "unknown"; }).
     attr("rx", 6).
     attr("ry", 6).
-    attr("fill",function(d) { return d._def.color;});
+    attr("fill",function(d) { return d._def.color;}).
+    on("mouseup", $.proxy(this.nodeMouseUp, null, this)).
+    on("mousedown", $.proxy(this.nodeMouseDown, null, this));
 };
 
 wps.ui.prototype.createProcessText = function(node, d) {
