@@ -184,12 +184,10 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] /= me.scaleFactor;
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
-        nn.type = selected_tool;
         nn.inputs = info.dataInputs.length;
         nn.outputs = info.processOutputs.length;
         // TODO make dynamic
         nn._def = {
-          category: "process",
           color: "rgb(231, 231, 74)",
           label: selected_tool
         };
@@ -197,12 +195,11 @@ wps.ui.prototype.createDropTarget = function() {
         for (i=0, ii=info.dataInputs.length; i<ii; ++i) {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
-          input.type = info.dataInputs[i].title;
           input.outputs = 1;
+          input._info = info.dataInputs[i];
           input._def = {
-            category: "input",
             color: "rgb(255, 0, 0)",
-            label: input.type
+            label: info.dataInputs[i].title
           };
           me.nodes.push(input);
           // create a link as well between input and process
@@ -214,12 +211,11 @@ wps.ui.prototype.createDropTarget = function() {
         }
         for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
-          output.type = info.processOutputs[i].title;
           output.inputs = 1;
+          output._info = info.processOutputs[i];
           output._def = { 
-            category: "output",
             color: "rgb(0, 255, 0)",
-            label: output.type
+            label: info.processOutputs[i].title
           };
           me.nodes.push(output);
           // create a link as well between process and output
@@ -377,6 +373,7 @@ wps.ui.prototype.clearSelection = function() {
 wps.ui.prototype.nodeMouseUp = function(ui, d) {
   var me = ui;
   if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 750) {
+    // TODO launch the editor
     me.clickElapsed = 0;
     d3.event.stopPropagation();
     return;
