@@ -365,7 +365,13 @@ wps.ui.prototype.updateNode = function(d) {
 };
 
 wps.ui.prototype.clearSelection = function() {
-  // TODO
+  for (var i in this.movingSet) {
+    var n = this.movingSet[i];
+    n.n.dirty = true;
+    n.n.selected = false;
+  }
+  this.movingSet = [];
+  this.selectedLink = null;
 };
 
 wps.ui.prototype.nodeMouseUp = function(ui, d) {
@@ -378,7 +384,7 @@ wps.ui.prototype.nodeMouseUp = function(ui, d) {
 };
 
 wps.ui.prototype.updateSelection = function() {
-  // TODO
+  // TODO?
 };
 
 wps.ui.prototype.nodeMouseDown = function(ui, d) {
