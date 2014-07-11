@@ -185,6 +185,7 @@ wps.ui.prototype.createDropTarget = function() {
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
         nn.dirty = true;
+        nn._info = info;
         nn.inputs = info.dataInputs.length;
         nn.outputs = info.processOutputs.length;
         // TODO make dynamic
@@ -395,6 +396,9 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
     me.clearSelection();
   }
   me.mousedownNode.selected = true;
+  var help = me.mousedownNode._info['abstract'] ?
+    '<div class="node-help">' + me.mousedownNode._info['abstract'] + "</div>" : '';
+  me.sideBar_.html(help);
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
   if (d3.event.button != 2) {
