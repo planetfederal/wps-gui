@@ -184,6 +184,7 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] /= me.scaleFactor;
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
+        nn.dirty = true;
         nn.inputs = info.dataInputs.length;
         nn.outputs = info.processOutputs.length;
         // TODO make dynamic
@@ -196,6 +197,7 @@ wps.ui.prototype.createDropTarget = function() {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
           input.outputs = 1;
+          input.dirty = true;
           input._info = info.dataInputs[i];
           input._def = {
             color: "rgb(255, 0, 0)",
@@ -212,6 +214,7 @@ wps.ui.prototype.createDropTarget = function() {
         for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
           output.inputs = 1;
+          output.dirty = true;
           output._info = info.processOutputs[i];
           output._def = { 
             color: "rgb(0, 255, 0)",
@@ -321,8 +324,6 @@ wps.ui.prototype.calculateTextWidth = function(str) {
 };
 
 wps.ui.prototype.updateNode = function(d) {
-  // TODO decide when dirty
-  d.dirty = true;
   // TODO check in what cases d.w or d.h are undefined
   if (d.dirty && d.w && d.h) {
     var thisNode = d3.select(this);
@@ -422,7 +423,6 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
 wps.ui.prototype.createProcessRect = function(node) {
   var mainRect = node.append("rect").
     attr("class", "node").
-    classed("node_unknown",function(d) { return d.type == "unknown"; }).
     attr("rx", 6).
     attr("ry", 6).
     attr("fill",function(d) { return d._def.color;}).
