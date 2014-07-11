@@ -123,6 +123,10 @@ wps.ui.prototype.canvasMouseMove = function(ui) {
 
 wps.ui.prototype.canvasMouseUp = function(ui) {
   var me = ui;
+  if (me.mouseMode === 0 && me.mousedownLink === null) {
+    me.clearSelection();
+    me.updateSelection();
+  }
   if (me.mouseMode == 3) {
     for (var i=0;i<me.movingSet.length;i++) {
       delete me.movingSet[i].ox;
@@ -247,9 +251,11 @@ wps.ui.prototype.createLinkPaths = function() {
     l.append("svg:path").attr("class","link_line link_path");
   });
   link.exit().remove();
-  var links = this.vis.selectAll(".link_path")
+  var links = this.vis.selectAll(".link_path");
   links.attr("d",function(d) {
-    if (!d.source || !d.target) return;
+    if (!d.source || !d.target) {
+      return null;
+    }
     var numOutputs = d.source.outputs || 1;
     var sourcePort = d.sourcePort || 0;
     var y = -((numOutputs-1)/2)*13 +13*sourcePort;
@@ -350,8 +356,8 @@ wps.ui.prototype.updateNode = function(d) {
       d._ports.enter().append("rect").attr("class","port port_output").attr("rx",3).attr("ry",3).attr("width",10).attr("height",10);
       d._ports.exit().remove();
       if (d._ports) {
-        var numOutputs = d.outputs || 1;
-        var y = (d.h/2)-((numOutputs-1)/2)*13;
+        numOutputs = d.outputs || 1;
+        y = (d.h/2)-((numOutputs-1)/2)*13;
         var x = d.w - 5;
         d._ports.each(function(d,i) {
           var port = d3.select(this);
