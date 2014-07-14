@@ -33,7 +33,9 @@ wps.editor = function(ui) {
 
 wps.editor.prototype.showEditDialog = function(node) {
   this.editingNode_ = node;
-  this.ui_.values = {};
+  if (!this.ui_.values) {
+    this.ui_.values = {};
+  }
   if (!this.ui_.values[node._parent]) {
     this.ui_.values[node._parent] = {};
   }
@@ -130,6 +132,14 @@ wps.ui = function(options) {
   this.createDropTarget();
   this.createZoomToolbar();
   this.editor_ = new wps.editor(this);
+  $('#btn-run-process').click($.proxy(this.execute,null, this));
+};
+
+wps.ui.prototype.execute = function(ui) {
+  // TODO get the selected node
+  for (var key in ui.values) {
+    // TODO run the process
+  }
 };
 
 wps.ui.prototype.zoomIn = function(evt) {
