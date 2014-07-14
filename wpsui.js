@@ -15,8 +15,11 @@ wps.editor = function(ui) {
       text: "Ok",
       click: function() {
         var processId = me.editingNode_._parent;
-        var value = $('#node-input-' + me.editingNode_._info.identifier).val();
-        me.ui_.values[processId][me.editingNode_._info.identifier] = value;
+        var formField = $('#node-input-' + me.editingNode_._info.identifier);
+        if (formField.length > 0) {
+          var value = $('#node-input-' + me.editingNode_._info.identifier).val();
+          me.ui_.values[processId][me.editingNode_._info.identifier] = value;
+        }
         $(this).dialog("close");
       }
     }, {
@@ -35,6 +38,7 @@ wps.editor.prototype.showEditDialog = function(node) {
     this.ui_.values[node._parent] = {};
   }
   var html = '<form id="dialog-form" class="form-horizontal">';
+  var hasMap = false;
   // simple input
   if (node._info.literalData) {
     var name = node._info.identifier;
@@ -50,9 +54,24 @@ wps.editor.prototype.showEditDialog = function(node) {
       html += '<input type="text" id="node-input-' + name + '">';
     }
     html += '</div>';
+  } else if (node._info.complexData) {
+    hasMap = true;
+    html += '<div id="map" style="width:400px;height:200px;border:1px black solid"></div>';
   }
   html += '</form>';
   $("#dialog-form").html(html);
+  if (hasMap === true) {
+    var map = new OpenLayers.Map('map', {theme: null});
+    map.addLayer(new OpenLayers.Layer.OSM());
+    var vector = new OpenLayers.Layer.Vector();
+    map.addLayer(vector);
+    var draw = new OpenLayers.Control.DrawFeature(vector, OpenLayers.Handler.Polygon, {autoActivate: true});
+    draw.events.on({'featureadded': function(evt) {
+      this.ui_.values[node._parent][node._info.identifier] = evt.feature;
+    }, scope: this});
+    map.addControl(draw);
+    map.zoomToMaxExtent();
+  }
   $("#dialog").dialog("option", "title", "Edit node").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
