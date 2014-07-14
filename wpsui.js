@@ -3,6 +3,44 @@ if (!window.wps) {
 }
 var wps = window.wps;
 
+wps.editor = function() {
+  $( "#dialog" ).dialog({
+    modal: true,
+    autoOpen: false,
+    closeOnEscape: false,
+    width: 500,
+    buttons: [{
+      text: "Ok",
+      click: function() {
+        $(this).dialog("close");
+      }
+    }, {
+      text: "Cancel",
+      click: function() {
+        $(this).dialog("close");
+      }
+    }]
+  });
+};
+
+wps.editor.prototype.showEditDialog = function(node) {
+  this.editingNode_ = node;
+  var html = '<form id="dialog-form" class="form-horizontal">';
+  // simple input
+  if (node._info.literalData) {
+    var name = node._info.identifier;
+    html += '<div class="form-row">';
+    html += '<label for="node-input-"' + name + '">' + name + '</label>';
+    html += '<input type="text" id="node-input-' + name + '">';
+    html += '</div>';
+  }
+  html += '</form>';
+  $("#dialog-form").html(html);
+  $("#dialog").dialog("option", "title", "Edit node").dialog( "open" );
+  // bootstrap's hide class has important, so we need to remove it
+  $("#dialog").removeClass('hide');
+};
+
 wps.client = function(options) {
   this.url_ = options.url;
   this.format_ = new OpenLayers.Format.WPSCapabilities();
@@ -11,6 +49,7 @@ wps.client = function(options) {
       'wpsgui': this.url_
     }
   });
+  this.editor_ = new wps.editor();
 };
 
 wps.client.prototype.getGroupedProcesses = function(callback) {
@@ -381,7 +420,8 @@ wps.ui.prototype.clearSelection = function() {
 wps.ui.prototype.nodeMouseUp = function(ui, d) {
   var me = ui;
   if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 750) {
-    // TODO launch the editor
+    me.client_.editor_.showEditDialog(d);
+    me.mouseMode = 5; // EDITING
     me.clickElapsed = 0;
     d3.event.stopPropagation();
     return;
