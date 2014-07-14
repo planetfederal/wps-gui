@@ -31,7 +31,15 @@ wps.editor.prototype.showEditDialog = function(node) {
     var name = node._info.identifier;
     html += '<div class="form-row">';
     html += '<label for="node-input-"' + name + '">' + name + '</label>';
-    html += '<input type="text" id="node-input-' + name + '">';
+    if (node._info.literalData.allowedValues) {
+      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      for (var key in node._info.literalData.allowedValues) {
+        html += '<option value="'+key+'">'+key+'</option>';
+      }
+      html += '</select>';
+    } else {
+      html += '<input type="text" id="node-input-' + name + '">';
+    }
     html += '</div>';
   }
   html += '</form>';
@@ -243,8 +251,14 @@ wps.ui.prototype.createDropTarget = function() {
           input.outputs = 1;
           input.dirty = true;
           input._info = info.dataInputs[i];
+          var color;
+          if (input._info.minOccurs === 0 && input._info.maxOccurs === 1) {
+            color = 'orange';
+          } else {
+            color = 'red';
+          }
           input._def = {
-            color: "rgb(255, 0, 0)",
+            color: color,
             label: info.dataInputs[i].title
           };
           me.nodes.push(input);
