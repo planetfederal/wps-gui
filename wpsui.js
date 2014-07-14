@@ -3,7 +3,9 @@ if (!window.wps) {
 }
 var wps = window.wps;
 
-wps.editor = function() {
+wps.editor = function(ui) {
+  this.ui_ = ui;
+  var me = this;
   $( "#dialog" ).dialog({
     modal: true,
     autoOpen: false,
@@ -12,6 +14,9 @@ wps.editor = function() {
     buttons: [{
       text: "Ok",
       click: function() {
+        var processId = me.editingNode_._parent;
+        var value = $('#node-input-' + me.editingNode_._info.identifier).val();
+        me.ui_.values[processId][me.editingNode_._info.identifier] = value;
         $(this).dialog("close");
       }
     }, {
@@ -25,12 +30,16 @@ wps.editor = function() {
 
 wps.editor.prototype.showEditDialog = function(node) {
   this.editingNode_ = node;
+  this.ui_.values = {};
+  if (!this.ui_.values[node._parent]) {
+    this.ui_.values[node._parent] = {};
+  }
   var html = '<form id="dialog-form" class="form-horizontal">';
   // simple input
   if (node._info.literalData) {
     var name = node._info.identifier;
     html += '<div class="form-row">';
-    html += '<label for="node-input-"' + name + '">' + name + '</label>';
+    html += '<label for="node-input-' + name + '">' + name + '</label>';
     if (node._info.literalData.allowedValues) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       for (var key in node._info.literalData.allowedValues) {
@@ -57,7 +66,6 @@ wps.client = function(options) {
       'wpsgui': this.url_
     }
   });
-  this.editor_ = new wps.editor();
 };
 
 wps.client.prototype.getGroupedProcesses = function(callback) {
@@ -102,6 +110,7 @@ wps.ui = function(options) {
   this.createCanvas();
   this.createDropTarget();
   this.createZoomToolbar();
+  this.editor_ = new wps.editor(this);
 };
 
 wps.ui.prototype.zoomIn = function(evt) {
@@ -235,6 +244,7 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] /= me.scaleFactor;
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
+        nn.type = 'process';
         nn.dirty = true;
         nn._info = info;
         nn.inputs = info.dataInputs.length;
@@ -249,7 +259,9 @@ wps.ui.prototype.createDropTarget = function() {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
           input.outputs = 1;
+          input._parent = nn.id;
           input.dirty = true;
+          input.type = 'input';
           input._info = info.dataInputs[i];
           var color;
           if (input._info.minOccurs === 0 && input._info.maxOccurs === 1) {
@@ -273,6 +285,8 @@ wps.ui.prototype.createDropTarget = function() {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
           output.inputs = 1;
           output.dirty = true;
+          output.type = 'output';
+          output._parent = nn.id;
           output._info = info.processOutputs[i];
           output._def = { 
             color: "rgb(0, 255, 0)",
@@ -434,7 +448,7 @@ wps.ui.prototype.clearSelection = function() {
 wps.ui.prototype.nodeMouseUp = function(ui, d) {
   var me = ui;
   if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 750) {
-    me.client_.editor_.showEditDialog(d);
+    me.editor_.showEditDialog(d);
     me.mouseMode = 5; // EDITING
     me.clickElapsed = 0;
     d3.event.stopPropagation();
