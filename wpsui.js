@@ -138,14 +138,26 @@ wps.ui.prototype.execute = function(ui) {
   // TODO get the selected node
   for (var process in ui.processes) {
     if (ui.values[process]) {
+      var features = [];
       var inputs = {};
       for (var key in ui.values[process]) {
         inputs[key] = ui.values[process][key];
+        if (ui.values[process][key] instanceof OpenLayers.Feature.Vector) {
+          ui.values[process][key].style = {fillOpacity: 0, strokeColor: 'red'};
+          features.push(ui.values[process][key]);
+        }
       }
       ui.processes[process].execute({
         inputs: inputs,
         success: function(outputs) {
-          window.console.log(outputs);
+          ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
+          var map = new OpenLayers.Map('map', {theme: null});
+          map.addLayer(new OpenLayers.Layer.OSM());
+          var vector = new OpenLayers.Layer.Vector();
+          map.addLayer(vector);
+          vector.addFeatures(features);
+          vector.addFeatures(outputs.result);
+          map.zoomToExtent(vector.getDataExtent());
         }
       });
     }
