@@ -500,7 +500,7 @@ wps.ui.prototype.clearSelection = function() {
 
 wps.ui.prototype.nodeMouseUp = function(ui, d) {
   var me = ui;
-  if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 750) {
+  if (me.mousedownNode == d && me.clickElapsed > 0 && me.clickElapsed < 250) {
     me.editor_.showEditDialog(d);
     me.mouseMode = 5; // EDITING
     me.clickElapsed = 0;
