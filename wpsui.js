@@ -33,9 +33,6 @@ wps.editor = function(ui) {
 
 wps.editor.prototype.showEditDialog = function(node) {
   this.editingNode_ = node;
-  if (!this.ui_.values) {
-    this.ui_.values = {};
-  }
   if (!this.ui_.values[node._parent]) {
     this.ui_.values[node._parent] = {};
   }
@@ -132,13 +129,26 @@ wps.ui = function(options) {
   this.createDropTarget();
   this.createZoomToolbar();
   this.editor_ = new wps.editor(this);
+  this.processes = {};
+  this.values = {};
   $('#btn-run-process').click($.proxy(this.execute,null, this));
 };
 
 wps.ui.prototype.execute = function(ui) {
   // TODO get the selected node
-  for (var key in ui.values) {
-    // TODO run the process
+  for (var process in ui.processes) {
+    if (ui.values[process]) {
+      var inputs = {};
+      for (var key in ui.values[process]) {
+        inputs[key] = ui.values[process][key];
+      }
+      ui.processes[process].execute({
+        inputs: inputs,
+        success: function(outputs) {
+          window.console.log(outputs);
+        }
+      });
+    }
   }
 };
 
@@ -273,6 +283,8 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] /= me.scaleFactor;
         /* TODO no workspaces as yet, so z is 0 */
         var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
+        // TODO maybe cache per process type?
+        me.processes[nn.id] = process;
         nn.type = 'process';
         nn.dirty = true;
         nn._info = info;
