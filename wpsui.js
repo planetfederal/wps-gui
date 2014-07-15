@@ -149,15 +149,19 @@ wps.ui.prototype.execute = function(ui) {
       }
       ui.processes[process].execute({
         inputs: inputs,
-        success: function(outputs) {
-          ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
-          var map = new OpenLayers.Map('map', {theme: null});
-          map.addLayer(new OpenLayers.Layer.OSM());
-          var vector = new OpenLayers.Layer.Vector();
-          map.addLayer(vector);
-          vector.addFeatures(features);
-          vector.addFeatures(outputs.result);
-          map.zoomToExtent(vector.getDataExtent());
+        success: function(output) {
+          if ($.isArray(output.result)) {
+            ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
+            var map = new OpenLayers.Map('map', {theme: null});
+            map.addLayer(new OpenLayers.Layer.OSM());
+            var vector = new OpenLayers.Layer.Vector();
+            map.addLayer(vector);
+            vector.addFeatures(features);
+            vector.addFeatures(output.result);
+            map.zoomToExtent(vector.getDataExtent());
+          } else {
+            ui.sideBar_.html(output.result);
+          }
         }
       });
     }
