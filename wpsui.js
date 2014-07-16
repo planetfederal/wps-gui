@@ -160,7 +160,7 @@ wps.ui.prototype.execute = function(ui) {
             vector.addFeatures(output.result);
             map.zoomToExtent(vector.getDataExtent());
           } else {
-            ui.sideBar_.html(output.result);
+            ui.sideBar_.html(String(output.result));
           }
         }
       });
