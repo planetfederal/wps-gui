@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project name="wps-gui">
+    <property name="build" location="build"/>
+    <target name="copy">
+        <copy todir="${build}/${ant.project.name}">
+            <fileset dir="."/>
+        </copy>
+    </target>
+    <target name="war" depends="copy">
+        <property name="warfile" value="wps-gui"/> 
+        <war needxmlfile="false" destfile="build//wps-gui.war">
+            <fileset dir="build/wps-gui"/>
+        </war>
+    </target>
+</project>

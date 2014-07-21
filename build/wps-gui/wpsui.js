@@ -77,10 +77,8 @@ wps.editor.prototype.showEditDialog = function(node) {
 };
 
 wps.client = function(options) {
-  this.context_ = new Jsonix.Context([OWS, WPS]);
-  this.unmarshaller_ = this.context_.createUnmarshaller();
   this.url_ = options.url;
-  //this.format_ = new OpenLayers.Format.WPSCapabilities();
+  this.format_ = new OpenLayers.Format.WPSCapabilities();
   this.client_ = new OpenLayers.WPSClient({
     servers: {
       'wpsgui': this.url_
@@ -89,22 +87,20 @@ wps.client = function(options) {
 };
 
 wps.client.prototype.getGroupedProcesses = function(callback) {
-  //var format = this.format_;
-  var unmarshaller = this.unmarshaller_;
+  var format = this.format_;
   $.ajax(this.url_ + '?service=WPS&request=GetCapabilities&version=1.0.0').
     then(function(response) {
-      var info = unmarshaller.unmarshalDocument(response).value;
+      var info = format.read(response);
       var groups = {};
-      for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
-        var key = info.processOfferings.process[i].identifier.value;
+      for (var key in info.processOfferings) {
         var names = key.split(':');
         var group = names[0];
         if (!groups[group]) {
           groups[group] = [];
         }
-        groups[group].push({name: names[1], value: info.processOfferings.process[i]});
+        groups[group].push(names[1]);
       }
-      callback.call(this, groups);
+      callback.call(this, groups, info);
     });
 };
 
@@ -626,11 +622,10 @@ wps.ui.prototype.createProcessCategory = function(group) {
   return content;
 };
 
-wps.ui.prototype.createProcess = function(process) {
-  var offering = process.value;
-  var summary = offering._abstract.value;
-  var title = offering.title.value;
-  var id = offering.identifier.value;
+wps.ui.prototype.createProcess = function(offering) {
+  var summary = offering['abstract'];
+  var title = offering.title;
+  var id = offering.identifier;
   var d = $('<div class="palette_node ui-draggable">' + id.split(':')[1] + '</div>');
   $(d).data('type', id);
   $(d).popover({

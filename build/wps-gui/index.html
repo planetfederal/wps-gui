@@ -55,15 +55,12 @@
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
     <script src="//code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
     <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
-    <script src="Jsonix-all.js"></script>
-    <script src="mapping/OWS/OWS.js"></script>
-    <script src="mapping/WPS/WPS.js"></script>
     <script src="wpsui.js"></script>
     <script>
         var nodes = [];
         var url = '/geoserver/wps';
         var wpsclient = new wps.client({url: url});
-        wpsclient.getGroupedProcesses(function(groups) {
+        wpsclient.getGroupedProcesses(function(groups, info) {
           var wpsui = new wps.ui({
             client: wpsclient,
             parentContainer: $('.palette-scroll'),
@@ -73,7 +70,8 @@
           for (var group in groups) {
             var content = wpsui.createProcessCategory(group);
             for (var i=0, ii=groups[group].length; i<ii; ++i) {
-              $(content).append(wpsui.createProcess(groups[group][i]));
+              var offering = info.processOfferings[group+':'+groups[group][i]];
+              $(content).append(wpsui.createProcess(offering));
             }
           }
         });
