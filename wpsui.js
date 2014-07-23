@@ -76,35 +76,12 @@ wps.editor.prototype.showEditDialog = function(node) {
   $("#dialog").removeClass('hide');
 };
 
-// keep the same interface, but change implementation
-wps.WPSClient = function(options) {
-  this.servers_ = options.servers;
-  this.unmarshaller_ = options.unmarshaller;
-};
-
-// this only does DescribeProcess for now
-wps.WPSClient.prototype.getProcess = function(key, process, options) {
-  var url = this.servers_[key];
-  url += '?service=WPS&version=1.0.0&request=DescribeProcess&identifier=' + process;
-  var unmarshaller = this.unmarshaller_;
-  $.ajax(url).then(function(response) {
-    var info = unmarshaller.unmarshalDocument(response);
-    options.callback.call(options.scope, info.value);
-  });
-};
-
 wps.client = function(options) {
   this.context_ = new Jsonix.Context([OWS, WPS]);
   this.unmarshaller_ = this.context_.createUnmarshaller();
   this.url_ = options.url;
-  /*this.format_ = new OpenLayers.Format.WPSCapabilities();
+  //this.format_ = new OpenLayers.Format.WPSCapabilities();
   this.client_ = new OpenLayers.WPSClient({
-    servers: {
-      'wpsgui': this.url_
-    }
-  });*/
-  this.client_ = new wps.WPSClient({
-    unmarshaller: this.unmarshaller_,
     servers: {
       'wpsgui': this.url_
     }
@@ -331,22 +308,22 @@ wps.ui.prototype.createDropTarget = function() {
         nn.type = 'process';
         nn.dirty = true;
         nn._info = info;
-        nn.inputs = info.processDescription[0].dataInputs.input.length;
-        nn.outputs = info.processDescription[0].processOutputs.output.length;
+        nn.inputs = info.dataInputs.length;
+        nn.outputs = info.processOutputs.length;
         // TODO make dynamic
         nn._def = {
           color: "rgb(231, 231, 74)",
           label: selected_tool
         };
-        var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
-        for (i=0, ii=nn.inputs; i<ii; ++i) {
+        var link, i, ii, delta = 50, span = delta * info.dataInputs.length, deltaY = (span-delta)/2;
+        for (i=0, ii=info.dataInputs.length; i<ii; ++i) {
           var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
           deltaY -= delta;
           input.outputs = 1;
           input._parent = nn.id;
           input.dirty = true;
           input.type = 'input';
-          input._info = info.processDescription[0].dataInputs.input[i];
+          input._info = info.dataInputs[i];
           var color;
           if (input._info.minOccurs === 0 && input._info.maxOccurs === 1) {
             color = 'orange';
@@ -355,7 +332,7 @@ wps.ui.prototype.createDropTarget = function() {
           }
           input._def = {
             color: color,
-            label: info.processDescription[0].dataInputs.input[i].title.value
+            label: info.dataInputs[i].title
           };
           me.nodes.push(input);
           // create a link as well between input and process
@@ -365,16 +342,16 @@ wps.ui.prototype.createDropTarget = function() {
           };
           me.nodes.push(link);
         }
-        for (i=0, ii=nn.outputs; i<ii; ++i) {
+        for (i=0, ii=info.processOutputs.length; i<ii; ++i) {
           var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
           output.inputs = 1;
           output.dirty = true;
           output.type = 'output';
           output._parent = nn.id;
-          output._info = info.processDescription[0].processOutputs.output[i];
+          output._info = info.processOutputs[i];
           output._def = { 
             color: "rgb(0, 255, 0)",
-            label: info.processDescription[0].processOutputs.output[i].title.value
+            label: info.processOutputs[i].title
           };
           me.nodes.push(output);
           // create a link as well between process and output
