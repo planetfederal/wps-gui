@@ -251,6 +251,7 @@ wps.process.chainlink = function(options) {
 wps.client = function(options) {
   this.version = options.version || "1.0.0";
   this.lazy = options.lazy !== undefined ? options.lazy : false;
+  this.servers = {};
   for (var s in options.servers) {
     this.servers[s] = typeof options.servers[s] == 'string' ? {
       url: options.servers[s],
@@ -288,7 +289,7 @@ wps.client.prototype.describeProcess = function(serverID, processID, callback, s
       // set to null so we know a describeFeature request is pending
       server.processDescription[processID] = null;
       var xmlhttp = new XMLHttpRequest();
-      var url = server.url + 'service=WPS&VERSION=' + server.version + '&request=DescribeProcess&identifier=' + processID;
+      var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=DescribeProcess&identifier=' + processID;
       xmlhttp.open("GET", url, true);
       var me = this;
       xmlhttp.onload = function() {

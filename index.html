@@ -63,7 +63,7 @@
     <script>
         var nodes = [];
         var url = '/geoserver/wps';
-        var wpsclient = new wps.client({url: url});
+        var wpsclient = new wps.client2({url: url});
         wpsclient.getGroupedProcesses(function(groups) {
           var wpsui = new wps.ui({
             client: wpsclient,

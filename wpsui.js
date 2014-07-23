@@ -76,19 +76,19 @@ wps.editor.prototype.showEditDialog = function(node) {
   $("#dialog").removeClass('hide');
 };
 
-wps.client = function(options) {
+wps.client2 = function(options) {
   this.context_ = new Jsonix.Context([OWS, WPS]);
   this.unmarshaller_ = this.context_.createUnmarshaller();
   this.url_ = options.url;
   //this.format_ = new OpenLayers.Format.WPSCapabilities();
-  this.client_ = new OpenLayers.WPSClient({
+  this.client_ = new wps.client({
     servers: {
       'wpsgui': this.url_
     }
   });
 };
 
-wps.client.prototype.getGroupedProcesses = function(callback) {
+wps.client2.prototype.getGroupedProcesses = function(callback) {
   //var format = this.format_;
   var unmarshaller = this.unmarshaller_;
   $.ajax(this.url_ + '?service=WPS&request=GetCapabilities&version=1.0.0').
