@@ -76,38 +76,6 @@ wps.editor.prototype.showEditDialog = function(node) {
   $("#dialog").removeClass('hide');
 };
 
-wps.client2 = function(options) {
-  this.context_ = new Jsonix.Context([OWS, WPS]);
-  this.unmarshaller_ = this.context_.createUnmarshaller();
-  this.url_ = options.url;
-  //this.format_ = new OpenLayers.Format.WPSCapabilities();
-  this.client_ = new wps.client({
-    servers: {
-      'wpsgui': this.url_
-    }
-  });
-};
-
-wps.client2.prototype.getGroupedProcesses = function(callback) {
-  //var format = this.format_;
-  var unmarshaller = this.unmarshaller_;
-  $.ajax(this.url_ + '?service=WPS&request=GetCapabilities&version=1.0.0').
-    then(function(response) {
-      var info = unmarshaller.unmarshalDocument(response).value;
-      var groups = {};
-      for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
-        var key = info.processOfferings.process[i].identifier.value;
-        var names = key.split(':');
-        var group = names[0];
-        if (!groups[group]) {
-          groups[group] = [];
-        }
-        groups[group].push({name: names[1], value: info.processOfferings.process[i]});
-      }
-      callback.call(this, groups);
-    });
-};
-
 wps.ui = function(options) {
   this.parentContainer_ = options.parentContainer;
   this.sideBar_ = options.sideBar;
@@ -295,7 +263,7 @@ wps.ui.prototype.createDropTarget = function() {
     drop: function( event, ui ) {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
-      var process = me.client_.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
+      var process = me.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;

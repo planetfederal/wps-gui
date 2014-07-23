@@ -249,6 +249,8 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
+  this.context = new Jsonix.Context([OWS, WPS]);
+  this.unmarshaller = this.context.createUnmarshaller();
   this.version = options.version || "1.0.0";
   this.lazy = options.lazy !== undefined ? options.lazy : false;
   this.servers = {};
@@ -280,6 +282,29 @@ wps.client.prototype.getProcess = function(serverID, processID, options) {
     process.describe(options);
   }
   return process;
+};
+
+wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
+  var server = this.servers[serverID];
+  var xmlhttp = new XMLHttpRequest();
+  var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=GetCapabilities';
+  var me = this;
+  xmlhttp.open("GET", url, true);
+  xmlhttp.onload = function() {
+    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+    var groups = {};
+    for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
+      var key = info.processOfferings.process[i].identifier.value;
+      var names = key.split(':');
+      var group = names[0];
+      if (!groups[group]) {
+        groups[group] = [];
+      }
+      groups[group].push({name: names[1], value: info.processOfferings.process[i]});
+    }
+    callback.call(me, groups);
+  };
+  xmlhttp.send();
 };
 
 wps.client.prototype.describeProcess = function(serverID, processID, callback, scope) {
