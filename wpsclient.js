@@ -126,9 +126,8 @@ wps.process.prototype.output = function(identifier) {
 
 wps.process.prototype.parseDescription = function(description) {
   var server = this.client.servers[this.server];
-  this.description = new OpenLayers.Format.WPSDescribeProcess().
-    read(server.processDescription[this.identifier]).
-    processDescriptions[this.identifier];
+  this.description = this.client.unmarshaller.unmarshalString(
+    server.processDescription[this.identifier]).value.processDescription[0];
 };
 
 wps.process.prototype.setInputData = function(input, data) {
