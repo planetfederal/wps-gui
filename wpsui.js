@@ -14,11 +14,12 @@ wps.editor = function(ui) {
     buttons: [{
       text: "Ok",
       click: function() {
+        var name = me.editingNode_._info.identifier.value;
         var processId = me.editingNode_._parent;
-        var formField = $('#node-input-' + me.editingNode_._info.identifier);
+        var formField = $('#node-input-' + name);
         if (formField.length > 0) {
-          var value = $('#node-input-' + me.editingNode_._info.identifier).val();
-          me.ui_.values[processId][me.editingNode_._info.identifier] = value;
+          var value = $('#node-input-' + name).val();
+          me.ui_.values[processId][name] = value;
         }
         $(this).dialog("close");
       }
@@ -39,8 +40,8 @@ wps.editor.prototype.showEditDialog = function(node) {
   var html = '<form id="dialog-form" class="form-horizontal">';
   var hasMap = false;
   // simple input
+  var name = node._info.identifier.value;
   if (node._info.literalData) {
-    var name = node._info.identifier;
     html += '<div class="form-row">';
     html += '<label for="node-input-' + name + '">' + name + '</label>';
     if (node._info.literalData.allowedValues) {
@@ -66,7 +67,7 @@ wps.editor.prototype.showEditDialog = function(node) {
     map.addLayer(vector);
     var draw = new OpenLayers.Control.DrawFeature(vector, OpenLayers.Handler.Polygon, {autoActivate: true});
     draw.events.on({'featureadded': function(evt) {
-      this.ui_.values[node._parent][node._info.identifier] = evt.feature;
+      this.ui_.values[node._parent][name] = evt.feature;
     }, scope: this});
     map.addControl(draw);
     map.zoomToMaxExtent();

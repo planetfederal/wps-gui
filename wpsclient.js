@@ -44,15 +44,29 @@ wps.process.prototype.describe = function(options) {
 wps.process.prototype.configure = function(options) {
   this.describe({
     callback: function() {
+      var info = { 
+        name: { 
+          localPart: "Execute",
+          namespaceURI: "http://www.opengis.net/wps/1.0.0"
+        },
+        value: { 
+          identifier: { 
+            value: this.description.identifier.value
+          },
+          dataInputs: {
+            input: []
+          }
+        }
+      };
       var description = this.description,
         inputs = options.inputs,
         input, i, ii;
-      for (i=0, ii=description.dataInputs.length; i<ii; ++i) {
-        input = description.dataInputs[i];
-        this.setInputData(input, inputs[input.identifier]);
+      for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
+        input = description.dataInputs.input[i];
+        this.setInputData(info.value.dataInputs.input, input, inputs[input.identifier.value]);
       }
       if (options.callback) {
-        options.callback.call(options.scope);
+        options.callback.call(options.scope, info);
       }
     },
     scope: this
@@ -63,12 +77,12 @@ wps.process.prototype.configure = function(options) {
 wps.process.prototype.execute = function(options) {
   this.configure({
     inputs: options.inputs,
-    callback: function() {
+    callback: function(info) {
       var me = this;
       //TODO For now we only deal with a single output
       var outputIndex = this.getOutputIndex(
-        me.description.processOutputs, options.output);
-      me.setResponseForm({outputIndex: outputIndex});
+        me.description.processOutputs.output, options.output);
+      me.setResponseForm(info, {outputIndex: outputIndex});
       (function callback() {
         var idx = me.executeCallbacks.indexOf(callback);
         if (idx > -1) {
@@ -86,7 +100,7 @@ wps.process.prototype.execute = function(options) {
         xmlhttp.open('POST', me.client.servers[me.server].url, true);
         xmlhttp.setRequestHeader('Content-type', 'application/xml');
         xmlhttp.onload = function() {
-          var output = me.description.processOutputs[outputIndex]; 
+          var output = me.description.processOutputs.output[outputIndex]; 
           var result;
           if (output.literalOutput) {
             if (output.literalOutput.dataType === "boolean") {
@@ -97,7 +111,7 @@ wps.process.prototype.execute = function(options) {
               result = this.responseText;
             }
           } else if (output.complexOutput) {
-            var mimeType = me.findMimeType(output.complexOutput.supported.formats);
+            var mimeType = me.findMimeType(output.complexOutput.supported.format);
             //TODO For now we assume a spatial output if complexOutput
             result = me.formats[mimeType].read(this.responseText);
             if (result instanceof OpenLayers.Feature.Vector) {
@@ -110,7 +124,7 @@ wps.process.prototype.execute = function(options) {
             options.success.call(options.scope, outputs);
           }
         };
-        xmlhttp.send(new OpenLayers.Format.WPSExecute().write(me.description));
+        xmlhttp.send(me.client.marshaller.marshalString(info));
       })();
     },
     scope: this
@@ -130,10 +144,7 @@ wps.process.prototype.parseDescription = function(description) {
     server.processDescription[this.identifier]).value.processDescription[0];
 };
 
-wps.process.prototype.setInputData = function(input, data) {
-  // clear any previous data
-  delete input.data;
-  delete input.reference;
+wps.process.prototype.setInputData = function(inputs, input, data) {
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
     input.reference = {
@@ -149,32 +160,47 @@ wps.process.prototype.setInputData = function(input, data) {
       scope: this
     });
   } else {
-    input.data = {};
     var complexData = input.complexData;
     if (complexData) {
-      var format = this.findMimeType(complexData.supported.formats);
-      input.data.complexData = {
-        mimeType: format,
-        value: this.formats[format].write(this.toFeatures(data))
-      };
+      var format = this.findMimeType(complexData.supported.format);
+      inputs.push({
+        identifier: {
+          value: input.identifier.value
+        },
+        data: {
+          complexData: {
+            mimeType: format,
+            any: [this.formats[format].write(this.toFeatures(data))]
+          }
+        }
+      });
     } else {
-      input.data.literalData = {
-        value: data
-      };
+      inputs.push({
+        identifier: {
+          value: input.identifier.value
+        },
+        data: {
+          literalData: {
+            value: data
+          }
+        }
+      });
     }
   }
 };
 
-wps.process.prototype.setResponseForm = function(options) {
+wps.process.prototype.setResponseForm = function(info, options) {
   options = options || {};
-  var output = this.description.processOutputs[options.outputIndex || 0];
+  var output = this.description.processOutputs.output[options.outputIndex || 0];
   var mimeType;
   if (output.complexOutput) {
-    mimeType = this.findMimeType(output.complexOutput.supported.formats, options.supportedFormats);
+    mimeType = this.findMimeType(output.complexOutput.supported.format, options.supportedFormats);
   }
-  this.description.responseForm = {
+  info.value.responseForm = {
     rawDataOutput: {
-      identifier: output.identifier,
+      identifier: {
+        value: output.identifier.value
+      },
       mimeType: mimeType
     }
   };
@@ -184,7 +210,7 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
   var output;
   if (identifier) {
     for (var i=outputs.length-1; i>=0; --i) {
-      if (outputs[i].identifier === identifier) {
+      if (outputs[i].identifier.value === identifier) {
         output = i;
         break;
       }
@@ -197,10 +223,10 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
 
 wps.process.prototype.chainProcess = function(input, chainLink) {
   var output = this.getOutputIndex(
-    chainLink.process.description.processOutputs, chainLink.output);
+    chainLink.process.description.processOutputs.output, chainLink.output);
   input.reference.mimeType = this.findMimeType(
-    input.complexData.supported.formats,
-    chainLink.process.description.processOutputs[output].complexOutput.supported.formats);
+    input.complexData.supported.format,
+    chainLink.process.description.processOutputs[output].complexOutput.supported.format);
   var formats = {};
   formats[input.reference.mimeType] = true;
   chainLink.process.setResponseForm({
@@ -229,7 +255,8 @@ wps.process.prototype.toFeatures = function(source) {
 
 wps.process.prototype.findMimeType = function(sourceFormats, targetFormats) {
   targetFormats = targetFormats || this.formats;
-  for (var f in sourceFormats) {
+  for (var i=0, ii=sourceFormats.length; i<ii; ++i) {
+    var f = sourceFormats[i].mimeType;
     if (f in targetFormats) {
       return f;
     }
@@ -250,6 +277,7 @@ wps.process.chainlink = function(options) {
 wps.client = function(options) {
   this.context = new Jsonix.Context([OWS, WPS]);
   this.unmarshaller = this.context.createUnmarshaller();
+  this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
   this.lazy = options.lazy !== undefined ? options.lazy : false;
   this.servers = {};
