@@ -48,11 +48,17 @@ wps.editor.prototype.showEditDialog = function(node) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       for (var i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
-        html += '<option value="'+key+'">'+key+'</option>';
+        if (this.ui_.values[node._parent][name] === key) {
+          html += '<option selected value="'+key+'">'+key+'</option>';
+        } else {
+          html += '<option value="'+key+'">'+key+'</option>';
+        }
       }
       html += '</select>';
     } else {
-      html += '<input type="text" id="node-input-' + name + '">';
+      var value = this.ui_.values[node._parent][name];
+      value = (value === undefined) ? '' : value;
+      html += '<input type="text" id="node-input-' + name + '" value="' + value + '">';
     }
     html += '</div>';
   } else if (node._info.complexData) {
@@ -62,32 +68,43 @@ wps.editor.prototype.showEditDialog = function(node) {
   html += '</form>';
   $("#dialog-form").html(html);
   if (hasMap === true) {
-    var source = new ol.source.Vector();
-    var vector = new ol.layer.Vector({source: source});
-    var map = new ol.Map({
-      target: 'map',
-      layers: [
-        new ol.layer.Tile({
-          source: new ol.source.OSM()
-        }),
-        vector
-      ],
-      view: new ol.View({
-        center: [0, 0],
-        zoom: 1
-      })
-    });
-    var draw = new ol.interaction.Draw({
-      source: source,
-      type: 'Polygon'
-    });
-    map.addInteraction(draw);
-    draw.on('drawend', function(evt) {
-      this.ui_.values[node._parent][name] = evt.feature;
-    }, this);
-    window.setTimeout(function() {
-      map.updateSize();
-    }, 0);
+    var map;
+    if (!this.ui_.inputMaps[name]) {
+      this.ui_.inputMaps[name] = {};
+      this.ui_.inputMaps[name].source = new ol.source.Vector();
+      this.ui_.inputMaps[name].vector = new ol.layer.Vector({source: this.ui_.inputMaps[name].source});
+      this.ui_.inputMaps[name].map = new ol.Map({
+        target: 'map',
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.OSM()
+          }),
+          this.ui_.inputMaps[name].vector
+        ],
+        view: new ol.View({
+          center: [0, 0],
+          zoom: 1
+        })
+      });
+      this.ui_.inputMaps[name].draw = new ol.interaction.Draw({
+        source: this.ui_.inputMaps[name].source,
+        type: 'Polygon'
+      });
+      this.ui_.inputMaps[name].map.addInteraction(this.ui_.inputMaps[name].draw);
+      this.ui_.inputMaps[name].draw.on('drawend', function(evt) {
+        this.ui_.values[node._parent][name] = evt.feature;
+      }, this);
+      map = this.ui_.inputMaps[name].map;
+      window.setTimeout(function() {
+        map.updateSize();
+      }, 0);
+    } else {
+      map = this.ui_.inputMaps[name].map;
+      map.set('target', 'map');
+      window.setTimeout(function() {
+        map.updateSize();
+      }, 0);
+    }
   }
   $("#dialog").dialog("option", "title", "Edit node").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
@@ -121,6 +138,7 @@ wps.ui = function(options) {
   this.editor_ = new wps.editor(this);
   this.processes = {};
   this.values = {};
+  this.inputMaps = {};
   $('#btn-run-process').click($.proxy(this.execute,null, this));
 };
 
