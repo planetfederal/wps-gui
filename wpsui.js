@@ -61,16 +61,32 @@ wps.editor.prototype.showEditDialog = function(node) {
   html += '</form>';
   $("#dialog-form").html(html);
   if (hasMap === true) {
-    var map = new OpenLayers.Map('map', {theme: null});
-    map.addLayer(new OpenLayers.Layer.OSM());
-    var vector = new OpenLayers.Layer.Vector();
-    map.addLayer(vector);
-    var draw = new OpenLayers.Control.DrawFeature(vector, OpenLayers.Handler.Polygon, {autoActivate: true});
-    draw.events.on({'featureadded': function(evt) {
+    var source = new ol.source.Vector();
+    var vector = new ol.layer.Vector({source: source});
+    var map = new ol.Map({
+      target: 'map',
+      layers: [
+        new ol.layer.Tile({
+          source: new ol.source.OSM()
+        }),
+        vector
+      ],
+      view: new ol.View({
+        center: [0, 0],
+        zoom: 1
+      })
+    });
+    var draw = new ol.interaction.Draw({
+      source: source,
+      type: 'Polygon'
+    });
+    map.addInteraction(draw);
+    draw.on('drawend', function(evt) {
       this.ui_.values[node._parent][name] = evt.feature;
-    }, scope: this});
-    map.addControl(draw);
-    map.zoomToMaxExtent();
+    }, this);
+    window.setTimeout(function() {
+      map.updateSize();
+    }, 0);
   }
   $("#dialog").dialog("option", "title", "Edit node").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
@@ -115,8 +131,8 @@ wps.ui.prototype.execute = function(ui) {
       var inputs = {};
       for (var key in ui.values[process]) {
         inputs[key] = ui.values[process][key];
-        if (ui.values[process][key] instanceof OpenLayers.Feature.Vector) {
-          ui.values[process][key].style = {fillOpacity: 0, strokeColor: 'red'};
+        if (ui.values[process][key] instanceof ol.Feature) {
+          // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
           features.push(ui.values[process][key]);
         }
       }
@@ -125,13 +141,26 @@ wps.ui.prototype.execute = function(ui) {
         success: function(output) {
           if ($.isArray(output.result)) {
             ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
-            var map = new OpenLayers.Map('map', {theme: null});
-            map.addLayer(new OpenLayers.Layer.OSM());
-            var vector = new OpenLayers.Layer.Vector();
-            map.addLayer(vector);
-            vector.addFeatures(features);
-            vector.addFeatures(output.result);
-            map.zoomToExtent(vector.getDataExtent());
+            var source = new ol.source.Vector();
+            var vector = new ol.layer.Vector({source: source});
+            var map = new ol.Map({
+              target: 'map',
+              layers: [
+                new ol.layer.Tile({
+                  source: new ol.source.OSM()
+                }),
+                vector
+              ],
+              view: new ol.View({
+                center: [0, 0],
+                zoom: 1
+              })
+            });
+            source.addFeatures(features);
+            source.addFeatures(output.result);
+            var view = map.getView();
+            view.fitExtent(
+              source.getExtent(), map.getSize());
           } else {
             ui.sideBar_.html(String(output.result));
           }

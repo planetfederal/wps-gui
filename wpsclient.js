@@ -17,8 +17,8 @@ wps.process = function(options) {
   }
   this.executeCallbacks = [];
   this.formats = {
-    'application/wkt': new OpenLayers.Format.WKT(),
-    'application/json': new OpenLayers.Format.GeoJSON()
+    'application/wkt': new ol.format.WKT(),
+    'application/json': new ol.format.GeoJSON()
   };
 };
 
@@ -113,10 +113,7 @@ wps.process.prototype.execute = function(options) {
           } else if (output.complexOutput) {
             var mimeType = me.findMimeType(output.complexOutput.supported.format);
             //TODO For now we assume a spatial output if complexOutput
-            result = me.formats[mimeType].read(this.responseText);
-            if (result instanceof OpenLayers.Feature.Vector) {
-              result = [result];
-            }
+            result = me.formats[mimeType].readFeatures(this.responseText);
           }
           if (options.success) {
             var outputs = {};
@@ -170,7 +167,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
         data: {
           complexData: {
             mimeType: format,
-            any: [this.formats[format].write(this.toFeatures(data))]
+            any: [this.formats[format].writeFeatures(this.toFeatures(data))]
           }
         }
       });
@@ -244,13 +241,7 @@ wps.process.prototype.toFeatures = function(source) {
   if (!isArray) {
     source = [source];
   }
-  var target = new Array(source.length), current;
-  for (var i=0, ii=source.length; i<ii; ++i) {
-    current = source[i];
-    target[i] = current instanceof OpenLayers.Feature.Vector ?
-      current : new OpenLayers.Feature.Vector(current);
-  }
-  return isArray ? target : target[0];
+  return source;
 };
 
 wps.process.prototype.findMimeType = function(sourceFormats, targetFormats) {
