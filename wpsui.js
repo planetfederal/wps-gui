@@ -91,8 +91,8 @@ wps.editor.prototype.showEditDialog = function(node) {
         type: 'Polygon'
       });
       this.ui_.inputMaps[name].map.addInteraction(this.ui_.inputMaps[name].draw);
-      this.ui_.inputMaps[name].draw.on('drawend', function(evt) {
-        this.ui_.values[node._parent][name] = evt.feature;
+      this.ui_.inputMaps[name].source.on('change', function(evt) {
+        this.ui_.values[node._parent][name] = this.ui_.inputMaps[name].source.getFeatures();
       }, this);
       map = this.ui_.inputMaps[name].map;
       window.setTimeout(function() {
