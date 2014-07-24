@@ -46,7 +46,8 @@ wps.editor.prototype.showEditDialog = function(node) {
     html += '<label for="node-input-' + name + '">' + name + '</label>';
     if (node._info.literalData.allowedValues) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
-      for (var key in node._info.literalData.allowedValues) {
+      for (var i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
+        var key = node._info.literalData.allowedValues.valueOrRange[i].value;
         html += '<option value="'+key+'">'+key+'</option>';
       }
       html += '</select>';
