@@ -183,46 +183,56 @@ wps.ui = function(options) {
 };
 
 wps.ui.prototype.execute = function(ui) {
-  // TODO get the selected node
-  for (var process in ui.processes) {
-    if (ui.values[process]) {
-      var features = [];
-      var inputs = {};
-      for (var key in ui.values[process]) {
-        inputs[key] = ui.values[process][key];
-      }
-      ui.processes[process].execute({
-        inputs: inputs,
-        success: function(output) {
-          if ($.isArray(output.result)) {
-            ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
-            var source = new ol.source.Vector();
-            var vector = new ol.layer.Vector({source: source});
-            var map = new ol.Map({
-              target: 'map',
-              layers: [
-                new ol.layer.Tile({
-                  source: new ol.source.OSM()
-                }),
-                vector
-              ],
-              view: new ol.View({
-                center: [0, 0],
-                zoom: 1
-              })
-            });
-            // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
-            source.addFeatures(ui.values[process][key]);
-            source.addFeatures(output.result);
-            var view = map.getView();
-            view.fitExtent(
-              source.getExtent(), map.getSize());
-          } else {
-            ui.sideBar_.html(String(output.result));
-          }
+  var hasSelected = false;
+  var selection = d3.selectAll(".node_selected");
+  if (selection[0].length > 0) {
+    var node = selection.datum();
+    if (node.type === 'process') {
+      hasSelected = true;
+      var process = node.id;
+      if (ui.values[process]) {
+        var features = [];
+        var inputs = {};
+        for (var key in ui.values[process]) {
+          inputs[key] = ui.values[process][key];
         }
-      });
+        ui.processes[process].execute({
+          inputs: inputs,
+          success: function(output) {
+            if ($.isArray(output.result)) {
+              ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
+              var source = new ol.source.Vector();
+              var vector = new ol.layer.Vector({source: source});
+              var map = new ol.Map({
+                target: 'map',
+                layers: [
+                  new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                  }),
+                  vector
+                ],
+                view: new ol.View({
+                  center: [0, 0],
+                  zoom: 1
+                })
+              });
+              // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
+              source.addFeatures(ui.values[process][key]);
+              source.addFeatures(output.result);
+              var view = map.getView();
+              view.fitExtent(
+                source.getExtent(), map.getSize());
+            } else {
+              ui.sideBar_.html(String(output.result));
+            }
+          }
+        });
+      }
     }
+  }
+  if (!hasSelected) {
+    // TODO replace with proper dialog
+    alert('Please select a process node you want to execute');
   }
 };
 
