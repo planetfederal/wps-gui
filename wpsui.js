@@ -585,8 +585,8 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
     me.clearSelection();
   }
   me.mousedownNode.selected = true;
-  var help = me.mousedownNode._info['abstract'] ?
-    '<div class="node-help">' + me.mousedownNode._info['abstract'] + "</div>" : '';
+  var help = me.mousedownNode._info._abstract ?
+    '<div class="node-help">' + me.mousedownNode._info._abstract.value + "</div>" : '';
   me.sideBar_.html(help);
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
