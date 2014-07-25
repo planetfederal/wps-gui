@@ -108,38 +108,38 @@ wps.editor.prototype.showEditDialog = function(node) {
     this.attachPropertyChangeHandler(this, name, node);
   } else {
     var map;
-    if (!this.ui_.inputMaps[name]) {
-      this.ui_.inputMaps[name] = {};
-      this.ui_.inputMaps[name].source = new ol.source.Vector();
-      this.ui_.inputMaps[name].vector = new ol.layer.Vector({source: this.ui_.inputMaps[name].source});
-      this.ui_.inputMaps[name].map = new ol.Map({
+    if (!this.ui_.inputMaps[node.id]) {
+      this.ui_.inputMaps[node.id] = {};
+      this.ui_.inputMaps[node.id].source = new ol.source.Vector();
+      this.ui_.inputMaps[node.id].vector = new ol.layer.Vector({source: this.ui_.inputMaps[node.id].source});
+      this.ui_.inputMaps[node.id].map = new ol.Map({
         target: 'map',
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
           }),
-          this.ui_.inputMaps[name].vector
+          this.ui_.inputMaps[node.id].vector
         ],
         view: new ol.View({
           center: [0, 0],
           zoom: 1
         })
       });
-      this.ui_.inputMaps[name].draw = new ol.interaction.Draw({
-        source: this.ui_.inputMaps[name].source,
+      this.ui_.inputMaps[node.id].draw = new ol.interaction.Draw({
+        source: this.ui_.inputMaps[node.id].source,
         type: 'Polygon'
       });
-      this.ui_.inputMaps[name].map.addInteraction(this.ui_.inputMaps[name].draw);
-      this.ui_.inputMaps[name].source.on('change', function(evt) {
-        this.ui_.values[node._parent][name] = this.ui_.inputMaps[name].source.getFeatures();
+      this.ui_.inputMaps[node.id].map.addInteraction(this.ui_.inputMaps[node.id].draw);
+      this.ui_.inputMaps[node.id].source.on('change', function(evt) {
+        this.ui_.values[node._parent][name] = this.ui_.inputMaps[node.id].source.getFeatures();
         node.valid = this.ui_.values[node._parent][name].length >= 1;
       }, this);
-      map = this.ui_.inputMaps[name].map;
+      map = this.ui_.inputMaps[node.id].map;
       window.setTimeout(function() {
         map.updateSize();
       }, 0);
     } else {
-      map = this.ui_.inputMaps[name].map;
+      map = this.ui_.inputMaps[node.id].map;
       map.set('target', 'map');
       window.setTimeout(function() {
         map.updateSize();
