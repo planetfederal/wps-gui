@@ -190,10 +190,6 @@ wps.ui.prototype.execute = function(ui) {
       var inputs = {};
       for (var key in ui.values[process]) {
         inputs[key] = ui.values[process][key];
-        if (ui.values[process][key] instanceof ol.Feature) {
-          // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
-          features.push(ui.values[process][key]);
-        }
       }
       ui.processes[process].execute({
         inputs: inputs,
@@ -215,7 +211,8 @@ wps.ui.prototype.execute = function(ui) {
                 zoom: 1
               })
             });
-            source.addFeatures(features);
+            // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
+            source.addFeatures(ui.values[process][key]);
             source.addFeatures(output.result);
             var view = map.getView();
             view.fitExtent(
