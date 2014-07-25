@@ -14,14 +14,16 @@ wps.editor = function(ui) {
     buttons: [{
       text: "Ok",
       click: function() {
-        var name = me.editingNode_._info.identifier.value;
-        var processId = me.editingNode_._parent;
-        var formField = $('#node-input-' + name);
-        if (formField.length > 0) {
-          var value = $('#node-input-' + name).val();
-          me.ui_.values[processId][name] = value;
+        if (me.editingNode_.valid) {
+          var name = me.editingNode_._info.identifier.value;
+          var processId = me.editingNode_._parent;
+          var formField = $('#node-input-' + name);
+          if (formField.length > 0) {
+            var value = $('#node-input-' + name).val();
+            me.ui_.values[processId][name] = value;
+          }
+          $(this).dialog("close");
         }
-        $(this).dialog("close");
       }
     }, {
       text: "Cancel",
@@ -30,6 +32,24 @@ wps.editor = function(ui) {
       }
     }]
   });
+};
+
+wps.editor.prototype.attachPropertyChangeHandler = function(editor, name, node) {
+  $('#' + 'node-input-' + name).change(function() {
+    node.valid = editor.validateNodeProperty(node._info, this.value);
+    if (!node.valid) {
+      $(this).addClass("input-error");
+    } else {
+      $(this).removeClass("input-error");
+    }
+  });
+};
+
+wps.editor.prototype.validateNodeProperty = function(info, value) {
+  var dataType = info.literalData.dataType.value;
+  if (dataType === 'xs:double') {
+    return (!isNaN(parseFloat(value)));
+  }
 };
 
 wps.editor.prototype.showEditDialog = function(node) {
@@ -67,7 +87,9 @@ wps.editor.prototype.showEditDialog = function(node) {
   }
   html += '</form>';
   $("#dialog-form").html(html);
-  if (hasMap === true) {
+  if (hasMap === false) {
+    this.attachPropertyChangeHandler(this, name, node);
+  } else {
     var map;
     if (!this.ui_.inputMaps[name]) {
       this.ui_.inputMaps[name] = {};
