@@ -18,8 +18,15 @@ wps.editor = function(ui) {
           var name = me.editingNode_._info.identifier.value;
           var processId = me.editingNode_._parent;
           var formField = $('#node-input-' + name);
+          var value;
           if (formField.length > 0) {
-            var value = $('#node-input-' + name).val();
+            if (me.editingNode_._info.literalData &&
+                me.editingNode_._info.literalData.dataType &&
+                me.editingNode_._info.literalData.dataType.value === 'xs:boolean') {
+              value = formField.is(':checked');
+            } else {
+              value = $('#node-input-' + name).val();
+            }
             me.ui_.values[processId][name] = value;
           }
           $(this).dialog("close");
@@ -49,6 +56,10 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
   var dataType = info.literalData.dataType.value;
   if (dataType === 'xs:double') {
     return (!isNaN(parseFloat(value)));
+  } else if (dataType === 'xs:int') {
+    return Math.floor(value) == value;
+  } else {
+    return true;
   }
 };
 
@@ -75,6 +86,12 @@ wps.editor.prototype.showEditDialog = function(node) {
         }
       }
       html += '</select>';
+    } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
+      if (this.ui_.values[node._parent][name] === true) {
+        html += '<input type="checkbox" id="node-input-' + name + '" checked>';
+      } else {
+        html += '<input type="checkbox" id="node-input-' + name + '">';
+      }
     } else {
       var value = this.ui_.values[node._parent][name];
       value = (value === undefined) ? '' : value;
