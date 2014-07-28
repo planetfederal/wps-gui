@@ -1,0 +1,26 @@
+{
+  "exports": ["ol.Feature", "ol.View", "ol.View#fitExtent", "ol.Map", "ol.Map#getSize", "ol.Map#updateSize", "ol.Map#addInteraction", "ol.source.Vector", "ol.source.Vector#getExtent", "ol.source.Vector#addFeatures", "ol.source.Vector#on", "ol.source.Vector#getFeatures",  "ol.layer.Vector", "ol.layer.Tile", "ol.source.OSM", "ol.interaction.Draw", "ol.format.WKT", "ol.format.GeoJSON", "ol.format.WKT#writeFeatures", "ol.format.WKT#readFeatures"],
+  "compile": {
+    "externs": [
+      "externs/bingmaps.js",
+      "externs/geojson.js",
+      "externs/oli.js",
+      "externs/olx.js",
+      "externs/proj4js.js",
+      "externs/tilejson.js",
+      "externs/topojson.js",
+      "externs/vbarray.js"
+    ],
+    "define": [
+      "goog.dom.ASSUME_STANDARDS_MODE=true",
+      "goog.DEBUG=false",
+      "ol.ENABLE_DOM=false",
+      "ol.ENABLE_WEBGL=false",
+      "ol.ENABLE_PROJ4JS=false"
+    ],
+    "compilation_level": "ADVANCED_OPTIMIZATIONS",
+    "output_wrapper": "(function(){%output%})();",
+    "use_types_for_optimization": true,
+    "manage_closure_dependencies": true
+  }
+}
