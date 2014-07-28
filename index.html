@@ -69,8 +69,9 @@
             'wpsgui': url
           }
         });
+        var wpsui;
         wpsclient.getGroupedProcesses('wpsgui', function(groups) {
-          var wpsui = new wps.ui({
+          wpsui = new wps.ui({
             client: wpsclient,
             parentContainer: $('.palette-scroll'),
             sideBar: $("#sidebar-content"),

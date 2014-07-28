@@ -180,6 +180,13 @@ wps.ui = function(options) {
   this.values = {};
   this.inputMaps = {};
   $('#btn-run-process').click($.proxy(this.execute,null, this));
+  var me = this;
+  d3.select(window).on("keydown",function() {
+    if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
+      d3.event.preventDefault();
+      me.deleteSelection();
+    }
+  });
 };
 
 wps.ui.prototype.execute = function(ui) {
@@ -234,6 +241,20 @@ wps.ui.prototype.execute = function(ui) {
     // TODO replace with proper dialog
     alert('Please select a process node you want to execute');
   }
+};
+
+wps.ui.prototype.deleteSelection = function() {
+  var selection = d3.selectAll(".node_selected");
+  if (selection[0].length > 0) {
+    var node = selection.datum();
+    this.nodes.splice(this.nodes.indexOf(node), 1);
+    for (var i=this.nodes.length-1; i>=0; --i) {
+      if (this.nodes[i]._parent === node.id) {
+        this.nodes.splice(i, 1);
+      }
+    }
+  }
+  this.redraw();
 };
 
 wps.ui.prototype.zoomIn = function(evt) {
@@ -402,7 +423,8 @@ wps.ui.prototype.createDropTarget = function() {
           // create a link as well between input and process
           link = {
             source: input,
-            target: nn
+            target: nn,
+            _parent: nn.id
           };
           me.nodes.push(link);
         }
@@ -421,6 +443,7 @@ wps.ui.prototype.createDropTarget = function() {
           // create a link as well between process and output
           link = {
             source: nn,
+            _parent: nn.id,
             target: output
           };
           me.nodes.push(link);
@@ -434,7 +457,7 @@ wps.ui.prototype.createDropTarget = function() {
 
 wps.ui.prototype.createLinkPaths = function() {
   var me = this;
-  var link = this.vis.selectAll(".link").data(this.nodes);
+  var link = this.vis.selectAll(".link").data(this.nodes.filter(function(d) { return d.source && d.target; }), function(d) { return d.source.id+":"+d.sourcePort+":"+d.target.id;});
   var linkEnter = link.enter().insert("g",".node").attr("class","link");
   linkEnter.each(function(d,i) {
     var l = d3.select(this);
