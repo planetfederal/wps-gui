@@ -1,6 +1,5 @@
 {
   "exports": [
-    "ol.Feature",
     "ol.View",
     "ol.View#fitExtent",
     "ol.Map",
