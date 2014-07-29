@@ -338,7 +338,7 @@ wps.client.prototype.describeProcess = function(serverID, processID, callback, s
       xmlhttp.onload = function() {
         server.processDescription[processID] = this.responseText;
         var evt = document.createEvent("Event");
-        evt.initEvent("describeprocess");
+        evt.initEvent("describeprocess", true, false);
         evt.identifier = processID;
         evt.raw = this.responseText;
         // TODO is there a better target than document?
