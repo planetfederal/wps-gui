@@ -6,6 +6,7 @@
     "ol.Map#getSize",
     "ol.Map#updateSize",
     "ol.Map#addInteraction",
+    "ol.Map#set",
     "ol.source.Vector",
     "ol.source.Vector#getExtent",
     "ol.source.Vector#addFeatures",
