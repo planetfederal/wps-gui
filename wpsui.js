@@ -6,7 +6,6 @@ var wps = window.wps;
 wps.editor = function(ui) {
   this.ui_ = ui;
   var me = this;
-  ui.locked_ = true;
   $( "#dialog" ).dialog({
     modal: true,
     autoOpen: false,
@@ -67,6 +66,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 };
 
 wps.editor.prototype.showEditDialog = function(node) {
+  this.ui_.locked_ = true;
   this.editingNode_ = node;
   if (!this.ui_.values[node._parent]) {
     this.ui_.values[node._parent] = {};
@@ -187,10 +187,11 @@ wps.ui = function(options) {
   d3.select(window).on("keydown",function() {
     if (me.locked_ !== true) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
-        d3.event.preventDefault();
         me.deleteSelection();
+        
       }
     }
+    d3.event.preventDefault();
   });
 };
 
@@ -252,14 +253,16 @@ wps.ui.prototype.deleteSelection = function() {
   var selection = d3.selectAll(".node_selected");
   if (selection[0].length > 0) {
     var node = selection.datum();
-    this.nodes.splice(this.nodes.indexOf(node), 1);
-    for (var i=this.nodes.length-1; i>=0; --i) {
-      if (this.nodes[i]._parent === node.id) {
-        this.nodes.splice(i, 1);
+    if (node.type === 'process') {
+      this.nodes.splice(this.nodes.indexOf(node), 1);
+      for (var i=this.nodes.length-1; i>=0; --i) {
+        if (this.nodes[i]._parent === node.id) {
+          this.nodes.splice(i, 1);
+        }
       }
     }
+    this.redraw();
   }
-  this.redraw();
 };
 
 wps.ui.prototype.zoomIn = function(evt) {
