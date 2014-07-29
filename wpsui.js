@@ -188,10 +188,9 @@ wps.ui = function(options) {
     if (me.locked_ !== true) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
         me.deleteSelection();
-        
+        d3.event.preventDefault();
       }
     }
-    d3.event.preventDefault();
   });
 };
 
