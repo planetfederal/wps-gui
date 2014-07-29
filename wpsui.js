@@ -6,6 +6,7 @@ var wps = window.wps;
 wps.editor = function(ui) {
   this.ui_ = ui;
   var me = this;
+  ui.locked_ = true;
   $( "#dialog" ).dialog({
     modal: true,
     autoOpen: false,
@@ -30,12 +31,14 @@ wps.editor = function(ui) {
             me.ui_.values[processId][name] = value;
           }
           $(this).dialog("close");
+          ui.locked_ = false;
         }
       }
     }, {
       text: "Cancel",
       click: function() {
         $(this).dialog("close");
+        ui.locked_ = false;
       }
     }]
   });
@@ -182,9 +185,11 @@ wps.ui = function(options) {
   $('#btn-run-process').click($.proxy(this.execute,null, this));
   var me = this;
   d3.select(window).on("keydown",function() {
-    if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
-      d3.event.preventDefault();
-      me.deleteSelection();
+    if (me.locked_ !== true) {
+      if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
+        d3.event.preventDefault();
+        me.deleteSelection();
+      }
     }
   });
 };
