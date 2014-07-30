@@ -3,4 +3,4 @@ wps-gui
 
 run
 
-  bower install
+    bower install
