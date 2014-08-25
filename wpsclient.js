@@ -167,7 +167,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
         data: {
           complexData: {
             mimeType: format,
-            any: [this.formats[format].writeFeatures(this.toFeatures(data))]
+            content: [this.formats[format].writeFeatures(this.toFeatures(data))]
           }
         }
       });
@@ -266,7 +266,7 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([OWS, WPS]);
+  this.context = new Jsonix.Context([OWS_V_1_1_0, WPS_V_1_0_0]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
