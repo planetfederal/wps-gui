@@ -1,35 +1,35 @@
-var WPS = {
-  name: 'WPS',
+var WPS_V_1_0_0 = {
+  name: 'WPS_V_1_0_0',
   defaultElementNamespaceURI: 'http:\/\/www.opengis.net\/wps\/1.0.0',
   typeInfos: [{
       type: 'classInfo',
       localName: 'ExecuteResponse',
-      baseTypeInfo: 'WPS.ResponseBaseType',
+      baseTypeInfo: 'WPS_V_1_0_0.ResponseBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'process',
           elementName: 'Process',
-          typeInfo: 'WPS.ProcessBriefType'
+          typeInfo: 'WPS_V_1_0_0.ProcessBriefType'
         }, {
           type: 'element',
           name: 'status',
           elementName: 'Status',
-          typeInfo: 'WPS.StatusType'
+          typeInfo: 'WPS_V_1_0_0.StatusType'
         }, {
           type: 'element',
           name: 'dataInputs',
           elementName: 'DataInputs',
-          typeInfo: 'WPS.DataInputsType'
+          typeInfo: 'WPS_V_1_0_0.DataInputsType'
         }, {
           type: 'element',
           name: 'outputDefinitions',
           elementName: 'OutputDefinitions',
-          typeInfo: 'WPS.OutputDefinitionsType'
+          typeInfo: 'WPS_V_1_0_0.OutputDefinitionsType'
         }, {
           type: 'element',
           name: 'processOutputs',
           elementName: 'ProcessOutputs',
-          typeInfo: 'WPS.ExecuteResponse.ProcessOutputs'
+          typeInfo: 'WPS_V_1_0_0.ExecuteResponse.ProcessOutputs'
         }, {
           name: 'serviceInstance',
           typeInfo: 'String',
@@ -66,7 +66,7 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'ProcessBriefType',
-      baseTypeInfo: 'WPS.DescriptionType',
+      baseTypeInfo: 'WPS_V_1_0_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'profile',
@@ -77,7 +77,7 @@ var WPS = {
           type: 'element',
           name: 'wsdl',
           elementName: 'WSDL',
-          typeInfo: 'WPS.WSDL'
+          typeInfo: 'WPS_V_1_0_0.WSDL'
         }, {
           name: 'processVersion',
           typeInfo: 'String',
@@ -99,12 +99,12 @@ var WPS = {
           type: 'element',
           name: 'processStarted',
           elementName: 'ProcessStarted',
-          typeInfo: 'WPS.ProcessStartedType'
+          typeInfo: 'WPS_V_1_0_0.ProcessStartedType'
         }, {
           type: 'element',
           name: 'processPaused',
           elementName: 'ProcessPaused',
-          typeInfo: 'WPS.ProcessStartedType'
+          typeInfo: 'WPS_V_1_0_0.ProcessStartedType'
         }, {
           type: 'element',
           name: 'processSucceeded',
@@ -114,7 +114,7 @@ var WPS = {
           type: 'element',
           name: 'processFailed',
           elementName: 'ProcessFailed',
-          typeInfo: 'WPS.ProcessFailedType'
+          typeInfo: 'WPS_V_1_0_0.ProcessFailedType'
         }, {
           name: 'creationTime',
           typeInfo: 'Calendar',
@@ -129,7 +129,7 @@ var WPS = {
           name: 'input',
           collection: true,
           elementName: 'Input',
-          typeInfo: 'WPS.InputType'
+          typeInfo: 'WPS_V_1_0_0.InputType'
         }]
     }, {
       type: 'classInfo',
@@ -139,7 +139,7 @@ var WPS = {
           name: 'output',
           collection: true,
           elementName: 'Output',
-          typeInfo: 'WPS.DocumentOutputDefinitionType'
+          typeInfo: 'WPS_V_1_0_0.DocumentOutputDefinitionType'
         }]
     }, {
       type: 'classInfo',
@@ -149,7 +149,7 @@ var WPS = {
           name: 'output',
           collection: true,
           elementName: 'Output',
-          typeInfo: 'WPS.OutputDataType'
+          typeInfo: 'WPS_V_1_0_0.OutputDataType'
         }]
     }, {
       type: 'classInfo',
@@ -159,7 +159,7 @@ var WPS = {
           name: 'process',
           collection: true,
           elementName: 'Process',
-          typeInfo: 'WPS.ProcessBriefType'
+          typeInfo: 'WPS_V_1_0_0.ProcessBriefType'
         }]
     }, {
       type: 'classInfo',
@@ -168,7 +168,7 @@ var WPS = {
           type: 'element',
           name: 'acceptVersions',
           elementName: 'AcceptVersions',
-          typeInfo: 'OWS.AcceptVersionsType'
+          typeInfo: 'OWS_V_1_1_0.AcceptVersionsType'
         }, {
           name: 'service',
           typeInfo: 'String',
@@ -183,7 +183,7 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'DescribeProcess',
-      baseTypeInfo: 'WPS.RequestBaseType',
+      baseTypeInfo: 'WPS_V_1_0_0.RequestBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'identifier',
@@ -192,7 +192,7 @@ var WPS = {
             localPart: 'Identifier',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }]
     }, {
       type: 'classInfo',
@@ -228,7 +228,7 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'Execute',
-      baseTypeInfo: 'WPS.RequestBaseType',
+      baseTypeInfo: 'WPS_V_1_0_0.RequestBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'identifier',
@@ -236,17 +236,17 @@ var WPS = {
             localPart: 'Identifier',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: 'dataInputs',
           elementName: 'DataInputs',
-          typeInfo: 'WPS.DataInputsType'
+          typeInfo: 'WPS_V_1_0_0.DataInputsType'
         }, {
           type: 'element',
           name: 'responseForm',
           elementName: 'ResponseForm',
-          typeInfo: 'WPS.ResponseFormType'
+          typeInfo: 'WPS_V_1_0_0.ResponseFormType'
         }]
     }, {
       type: 'classInfo',
@@ -255,32 +255,32 @@ var WPS = {
           type: 'element',
           name: 'responseDocument',
           elementName: 'ResponseDocument',
-          typeInfo: 'WPS.ResponseDocumentType'
+          typeInfo: 'WPS_V_1_0_0.ResponseDocumentType'
         }, {
           type: 'element',
           name: 'rawDataOutput',
           elementName: 'RawDataOutput',
-          typeInfo: 'WPS.OutputDefinitionType'
+          typeInfo: 'WPS_V_1_0_0.OutputDefinitionType'
         }]
     }, {
       type: 'classInfo',
       localName: 'WPSCapabilitiesType',
-      baseTypeInfo: 'OWS.CapabilitiesBaseType',
+      baseTypeInfo: 'OWS_V_1_1_0.CapabilitiesBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'processOfferings',
           elementName: 'ProcessOfferings',
-          typeInfo: 'WPS.ProcessOfferings'
+          typeInfo: 'WPS_V_1_0_0.ProcessOfferings'
         }, {
           type: 'element',
           name: 'languages',
           elementName: 'Languages',
-          typeInfo: 'WPS.Languages'
+          typeInfo: 'WPS_V_1_0_0.Languages'
         }, {
           type: 'element',
           name: 'wsdl',
           elementName: 'WSDL',
-          typeInfo: 'WPS.WSDL'
+          typeInfo: 'WPS_V_1_0_0.WSDL'
         }, {
           name: 'service',
           typeInfo: 'String',
@@ -298,7 +298,7 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'ProcessDescriptions',
-      baseTypeInfo: 'WPS.ResponseBaseType',
+      baseTypeInfo: 'WPS_V_1_0_0.ResponseBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'processDescription',
@@ -306,26 +306,26 @@ var WPS = {
           elementName: {
             localPart: 'ProcessDescription'
           },
-          typeInfo: 'WPS.ProcessDescriptionType'
+          typeInfo: 'WPS_V_1_0_0.ProcessDescriptionType'
         }]
     }, {
       type: 'classInfo',
       localName: 'ProcessDescriptionType',
-      baseTypeInfo: 'WPS.ProcessBriefType',
+      baseTypeInfo: 'WPS_V_1_0_0.ProcessBriefType',
       propertyInfos: [{
           type: 'element',
           name: 'dataInputs',
           elementName: {
             localPart: 'DataInputs'
           },
-          typeInfo: 'WPS.ProcessDescriptionType.DataInputs'
+          typeInfo: 'WPS_V_1_0_0.ProcessDescriptionType.DataInputs'
         }, {
           type: 'element',
           name: 'processOutputs',
           elementName: {
             localPart: 'ProcessOutputs'
           },
-          typeInfo: 'WPS.ProcessDescriptionType.ProcessOutputs'
+          typeInfo: 'WPS_V_1_0_0.ProcessDescriptionType.ProcessOutputs'
         }, {
           name: 'storeSupported',
           typeInfo: 'Boolean',
@@ -344,12 +344,12 @@ var WPS = {
           type: 'element',
           name: '_default',
           elementName: 'Default',
-          typeInfo: 'WPS.Languages.Default'
+          typeInfo: 'WPS_V_1_0_0.Languages.Default'
         }, {
           type: 'element',
           name: 'supported',
           elementName: 'Supported',
-          typeInfo: 'WPS.LanguagesType'
+          typeInfo: 'WPS_V_1_0_0.LanguagesType'
         }]
     }, {
       type: 'classInfo',
@@ -407,17 +407,17 @@ var WPS = {
           type: 'element',
           name: 'complexData',
           elementName: 'ComplexData',
-          typeInfo: 'WPS.ComplexDataType'
+          typeInfo: 'WPS_V_1_0_0.ComplexDataType'
         }, {
           type: 'element',
           name: 'literalData',
           elementName: 'LiteralData',
-          typeInfo: 'WPS.LiteralDataType'
+          typeInfo: 'WPS_V_1_0_0.LiteralDataType'
         }, {
           type: 'element',
           name: 'boundingBoxData',
           elementName: 'BoundingBoxData',
-          typeInfo: 'OWS.BoundingBoxType'
+          typeInfo: 'OWS_V_1_1_0.BoundingBoxType'
         }]
     }, {
       type: 'classInfo',
@@ -428,22 +428,22 @@ var WPS = {
           elementName: {
             localPart: 'Format'
           },
-          typeInfo: 'WPS.ComplexDataDescriptionType'
+          typeInfo: 'WPS_V_1_0_0.ComplexDataDescriptionType'
         }]
     }, {
       type: 'classInfo',
       localName: 'OutputDataType',
-      baseTypeInfo: 'WPS.DescriptionType',
+      baseTypeInfo: 'WPS_V_1_0_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'reference',
           elementName: 'Reference',
-          typeInfo: 'WPS.OutputReferenceType'
+          typeInfo: 'WPS_V_1_0_0.OutputReferenceType'
         }, {
           type: 'element',
           name: 'data',
           elementName: 'Data',
-          typeInfo: 'WPS.DataType'
+          typeInfo: 'WPS_V_1_0_0.DataType'
         }]
     }, {
       type: 'classInfo',
@@ -465,28 +465,28 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'InputDescriptionType',
-      baseTypeInfo: 'WPS.DescriptionType',
+      baseTypeInfo: 'WPS_V_1_0_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'complexData',
           elementName: {
             localPart: 'ComplexData'
           },
-          typeInfo: 'WPS.SupportedComplexDataInputType'
+          typeInfo: 'WPS_V_1_0_0.SupportedComplexDataInputType'
         }, {
           type: 'element',
           name: 'literalData',
           elementName: {
             localPart: 'LiteralData'
           },
-          typeInfo: 'WPS.LiteralInputType'
+          typeInfo: 'WPS_V_1_0_0.LiteralInputType'
         }, {
           type: 'element',
           name: 'boundingBoxData',
           elementName: {
             localPart: 'BoundingBoxData'
           },
-          typeInfo: 'WPS.SupportedCRSsType'
+          typeInfo: 'WPS_V_1_0_0.SupportedCRSsType'
         }, {
           name: 'minOccurs',
           typeInfo: 'Integer',
@@ -508,7 +508,7 @@ var WPS = {
             localPart: 'Identifier',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: 'title',
@@ -516,7 +516,7 @@ var WPS = {
             localPart: 'Title',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: '_abstract',
@@ -524,7 +524,7 @@ var WPS = {
             localPart: 'Abstract',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: 'metadata',
@@ -533,7 +533,7 @@ var WPS = {
             localPart: 'Metadata',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -545,7 +545,7 @@ var WPS = {
             localPart: 'ExceptionReport',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.ExceptionReport'
+          typeInfo: 'OWS_V_1_1_0.ExceptionReport'
         }]
     }, {
       type: 'classInfo',
@@ -556,14 +556,14 @@ var WPS = {
           elementName: {
             localPart: 'Default'
           },
-          typeInfo: 'WPS.SupportedCRSsType.Default'
+          typeInfo: 'WPS_V_1_0_0.SupportedCRSsType.Default'
         }, {
           type: 'element',
           name: 'supported',
           elementName: {
             localPart: 'Supported'
           },
-          typeInfo: 'WPS.CRSsType'
+          typeInfo: 'WPS_V_1_0_0.CRSsType'
         }]
     }, {
       type: 'classInfo',
@@ -574,19 +574,19 @@ var WPS = {
           elementName: {
             localPart: 'Default'
           },
-          typeInfo: 'WPS.SupportedUOMsType.Default'
+          typeInfo: 'WPS_V_1_0_0.SupportedUOMsType.Default'
         }, {
           type: 'element',
           name: 'supported',
           elementName: {
             localPart: 'Supported'
           },
-          typeInfo: 'WPS.UOMsType'
+          typeInfo: 'WPS_V_1_0_0.UOMsType'
         }]
     }, {
       type: 'classInfo',
       localName: 'DocumentOutputDefinitionType',
-      baseTypeInfo: 'WPS.OutputDefinitionType',
+      baseTypeInfo: 'WPS_V_1_0_0.OutputDefinitionType',
       propertyInfos: [{
           type: 'element',
           name: 'title',
@@ -594,7 +594,7 @@ var WPS = {
             localPart: 'Title',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: '_abstract',
@@ -602,7 +602,7 @@ var WPS = {
             localPart: 'Abstract',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           name: 'asReference',
           typeInfo: 'Boolean',
@@ -616,9 +616,10 @@ var WPS = {
           name: 'otherAttributes',
           type: 'anyAttribute'
         }, {
-          name: 'any',
+          name: 'content',
           collection: true,
           domAllowed: true,
+          mixed: true,
           type: 'anyElement'
         }, {
           name: 'mimeType',
@@ -646,7 +647,7 @@ var WPS = {
             localPart: 'Identifier',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: 'title',
@@ -654,7 +655,7 @@ var WPS = {
             localPart: 'Title',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: '_abstract',
@@ -662,43 +663,43 @@ var WPS = {
             localPart: 'Abstract',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: 'reference',
           elementName: 'Reference',
-          typeInfo: 'WPS.InputReferenceType'
+          typeInfo: 'WPS_V_1_0_0.InputReferenceType'
         }, {
           type: 'element',
           name: 'data',
           elementName: 'Data',
-          typeInfo: 'WPS.DataType'
+          typeInfo: 'WPS_V_1_0_0.DataType'
         }]
     }, {
       type: 'classInfo',
       localName: 'OutputDescriptionType',
-      baseTypeInfo: 'WPS.DescriptionType',
+      baseTypeInfo: 'WPS_V_1_0_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'complexOutput',
           elementName: {
             localPart: 'ComplexOutput'
           },
-          typeInfo: 'WPS.SupportedComplexDataType'
+          typeInfo: 'WPS_V_1_0_0.SupportedComplexDataType'
         }, {
           type: 'element',
           name: 'literalOutput',
           elementName: {
             localPart: 'LiteralOutput'
           },
-          typeInfo: 'WPS.LiteralOutputType'
+          typeInfo: 'WPS_V_1_0_0.LiteralOutputType'
         }, {
           type: 'element',
           name: 'boundingBoxOutput',
           elementName: {
             localPart: 'BoundingBoxOutput'
           },
-          typeInfo: 'WPS.SupportedCRSsType'
+          typeInfo: 'WPS_V_1_0_0.SupportedCRSsType'
         }]
     }, {
       type: 'classInfo',
@@ -709,14 +710,14 @@ var WPS = {
           elementName: {
             localPart: 'Default'
           },
-          typeInfo: 'WPS.ComplexDataCombinationType'
+          typeInfo: 'WPS_V_1_0_0.ComplexDataCombinationType'
         }, {
           type: 'element',
           name: 'supported',
           elementName: {
             localPart: 'Supported'
           },
-          typeInfo: 'WPS.ComplexDataCombinationsType'
+          typeInfo: 'WPS_V_1_0_0.ComplexDataCombinationsType'
         }]
     }, {
       type: 'classInfo',
@@ -728,7 +729,7 @@ var WPS = {
           elementName: {
             localPart: 'Format'
           },
-          typeInfo: 'WPS.ComplexDataDescriptionType'
+          typeInfo: 'WPS_V_1_0_0.ComplexDataDescriptionType'
         }]
     }, {
       type: 'classInfo',
@@ -740,7 +741,7 @@ var WPS = {
             localPart: 'Identifier',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           name: 'uom',
           typeInfo: 'String',
@@ -765,7 +766,7 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'LiteralInputType',
-      baseTypeInfo: 'WPS.LiteralOutputType',
+      baseTypeInfo: 'WPS_V_1_0_0.LiteralOutputType',
       propertyInfos: [{
           type: 'element',
           name: 'allowedValues',
@@ -773,7 +774,7 @@ var WPS = {
             localPart: 'AllowedValues',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.AllowedValues'
+          typeInfo: 'OWS_V_1_1_0.AllowedValues'
         }, {
           type: 'element',
           name: 'anyValue',
@@ -781,14 +782,14 @@ var WPS = {
             localPart: 'AnyValue',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.AnyValue'
+          typeInfo: 'OWS_V_1_1_0.AnyValue'
         }, {
           type: 'element',
           name: 'valuesReference',
           elementName: {
             localPart: 'ValuesReference'
           },
-          typeInfo: 'WPS.ValuesReferenceType'
+          typeInfo: 'WPS_V_1_0_0.ValuesReferenceType'
         }, {
           type: 'element',
           name: 'defaultValue',
@@ -807,14 +808,14 @@ var WPS = {
             localPart: 'DataType',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }, {
           type: 'element',
           name: 'uoMs',
           elementName: {
             localPart: 'UOMs'
           },
-          typeInfo: 'WPS.SupportedUOMsType'
+          typeInfo: 'WPS_V_1_0_0.SupportedUOMsType'
         }]
     }, {
       type: 'classInfo',
@@ -824,7 +825,7 @@ var WPS = {
           name: 'header',
           collection: true,
           elementName: 'Header',
-          typeInfo: 'WPS.InputReferenceType.Header'
+          typeInfo: 'WPS_V_1_0_0.InputReferenceType.Header'
         }, {
           type: 'element',
           name: 'body',
@@ -834,7 +835,7 @@ var WPS = {
           type: 'element',
           name: 'bodyReference',
           elementName: 'BodyReference',
-          typeInfo: 'WPS.InputReferenceType.BodyReference'
+          typeInfo: 'WPS_V_1_0_0.InputReferenceType.BodyReference'
         }, {
           name: 'href',
           typeInfo: 'String',
@@ -890,7 +891,7 @@ var WPS = {
           name: 'output',
           collection: true,
           elementName: 'Output',
-          typeInfo: 'WPS.DocumentOutputDefinitionType'
+          typeInfo: 'WPS_V_1_0_0.DocumentOutputDefinitionType'
         }, {
           name: 'storeExecuteResponse',
           typeInfo: 'Boolean',
@@ -930,7 +931,7 @@ var WPS = {
             localPart: 'UOM',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -973,15 +974,8 @@ var WPS = {
     }, {
       type: 'classInfo',
       localName: 'SupportedComplexDataInputType',
-      baseTypeInfo: 'WPS.SupportedComplexDataType',
+      baseTypeInfo: 'WPS_V_1_0_0.SupportedComplexDataType',
       propertyInfos: [{
-          type: 'element',
-          name: 'defaultValue',
-          elementName: {
-            localPart: 'DefaultValue'
-          },
-          typeInfo: 'WPS.ComplexDataType'
-        }, {
           name: 'maximumMegabytes',
           typeInfo: 'Integer',
           attributeName: 'maximumMegabytes',
@@ -1023,7 +1017,7 @@ var WPS = {
             localPart: 'UOM',
             namespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1'
           },
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -1046,7 +1040,7 @@ var WPS = {
           elementName: {
             localPart: 'Input'
           },
-          typeInfo: 'WPS.InputDescriptionType'
+          typeInfo: 'WPS_V_1_0_0.InputDescriptionType'
         }]
     }, {
       type: 'classInfo',
@@ -1058,38 +1052,38 @@ var WPS = {
           elementName: {
             localPart: 'Output'
           },
-          typeInfo: 'WPS.OutputDescriptionType'
+          typeInfo: 'WPS_V_1_0_0.OutputDescriptionType'
         }]
     }],
   elementInfos: [{
       elementName: 'ExecuteResponse',
-      typeInfo: 'WPS.ExecuteResponse'
+      typeInfo: 'WPS_V_1_0_0.ExecuteResponse'
     }, {
       elementName: 'ProcessOfferings',
-      typeInfo: 'WPS.ProcessOfferings'
+      typeInfo: 'WPS_V_1_0_0.ProcessOfferings'
     }, {
       elementName: 'GetCapabilities',
-      typeInfo: 'WPS.GetCapabilities'
+      typeInfo: 'WPS_V_1_0_0.GetCapabilities'
     }, {
       elementName: 'DescribeProcess',
-      typeInfo: 'WPS.DescribeProcess'
+      typeInfo: 'WPS_V_1_0_0.DescribeProcess'
     }, {
       elementName: 'WSDL',
-      typeInfo: 'WPS.WSDL'
+      typeInfo: 'WPS_V_1_0_0.WSDL'
     }, {
       elementName: 'Execute',
-      typeInfo: 'WPS.Execute'
+      typeInfo: 'WPS_V_1_0_0.Execute'
     }, {
       elementName: 'ProcessDescriptions',
-      typeInfo: 'WPS.ProcessDescriptions'
+      typeInfo: 'WPS_V_1_0_0.ProcessDescriptions'
     }, {
       elementName: 'Languages',
-      typeInfo: 'WPS.Languages'
+      typeInfo: 'WPS_V_1_0_0.Languages'
     }, {
       elementName: 'Capabilities',
-      typeInfo: 'WPS.WPSCapabilitiesType'
+      typeInfo: 'WPS_V_1_0_0.WPSCapabilitiesType'
     }]
 };
 if (typeof require === 'function') {
-  module.exports.WPS = WPS;
+  module.exports.WPS_V_1_0_0 = WPS_V_1_0_0;
 }

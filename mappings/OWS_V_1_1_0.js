@@ -1,5 +1,5 @@
-var OWS = {
-  name: 'OWS',
+var OWS_V_1_1_0 = {
+  name: 'OWS_V_1_1_0',
   defaultElementNamespaceURI: 'http:\/\/www.opengis.net\/ows\/1.1',
   defaultAttributeNamespaceURI: 'http:\/\/www.w3.org\/1999\/xlink',
   typeInfos: [{
@@ -30,36 +30,36 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'DatasetDescriptionSummaryBaseType',
-      baseTypeInfo: 'OWS.DescriptionType',
+      baseTypeInfo: 'OWS_V_1_1_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'wgs84BoundingBox',
           collection: true,
           elementName: 'WGS84BoundingBox',
-          typeInfo: 'OWS.WGS84BoundingBoxType'
+          typeInfo: 'OWS_V_1_1_0.WGS84BoundingBoxType'
         }, {
           type: 'element',
           name: 'identifier',
           elementName: 'Identifier',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           name: 'boundingBox',
           collection: true,
           elementName: 'BoundingBox',
-          typeInfo: 'OWS.BoundingBoxType',
+          typeInfo: 'OWS_V_1_1_0.BoundingBoxType',
           type: 'elementRef'
         }, {
           type: 'element',
           name: 'metadata',
           collection: true,
           elementName: 'Metadata',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }, {
           type: 'element',
           name: 'datasetDescriptionSummary',
           collection: true,
           elementName: 'DatasetDescriptionSummary',
-          typeInfo: 'OWS.DatasetDescriptionSummaryBaseType'
+          typeInfo: 'OWS_V_1_1_0.DatasetDescriptionSummaryBaseType'
         }]
     }, {
       type: 'classInfo',
@@ -69,25 +69,25 @@ var OWS = {
           name: 'dcp',
           collection: true,
           elementName: 'DCP',
-          typeInfo: 'OWS.DCP'
+          typeInfo: 'OWS_V_1_1_0.DCP'
         }, {
           type: 'element',
           name: 'parameter',
           collection: true,
           elementName: 'Parameter',
-          typeInfo: 'OWS.DomainType'
+          typeInfo: 'OWS_V_1_1_0.DomainType'
         }, {
           type: 'element',
           name: 'constraint',
           collection: true,
           elementName: 'Constraint',
-          typeInfo: 'OWS.DomainType'
+          typeInfo: 'OWS_V_1_1_0.DomainType'
         }, {
           type: 'element',
           name: 'metadata',
           collection: true,
           elementName: 'Metadata',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }, {
           name: 'name',
           typeInfo: 'String',
@@ -103,7 +103,7 @@ var OWS = {
           type: 'element',
           name: 'http',
           elementName: 'HTTP',
-          typeInfo: 'OWS.HTTP'
+          typeInfo: 'OWS_V_1_1_0.HTTP'
         }]
     }, {
       type: 'classInfo',
@@ -112,29 +112,29 @@ var OWS = {
           name: 'getOrPost',
           collection: true,
           elementTypeInfos: [{
-              elementName: 'Post',
-              typeInfo: 'OWS.RequestMethodType'
-            }, {
               elementName: 'Get',
-              typeInfo: 'OWS.RequestMethodType'
+              typeInfo: 'OWS_V_1_1_0.RequestMethodType'
+            }, {
+              elementName: 'Post',
+              typeInfo: 'OWS_V_1_1_0.RequestMethodType'
             }],
           type: 'elementRefs'
         }]
     }, {
       type: 'classInfo',
       localName: 'RequestMethodType',
-      baseTypeInfo: 'OWS.OnlineResourceType',
+      baseTypeInfo: 'OWS_V_1_1_0.OnlineResourceType',
       propertyInfos: [{
           type: 'element',
           name: 'constraint',
           collection: true,
           elementName: 'Constraint',
-          typeInfo: 'OWS.DomainType'
+          typeInfo: 'OWS_V_1_1_0.DomainType'
         }]
     }, {
       type: 'classInfo',
       localName: 'DomainType',
-      baseTypeInfo: 'OWS.UnNamedDomainType',
+      baseTypeInfo: 'OWS_V_1_1_0.UnNamedDomainType',
       propertyInfos: [{
           name: 'name',
           typeInfo: 'String',
@@ -221,13 +221,13 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'ManifestType',
-      baseTypeInfo: 'OWS.BasicIdentificationType',
+      baseTypeInfo: 'OWS_V_1_1_0.BasicIdentificationType',
       propertyInfos: [{
           type: 'element',
           name: 'referenceGroup',
           collection: true,
           elementName: 'ReferenceGroup',
-          typeInfo: 'OWS.ReferenceGroupType'
+          typeInfo: 'OWS_V_1_1_0.ReferenceGroupType'
         }]
     }, {
       type: 'classInfo',
@@ -237,19 +237,19 @@ var OWS = {
           name: 'operation',
           collection: true,
           elementName: 'Operation',
-          typeInfo: 'OWS.Operation'
+          typeInfo: 'OWS_V_1_1_0.Operation'
         }, {
           type: 'element',
           name: 'parameter',
           collection: true,
           elementName: 'Parameter',
-          typeInfo: 'OWS.DomainType'
+          typeInfo: 'OWS_V_1_1_0.DomainType'
         }, {
           type: 'element',
           name: 'constraint',
           collection: true,
           elementName: 'Constraint',
-          typeInfo: 'OWS.DomainType'
+          typeInfo: 'OWS_V_1_1_0.DomainType'
         }, {
           type: 'element',
           name: 'extendedCapabilities',
@@ -264,12 +264,12 @@ var OWS = {
           name: 'keyword',
           collection: true,
           elementName: 'Keyword',
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: 'type',
           elementName: 'Type',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }]
     }, {
       type: 'classInfo',
@@ -293,12 +293,12 @@ var OWS = {
           type: 'element',
           name: 'contactInfo',
           elementName: 'ContactInfo',
-          typeInfo: 'OWS.ContactType'
+          typeInfo: 'OWS_V_1_1_0.ContactType'
         }, {
           type: 'element',
           name: 'role',
           elementName: 'Role',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }]
     }, {
       type: 'classInfo',
@@ -307,11 +307,11 @@ var OWS = {
           name: 'valueOrRange',
           collection: true,
           elementTypeInfos: [{
-              elementName: 'Range',
-              typeInfo: 'OWS.RangeType'
-            }, {
               elementName: 'Value',
-              typeInfo: 'OWS.ValueType'
+              typeInfo: 'OWS_V_1_1_0.ValueType'
+            }, {
+              elementName: 'Range',
+              typeInfo: 'OWS_V_1_1_0.RangeType'
             }],
           type: 'elements'
         }]
@@ -322,17 +322,17 @@ var OWS = {
           type: 'element',
           name: 'minimumValue',
           elementName: 'MinimumValue',
-          typeInfo: 'OWS.ValueType'
+          typeInfo: 'OWS_V_1_1_0.ValueType'
         }, {
           type: 'element',
           name: 'maximumValue',
           elementName: 'MaximumValue',
-          typeInfo: 'OWS.ValueType'
+          typeInfo: 'OWS_V_1_1_0.ValueType'
         }, {
           type: 'element',
           name: 'spacing',
           elementName: 'Spacing',
-          typeInfo: 'OWS.ValueType'
+          typeInfo: 'OWS_V_1_1_0.ValueType'
         }, {
           name: 'rangeClosure',
           typeInfo: {
@@ -353,7 +353,7 @@ var OWS = {
           name: 'exception',
           collection: true,
           elementName: 'Exception',
-          typeInfo: 'OWS.ExceptionType'
+          typeInfo: 'OWS_V_1_1_0.ExceptionType'
         }, {
           name: 'version',
           typeInfo: 'String',
@@ -439,17 +439,17 @@ var OWS = {
           type: 'element',
           name: 'phone',
           elementName: 'Phone',
-          typeInfo: 'OWS.TelephoneType'
+          typeInfo: 'OWS_V_1_1_0.TelephoneType'
         }, {
           type: 'element',
           name: 'address',
           elementName: 'Address',
-          typeInfo: 'OWS.AddressType'
+          typeInfo: 'OWS_V_1_1_0.AddressType'
         }, {
           type: 'element',
           name: 'onlineResource',
           elementName: 'OnlineResource',
-          typeInfo: 'OWS.OnlineResourceType'
+          typeInfo: 'OWS_V_1_1_0.OnlineResourceType'
         }, {
           type: 'element',
           name: 'hoursOfService',
@@ -464,18 +464,18 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'ReferenceType',
-      baseTypeInfo: 'OWS.AbstractReferenceBaseType',
+      baseTypeInfo: 'OWS_V_1_1_0.AbstractReferenceBaseType',
       propertyInfos: [{
           type: 'element',
           name: 'identifier',
           elementName: 'Identifier',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: '_abstract',
           collection: true,
           elementName: 'Abstract',
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: 'format',
@@ -486,7 +486,7 @@ var OWS = {
           name: 'metadata',
           collection: true,
           elementName: 'Metadata',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -542,12 +542,12 @@ var OWS = {
           type: 'element',
           name: 'providerSite',
           elementName: 'ProviderSite',
-          typeInfo: 'OWS.OnlineResourceType'
+          typeInfo: 'OWS_V_1_1_0.OnlineResourceType'
         }, {
           type: 'element',
           name: 'serviceContact',
           elementName: 'ServiceContact',
-          typeInfo: 'OWS.ResponsiblePartySubsetType'
+          typeInfo: 'OWS_V_1_1_0.ResponsiblePartySubsetType'
         }]
     }, {
       type: 'classInfo',
@@ -605,12 +605,12 @@ var OWS = {
           type: 'element',
           name: 'contactInfo',
           elementName: 'ContactInfo',
-          typeInfo: 'OWS.ContactType'
+          typeInfo: 'OWS_V_1_1_0.ContactType'
         }, {
           type: 'element',
           name: 'role',
           elementName: 'Role',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }]
     }, {
       type: 'classInfo',
@@ -619,17 +619,17 @@ var OWS = {
           type: 'element',
           name: 'acceptVersions',
           elementName: 'AcceptVersions',
-          typeInfo: 'OWS.AcceptVersionsType'
+          typeInfo: 'OWS_V_1_1_0.AcceptVersionsType'
         }, {
           type: 'element',
           name: 'sections',
           elementName: 'Sections',
-          typeInfo: 'OWS.SectionsType'
+          typeInfo: 'OWS_V_1_1_0.SectionsType'
         }, {
           type: 'element',
           name: 'acceptFormats',
           elementName: 'AcceptFormats',
-          typeInfo: 'OWS.AcceptFormatsType'
+          typeInfo: 'OWS_V_1_1_0.AcceptFormatsType'
         }, {
           name: 'updateSequence',
           typeInfo: 'String',
@@ -641,18 +641,18 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'ReferenceGroupType',
-      baseTypeInfo: 'OWS.BasicIdentificationType',
+      baseTypeInfo: 'OWS_V_1_1_0.BasicIdentificationType',
       propertyInfos: [{
           name: 'abstractReferenceBase',
           collection: true,
           elementName: 'AbstractReferenceBase',
-          typeInfo: 'OWS.AbstractReferenceBaseType',
+          typeInfo: 'OWS_V_1_1_0.AbstractReferenceBaseType',
           type: 'elementRef'
         }]
     }, {
       type: 'classInfo',
       localName: 'ServiceReferenceType',
-      baseTypeInfo: 'OWS.ReferenceType',
+      baseTypeInfo: 'OWS_V_1_1_0.ReferenceType',
       propertyInfos: [{
           type: 'element',
           name: 'requestMessage',
@@ -696,12 +696,12 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'ServiceIdentification',
-      baseTypeInfo: 'OWS.DescriptionType',
+      baseTypeInfo: 'OWS_V_1_1_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'serviceType',
           elementName: 'ServiceType',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: 'serviceTypeVersion',
@@ -734,19 +734,19 @@ var OWS = {
           name: 'title',
           collection: true,
           elementName: 'Title',
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: '_abstract',
           collection: true,
           elementName: 'Abstract',
-          typeInfo: 'OWS.LanguageStringType'
+          typeInfo: 'OWS_V_1_1_0.LanguageStringType'
         }, {
           type: 'element',
           name: 'keywords',
           collection: true,
           elementName: 'Keywords',
-          typeInfo: 'OWS.KeywordsType'
+          typeInfo: 'OWS_V_1_1_0.KeywordsType'
         }]
     }, {
       type: 'classInfo',
@@ -787,7 +787,7 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'WGS84BoundingBoxType',
-      baseTypeInfo: 'OWS.BoundingBoxType',
+      baseTypeInfo: 'OWS_V_1_1_0.BoundingBoxType',
       propertyInfos: []
     }, {
       type: 'classInfo',
@@ -806,53 +806,53 @@ var OWS = {
           type: 'element',
           name: 'allowedValues',
           elementName: 'AllowedValues',
-          typeInfo: 'OWS.AllowedValues'
+          typeInfo: 'OWS_V_1_1_0.AllowedValues'
         }, {
           type: 'element',
           name: 'anyValue',
           elementName: 'AnyValue',
-          typeInfo: 'OWS.AnyValue'
+          typeInfo: 'OWS_V_1_1_0.AnyValue'
         }, {
           type: 'element',
           name: 'noValues',
           elementName: 'NoValues',
-          typeInfo: 'OWS.NoValues'
+          typeInfo: 'OWS_V_1_1_0.NoValues'
         }, {
           type: 'element',
           name: 'valuesReference',
           elementName: 'ValuesReference',
-          typeInfo: 'OWS.ValuesReference'
+          typeInfo: 'OWS_V_1_1_0.ValuesReference'
         }, {
           type: 'element',
           name: 'defaultValue',
           elementName: 'DefaultValue',
-          typeInfo: 'OWS.ValueType'
+          typeInfo: 'OWS_V_1_1_0.ValueType'
         }, {
           type: 'element',
           name: 'meaning',
           elementName: 'Meaning',
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }, {
           type: 'element',
           name: 'dataType',
           elementName: 'DataType',
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }, {
           type: 'element',
           name: 'uom',
           elementName: 'UOM',
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }, {
           type: 'element',
           name: 'referenceSystem',
           elementName: 'ReferenceSystem',
-          typeInfo: 'OWS.DomainMetadataType'
+          typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
         }, {
           type: 'element',
           name: 'metadata',
           collection: true,
           elementName: 'Metadata',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -872,13 +872,13 @@ var OWS = {
           name: 'datasetDescriptionSummary',
           collection: true,
           elementName: 'DatasetDescriptionSummary',
-          typeInfo: 'OWS.DatasetDescriptionSummaryBaseType'
+          typeInfo: 'OWS_V_1_1_0.DatasetDescriptionSummaryBaseType'
         }, {
           type: 'element',
           name: 'otherSource',
           collection: true,
           elementName: 'OtherSource',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }]
     }, {
       type: 'classInfo',
@@ -899,28 +899,28 @@ var OWS = {
     }, {
       type: 'classInfo',
       localName: 'BasicIdentificationType',
-      baseTypeInfo: 'OWS.DescriptionType',
+      baseTypeInfo: 'OWS_V_1_1_0.DescriptionType',
       propertyInfos: [{
           type: 'element',
           name: 'identifier',
           elementName: 'Identifier',
-          typeInfo: 'OWS.CodeType'
+          typeInfo: 'OWS_V_1_1_0.CodeType'
         }, {
           type: 'element',
           name: 'metadata',
           collection: true,
           elementName: 'Metadata',
-          typeInfo: 'OWS.MetadataType'
+          typeInfo: 'OWS_V_1_1_0.MetadataType'
         }]
     }, {
       type: 'classInfo',
       localName: 'IdentificationType',
-      baseTypeInfo: 'OWS.BasicIdentificationType',
+      baseTypeInfo: 'OWS_V_1_1_0.BasicIdentificationType',
       propertyInfos: [{
           name: 'boundingBox',
           collection: true,
           elementName: 'BoundingBox',
-          typeInfo: 'OWS.BoundingBoxType',
+          typeInfo: 'OWS_V_1_1_0.BoundingBoxType',
           type: 'elementRef'
         }, {
           type: 'element',
@@ -978,17 +978,17 @@ var OWS = {
           type: 'element',
           name: 'serviceIdentification',
           elementName: 'ServiceIdentification',
-          typeInfo: 'OWS.ServiceIdentification'
+          typeInfo: 'OWS_V_1_1_0.ServiceIdentification'
         }, {
           type: 'element',
           name: 'serviceProvider',
           elementName: 'ServiceProvider',
-          typeInfo: 'OWS.ServiceProvider'
+          typeInfo: 'OWS_V_1_1_0.ServiceProvider'
         }, {
           type: 'element',
           name: 'operationsMetadata',
           elementName: 'OperationsMetadata',
-          typeInfo: 'OWS.OperationsMetadata'
+          typeInfo: 'OWS_V_1_1_0.OperationsMetadata'
         }, {
           name: 'version',
           typeInfo: 'String',
@@ -1007,152 +1007,158 @@ var OWS = {
     }],
   elementInfos: [{
       elementName: 'Operation',
-      typeInfo: 'OWS.Operation'
+      typeInfo: 'OWS_V_1_1_0.Operation'
     }, {
       elementName: 'DCP',
-      typeInfo: 'OWS.DCP'
+      typeInfo: 'OWS_V_1_1_0.DCP'
     }, {
       elementName: 'HTTP',
-      typeInfo: 'OWS.HTTP'
+      typeInfo: 'OWS_V_1_1_0.HTTP'
     }, {
       elementName: 'OperationsMetadata',
-      typeInfo: 'OWS.OperationsMetadata'
+      typeInfo: 'OWS_V_1_1_0.OperationsMetadata'
     }, {
       elementName: 'AllowedValues',
-      typeInfo: 'OWS.AllowedValues'
+      typeInfo: 'OWS_V_1_1_0.AllowedValues'
     }, {
       elementName: 'ExceptionReport',
-      typeInfo: 'OWS.ExceptionReport'
+      typeInfo: 'OWS_V_1_1_0.ExceptionReport'
     }, {
       elementName: 'AnyValue',
-      typeInfo: 'OWS.AnyValue'
+      typeInfo: 'OWS_V_1_1_0.AnyValue'
     }, {
       elementName: 'ServiceProvider',
-      typeInfo: 'OWS.ServiceProvider'
+      typeInfo: 'OWS_V_1_1_0.ServiceProvider'
     }, {
       elementName: 'ServiceIdentification',
-      typeInfo: 'OWS.ServiceIdentification'
+      typeInfo: 'OWS_V_1_1_0.ServiceIdentification'
     }, {
       elementName: 'ValuesReference',
-      typeInfo: 'OWS.ValuesReference'
+      typeInfo: 'OWS_V_1_1_0.ValuesReference'
     }, {
       elementName: 'NoValues',
-      typeInfo: 'OWS.NoValues'
-    }, {
-      elementName: 'OperationResponse',
-      typeInfo: 'OWS.ManifestType'
-    }, {
-      elementName: 'Abstract',
-      typeInfo: 'OWS.LanguageStringType'
+      typeInfo: 'OWS_V_1_1_0.NoValues'
     }, {
       elementName: 'AbstractReferenceBase',
-      typeInfo: 'OWS.AbstractReferenceBaseType'
+      typeInfo: 'OWS_V_1_1_0.AbstractReferenceBaseType'
+    }, {
+      elementName: 'Abstract',
+      typeInfo: 'OWS_V_1_1_0.LanguageStringType'
+    }, {
+      elementName: 'OperationResponse',
+      typeInfo: 'OWS_V_1_1_0.ManifestType'
     }, {
       elementName: 'AvailableCRS',
       typeInfo: 'String'
     }, {
       elementName: 'WGS84BoundingBox',
-      typeInfo: 'OWS.WGS84BoundingBoxType',
+      typeInfo: 'OWS_V_1_1_0.WGS84BoundingBoxType',
       substitutionHead: 'BoundingBox'
-    }, {
-      elementName: 'Metadata',
-      typeInfo: 'OWS.MetadataType'
     }, {
       elementName: 'Language',
       typeInfo: 'String'
     }, {
-      elementName: 'Reference',
-      typeInfo: 'OWS.ReferenceType',
-      substitutionHead: 'AbstractReferenceBase'
-    }, {
       elementName: 'Role',
-      typeInfo: 'OWS.CodeType'
+      typeInfo: 'OWS_V_1_1_0.CodeType'
     }, {
       elementName: 'UOM',
-      typeInfo: 'OWS.DomainMetadataType'
-    }, {
-      elementName: 'ContactInfo',
-      typeInfo: 'OWS.ContactType'
+      typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
     }, {
       elementName: 'IndividualName',
       typeInfo: 'String'
     }, {
-      elementName: 'BoundingBox',
-      typeInfo: 'OWS.BoundingBoxType'
-    }, {
-      elementName: 'MaximumValue',
-      typeInfo: 'OWS.ValueType'
-    }, {
       elementName: 'ExtendedCapabilities',
       typeInfo: 'AnyType'
     }, {
-      elementName: 'SupportedCRS',
-      typeInfo: 'String',
-      substitutionHead: 'AvailableCRS'
-    }, {
       elementName: 'Title',
-      typeInfo: 'OWS.LanguageStringType'
+      typeInfo: 'OWS_V_1_1_0.LanguageStringType'
     }, {
       elementName: 'Spacing',
-      typeInfo: 'OWS.ValueType'
+      typeInfo: 'OWS_V_1_1_0.ValueType'
     }, {
       elementName: 'GetResourceByID',
-      typeInfo: 'OWS.GetResourceByIdType'
+      typeInfo: 'OWS_V_1_1_0.GetResourceByIdType'
     }, {
       elementName: 'ServiceReference',
-      typeInfo: 'OWS.ServiceReferenceType',
+      typeInfo: 'OWS_V_1_1_0.ServiceReferenceType',
       substitutionHead: 'Reference'
     }, {
       elementName: 'ReferenceGroup',
-      typeInfo: 'OWS.ReferenceGroupType'
+      typeInfo: 'OWS_V_1_1_0.ReferenceGroupType'
     }, {
       elementName: 'GetCapabilities',
-      typeInfo: 'OWS.GetCapabilitiesType'
+      typeInfo: 'OWS_V_1_1_0.GetCapabilitiesType'
     }, {
-      elementName: 'OtherSource',
-      typeInfo: 'OWS.MetadataType'
+      elementName: 'Range',
+      typeInfo: 'OWS_V_1_1_0.RangeType'
     }, {
       elementName: 'Resource',
       typeInfo: 'AnyType'
     }, {
-      elementName: 'AccessConstraints',
-      typeInfo: 'String'
-    }, {
-      elementName: 'Value',
-      typeInfo: 'OWS.ValueType'
-    }, {
-      elementName: 'Range',
-      typeInfo: 'OWS.RangeType'
-    }, {
-      elementName: 'PositionName',
-      typeInfo: 'String'
-    }, {
-      elementName: 'PointOfContact',
-      typeInfo: 'OWS.ResponsiblePartyType'
-    }, {
-      elementName: 'Keywords',
-      typeInfo: 'OWS.KeywordsType'
+      elementName: 'OtherSource',
+      typeInfo: 'OWS_V_1_1_0.MetadataType'
     }, {
       elementName: 'MinimumValue',
-      typeInfo: 'OWS.ValueType'
-    }, {
-      elementName: 'Identifier',
-      typeInfo: 'OWS.CodeType'
-    }, {
-      elementName: 'Meaning',
-      typeInfo: 'OWS.DomainMetadataType'
-    }, {
-      elementName: 'Manifest',
-      typeInfo: 'OWS.ManifestType'
+      typeInfo: 'OWS_V_1_1_0.ValueType'
     }, {
       elementName: 'Fees',
       typeInfo: 'String'
     }, {
       elementName: 'InputData',
-      typeInfo: 'OWS.ManifestType'
+      typeInfo: 'OWS_V_1_1_0.ManifestType'
+    }, {
+      elementName: 'Exception',
+      typeInfo: 'OWS_V_1_1_0.ExceptionType'
+    }, {
+      elementName: 'ReferenceSystem',
+      typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
+    }, {
+      elementName: 'Metadata',
+      typeInfo: 'OWS_V_1_1_0.MetadataType'
+    }, {
+      elementName: 'Reference',
+      typeInfo: 'OWS_V_1_1_0.ReferenceType',
+      substitutionHead: 'AbstractReferenceBase'
+    }, {
+      elementName: 'ContactInfo',
+      typeInfo: 'OWS_V_1_1_0.ContactType'
+    }, {
+      elementName: 'BoundingBox',
+      typeInfo: 'OWS_V_1_1_0.BoundingBoxType'
+    }, {
+      elementName: 'MaximumValue',
+      typeInfo: 'OWS_V_1_1_0.ValueType'
+    }, {
+      elementName: 'SupportedCRS',
+      typeInfo: 'String',
+      substitutionHead: 'AvailableCRS'
+    }, {
+      elementName: 'AccessConstraints',
+      typeInfo: 'String'
+    }, {
+      elementName: 'Value',
+      typeInfo: 'OWS_V_1_1_0.ValueType'
+    }, {
+      elementName: 'PositionName',
+      typeInfo: 'String'
+    }, {
+      elementName: 'PointOfContact',
+      typeInfo: 'OWS_V_1_1_0.ResponsiblePartyType'
+    }, {
+      elementName: 'Keywords',
+      typeInfo: 'OWS_V_1_1_0.KeywordsType'
+    }, {
+      elementName: 'Identifier',
+      typeInfo: 'OWS_V_1_1_0.CodeType'
+    }, {
+      elementName: 'Meaning',
+      typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
+    }, {
+      elementName: 'Manifest',
+      typeInfo: 'OWS_V_1_1_0.ManifestType'
     }, {
       elementName: 'DefaultValue',
-      typeInfo: 'OWS.ValueType'
+      typeInfo: 'OWS_V_1_1_0.ValueType'
     }, {
       elementName: 'OutputFormat',
       typeInfo: 'String'
@@ -1161,29 +1167,23 @@ var OWS = {
       typeInfo: 'String'
     }, {
       elementName: 'DataType',
-      typeInfo: 'OWS.DomainMetadataType'
-    }, {
-      elementName: 'DatasetDescriptionSummary',
-      typeInfo: 'OWS.DatasetDescriptionSummaryBaseType'
+      typeInfo: 'OWS_V_1_1_0.DomainMetadataType'
     }, {
       elementName: 'AbstractMetaData',
       typeInfo: 'AnyType'
     }, {
-      elementName: 'Exception',
-      typeInfo: 'OWS.ExceptionType'
-    }, {
-      elementName: 'ReferenceSystem',
-      typeInfo: 'OWS.DomainMetadataType'
+      elementName: 'DatasetDescriptionSummary',
+      typeInfo: 'OWS_V_1_1_0.DatasetDescriptionSummaryBaseType'
     }, {
       elementName: 'Get',
-      typeInfo: 'OWS.RequestMethodType',
-      scope: 'OWS.HTTP'
+      typeInfo: 'OWS_V_1_1_0.RequestMethodType',
+      scope: 'OWS_V_1_1_0.HTTP'
     }, {
       elementName: 'Post',
-      typeInfo: 'OWS.RequestMethodType',
-      scope: 'OWS.HTTP'
+      typeInfo: 'OWS_V_1_1_0.RequestMethodType',
+      scope: 'OWS_V_1_1_0.HTTP'
     }]
 };
 if (typeof require === 'function') {
-  module.exports.OWS = OWS;
+  module.exports.OWS_V_1_1_0 = OWS_V_1_1_0;
 }
