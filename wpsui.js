@@ -66,6 +66,9 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 };
 
 wps.editor.prototype.showEditDialog = function(node) {
+  if (node['type'] !== 'input') {
+    return;
+  }
   this.ui_.locked_ = true;
   this.editingNode_ = node;
   if (!this.ui_.values[node._parent]) {
