@@ -65,7 +65,9 @@ wps.process.prototype.configure = function(options) {
         input, i, ii;
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
-        this.setInputData(info.value.dataInputs.input, input, inputs[input.identifier.value]);
+        if (inputs[input.identifier.value] !== undefined) {
+          this.setInputData(info.value.dataInputs.input, input, inputs[input.identifier.value]);
+        }
       }
       if (options.callback) {
         options.callback.call(options.scope, info);
