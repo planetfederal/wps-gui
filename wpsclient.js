@@ -49,7 +49,9 @@ wps.process.prototype.configure = function(options) {
           localPart: "Execute",
           namespaceURI: "http://www.opengis.net/wps/1.0.0"
         },
-        value: { 
+        value: {
+          service: "WPS",
+          version: "1.0.0",
           identifier: { 
             value: this.description.identifier.value
           },
