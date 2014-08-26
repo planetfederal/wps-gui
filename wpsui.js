@@ -237,7 +237,6 @@ wps.ui.prototype.execute = function(ui) {
                   zoom: 1
                 })
               });
-              // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
               source.addFeatures(ui.values[processId][key]);
               for (var i=0, ii=output.result.length; i<ii; ++i) {
                 var f = output.result[i];
