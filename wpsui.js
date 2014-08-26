@@ -204,14 +204,14 @@ wps.ui.prototype.execute = function(ui) {
     var node = selection.datum();
     if (node.type === 'process') {
       hasSelected = true;
-      var process = node.id;
-      if (ui.values[process]) {
+      var processId = node.id, process = ui.processes[processId], values = ui.values[processId];
+      if (values && process.isComplete(values)) {
         var features = [];
         var inputs = {};
-        for (var key in ui.values[process]) {
-          inputs[key] = ui.values[process][key];
+        for (var key in values) {
+          inputs[key] = values[key];
         }
-        ui.processes[process].execute({
+        process.execute({
           inputs: inputs,
           success: function(output) {
             if ($.isArray(output.result)) {
@@ -232,7 +232,7 @@ wps.ui.prototype.execute = function(ui) {
                 })
               });
               // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
-              source.addFeatures(ui.values[process][key]);
+              source.addFeatures(ui.values[processId][key]);
               source.addFeatures(output.result);
               var view = map.getView();
               view.fitExtent(

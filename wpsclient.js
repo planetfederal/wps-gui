@@ -41,6 +41,27 @@ wps.process.prototype.describe = function(options) {
   }
 };
 
+// check the values against the required inputs
+wps.process.prototype.isComplete = function(values) {
+  if (this.description) {
+    var hasUndefined = false;
+    var inputs = this.description.dataInputs.input;
+    for (var i=0, ii=inputs.length; i<ii; ++i) {
+      var input = inputs[i];
+      // TODO do we have processes where the same input needs more than 1?
+      if (input.minOccurs > 0) {
+        if (values[input.identifier.value] === undefined) {
+          hasUndefined = true;
+          break;
+        }
+      }
+    }
+    return !hasUndefined;
+  } else {
+    return false;
+  }
+};
+
 wps.process.prototype.configure = function(options) {
   this.describe({
     callback: function() {
