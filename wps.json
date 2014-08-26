@@ -19,7 +19,10 @@
     "ol.format.WKT",
     "ol.format.GeoJSON",
     "ol.format.WKT#writeFeatures",
-    "ol.format.WKT#readFeatures"
+    "ol.format.WKT#readFeatures",
+    "ol.style.Style",
+    "ol.style.Stroke",
+    "ol.Feature#setStyle"
   ],
   "compile": {
     "externs": [

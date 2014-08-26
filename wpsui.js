@@ -185,6 +185,12 @@ wps.ui = function(options) {
   this.processes = {};
   this.values = {};
   this.inputMaps = {};
+  this.outputStyle = new ol.style.Style({
+    stroke: new ol.style.Stroke({
+      color: 'red',
+      width: 1 
+    })
+  });
   $('#btn-run-process').click($.proxy(this.execute,null, this));
   var me = this;
   d3.select(window).on("keydown",function() {
@@ -233,6 +239,10 @@ wps.ui.prototype.execute = function(ui) {
               });
               // TODO different feature style when https://github.com/openlayers/ol3/pull/2394 is merged
               source.addFeatures(ui.values[processId][key]);
+              for (var i=0, ii=output.result.length; i<ii; ++i) {
+                var f = output.result[i];
+                f.setStyle(ui.outputStyle);
+              }
               source.addFeatures(output.result);
               var view = map.getView();
               view.fitExtent(
