@@ -384,6 +384,18 @@ a.brand img {
   cursor: move;
   stroke-width: 2;
 }
+.node-input {
+  fill: orange;
+}
+.node-input.node-required {
+  fill: orangered;
+}
+.node-process {
+  fill: rgb(231, 231, 74);
+}
+.node-output {
+  fill: rgb(0, 255, 0);
+}
 .node_unknown {
     stroke-dasharray:10,4;
     stroke: #f33;

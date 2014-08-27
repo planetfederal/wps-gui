@@ -416,7 +416,6 @@ wps.ui.prototype.createDropTarget = function() {
         nn.outputs = info.processOutputs.output.length;
         // TODO make dynamic
         nn._def = {
-          color: "rgb(231, 231, 74)",
           label: selected_tool
         };
         var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
@@ -428,14 +427,8 @@ wps.ui.prototype.createDropTarget = function() {
           input.dirty = true;
           input.type = 'input';
           input._info = info.dataInputs.input[i];
-          var color;
-          if (input._info.minOccurs === 0 && input._info.maxOccurs === 1) {
-            color = 'orange';
-          } else {
-            color = 'red';
-          }
+          input.required = !(input._info.minOccurs === 0 && input._info.maxOccurs === 1);
           input._def = {
-            color: color,
             label: info.dataInputs.input[i].title.value
           };
           me.nodes.push(input);
@@ -455,7 +448,6 @@ wps.ui.prototype.createDropTarget = function() {
           output._parent = nn.id;
           output._info = info.processOutputs.output[i];
           output._def = { 
-            color: "rgb(0, 255, 0)",
             label: info.processOutputs.output[i].title.value
           };
           me.nodes.push(output);
@@ -580,8 +572,7 @@ wps.ui.prototype.updateNode = function(d) {
         attr('y', function(d){return (d.h/2)-1;}).
         attr('class',function(d){
           return 'node_label'+
-            (d._def.align?' node_label_'+d._def.align:'')+
-            (d._def.label?' '+(typeof d._def.labelStyle == "function" ? d._def.labelStyle.call(d):d._def.labelStyle):'');
+            (d.required === false ? ' node_label_italic' : '');
         });
       var numOutputs = d.outputs;
       var y = (d.h/2)-((numOutputs-1)/2)*13;
@@ -667,20 +658,15 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
 
 wps.ui.prototype.createProcessRect = function(node) {
   var mainRect = node.append("rect").
-    attr("class", "node").
+    attr("class", function(d) { return "node node-" + d.type + (d.required ? " node-required" : "");  }).
     attr("rx", 6).
     attr("ry", 6).
-    attr("fill",function(d) { return d._def.color;}).
     on("mouseup", $.proxy(this.nodeMouseUp, null, this)).
     on("mousedown", $.proxy(this.nodeMouseDown, null, this));
 };
 
 wps.ui.prototype.createProcessText = function(node, d) {
   var text = node.append('svg:text').attr('class','node_label').attr('x', 8).attr('dy', '.35em').attr('text-anchor','start');
-  if (d._def.align) {
-    text.attr('class','node_label node_label_'+d._def.align);
-    text.attr('text-anchor','end');
-  }
   return text;
 };
 
