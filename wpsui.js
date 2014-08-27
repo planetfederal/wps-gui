@@ -27,10 +27,25 @@ wps.editor = function(ui) {
             } else {
               value = $('#node-input-' + name).val();
             }
-            me.ui_.values[processId][name] = value;
+            ui.values[processId][name] = value;
           }
           $(this).dialog("close");
           ui.locked_ = false;
+          me.editingNode_.dirty = true;
+          me.editingNode_.complete = true;
+          // check if the process is complete as well
+          var process = ui.processes[processId];
+          var parentNode;
+          for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+            if (ui.nodes[i].id === processId) {
+              parentNode = ui.nodes[i];
+              break;
+            }
+          }
+          var old = parentNode.complete;
+          parentNode.complete = process.isComplete(ui.values[processId]);
+          parentNode.dirty = (old !== parentNode.complete);
+          ui.redraw();
         }
       }
     }, {
@@ -428,6 +443,7 @@ wps.ui.prototype.createDropTarget = function() {
           input.type = 'input';
           input._info = info.dataInputs.input[i];
           input.required = !(input._info.minOccurs === 0 && input._info.maxOccurs === 1);
+          input.complete = false;
           input._def = {
             label: info.dataInputs.input[i].title.value
           };
@@ -564,8 +580,8 @@ wps.ui.prototype.updateNode = function(d) {
     thisNode.selectAll(".node").
       attr("width",function(d){return d.w;}).
       attr("height",function(d){return d.h;}).
-      classed("node_selected",function(d) { return d.selected; }).
-      classed("node_highlighted",function(d) { return d.highlighted; });
+      classed("node_incomplete", function(d) { return !d.complete; }).
+      classed("node_selected",function(d) { return d.selected; });
       thisNode.selectAll('text.node_label').text(function(d,i){
         return d._def.label || "";
       }).
@@ -658,7 +674,9 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
 
 wps.ui.prototype.createProcessRect = function(node) {
   var mainRect = node.append("rect").
-    attr("class", function(d) { return "node node-" + d.type + (d.required ? " node-required" : "");  }).
+    attr("class", function(d) {
+      return "node node_" + d.type + (!d.complete ? " node_incomplete" : "") + (d.required ? " node_required" : "");
+    }).
     attr("rx", 6).
     attr("ry", 6).
     on("mouseup", $.proxy(this.nodeMouseUp, null, this)).

@@ -384,16 +384,19 @@ a.brand img {
   cursor: move;
   stroke-width: 2;
 }
-.node-input {
+.node_input {
   fill: orange;
 }
-.node-input.node-required {
+.node_input.node_required {
   fill: orangered;
 }
-.node-process {
+.node_process {
   fill: rgb(231, 231, 74);
 }
-.node-output {
+.node_incomplete {
+  stroke-dasharray: 2,4;
+}
+.node_output {
   fill: rgb(0, 255, 0);
 }
 .node_unknown {
