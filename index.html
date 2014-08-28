@@ -77,10 +77,19 @@
             sideBar: $("#sidebar-content"),
             dropZone: $("#chart")
           });
+          // these are the old deprecated categories
+          var skip = ['JTS', 'gs', 'gt'];
+          var descriptions = {
+            'geo': 'Geometries',
+            'ras': 'Raster',
+            'vec': 'Vector'
+          };
           for (var group in groups) {
-            var content = wpsui.createProcessCategory(group);
-            for (var i=0, ii=groups[group].length; i<ii; ++i) {
-              $(content).append(wpsui.createProcess(groups[group][i]));
+            if (skip.indexOf(group) === -1) {
+              var content = wpsui.createProcessCategory(descriptions[group]);
+              for (var i=0, ii=groups[group].length; i<ii; ++i) {
+                $(content).append(wpsui.createProcess(groups[group][i]));
+              }
             }
           }
         });
