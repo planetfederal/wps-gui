@@ -60,7 +60,7 @@ wps.editor = function(ui) {
 
 wps.editor.prototype.attachPropertyChangeHandler = function(editor, name, node) {
   $('#' + 'node-input-' + name).change(function() {
-    node.valid = editor.validateNodeProperty(node._info, this.value);
+    node.valid = node._info.complexData || editor.validateNodeProperty(node._info, this.value);
     if (!node.valid) {
       $(this).addClass("input-error");
     } else {
@@ -90,7 +90,7 @@ wps.editor.prototype.showEditDialog = function(node) {
     this.ui_.values[node._parent] = {};
   }
   var html = '<form id="dialog-form" class="form-horizontal">';
-  var hasMap = false;
+  var hasMap = false, i, ii, pIds = [];
   // simple input
   var name = node._info.identifier.value;
   if (node._info.literalData) {
@@ -98,7 +98,7 @@ wps.editor.prototype.showEditDialog = function(node) {
     html += '<label for="node-input-' + name + '">' + name + '</label>';
     if (node._info.literalData.allowedValues) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
-      for (var i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
+      for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
         if (this.ui_.values[node._parent][name] === key) {
           html += '<option selected value="'+key+'">'+key+'</option>';
@@ -120,14 +120,37 @@ wps.editor.prototype.showEditDialog = function(node) {
     }
     html += '</div>';
   } else if (node._info.complexData) {
+    // check if there are any processes with geometry output that can serve as input here
+    for (var pId in this.ui_.processes) {
+      if (pId !== node._parent) {
+        var description = this.ui_.processes[pId].description;
+        if (description.processOutputs && description.processOutputs.output) {
+          for (i=0, ii=description.processOutputs.output.length; i<ii; ++i) {
+            var output = description.processOutputs.output[i];
+            if (output.complexOutput) {
+              pIds.push(pId);
+            }
+          }
+        }
+      }
+    }
+    if (pIds.length > 0) {
+      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      html += '<option value="">Draw geometry</option>';
+      for (i=0, ii=pIds.length; i<ii; ++i) {
+        html += '<option value="' + pIds[i] + '">' + pIds[i] + "</option>";
+      }
+      html += "</select>";
+    }
     hasMap = true;
     html += '<div id="map" style="width:400px;height:200px;border:1px black solid"></div>';
   }
   html += '</form>';
   $("#dialog-form").html(html);
-  if (hasMap === false) {
+  if (hasMap === false || pIds.length > 0) {
     this.attachPropertyChangeHandler(this, name, node);
-  } else {
+  }
+  if (hasMap === true) {
     var map;
     if (!this.ui_.inputMaps[node.id]) {
       this.ui_.inputMaps[node.id] = {};
