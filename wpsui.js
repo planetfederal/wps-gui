@@ -209,7 +209,7 @@ wps.ui = function(options) {
   $('#btn-run-process').click($.proxy(this.execute,null, this));
   var me = this;
   d3.select(window).on("keydown",function() {
-    if (me.locked_ !== true) {
+    if (me.locked_ !== true && d3.event.target == document.body) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
         me.deleteSelection();
         d3.event.preventDefault();
