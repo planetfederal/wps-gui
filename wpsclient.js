@@ -16,10 +16,13 @@ wps.process = function(options) {
     }
   }
   this.executeCallbacks = [];
-  this.formats = {
-    'application/wkt': new ol.format.WKT(),
-    'application/json': new ol.format.GeoJSON()
-  };
+  this.formats = [{
+    mimeType: 'application/wkt',
+    format: new ol.format.WKT()
+  }, {
+    mimeType: 'application/json',
+    format: new ol.format.GeoJSON()
+  }];
 };
 
 wps.process.prototype.describe = function(options) {
@@ -138,7 +141,12 @@ wps.process.prototype.execute = function(options) {
           } else if (output.complexOutput) {
             var mimeType = me.findMimeType(output.complexOutput.supported.format);
             //TODO For now we assume a spatial output if complexOutput
-            result = me.formats[mimeType].readFeatures(this.responseText);
+            for (var i=0, ii=me.formats.length; i<ii; ++i) {
+              if (me.formats[i].mimeType === mimeType) {
+                result = me.formats[i].format.readFeatures(this.responseText);
+                break;
+              }
+            }
           }
           if (options.success) {
             var outputs = {};
@@ -185,6 +193,13 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
     var complexData = input.complexData;
     if (complexData) {
       var format = this.findMimeType(complexData.supported.format);
+      var content;
+      for (var i=0, ii=this.formats.length; i<ii; ++i) {
+        if (this.formats[i].mimeType === format) { 
+          content = this.formats[i].format.writeFeatures(this.toFeatures(data));
+          break;
+        } 
+      } 
       inputs.push({
         identifier: {
           value: input.identifier.value
@@ -192,7 +207,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
         data: {
           complexData: {
             mimeType: format,
-            content: [this.formats[format].writeFeatures(this.toFeatures(data))]
+            content: [content]
           }
         }
       });
@@ -248,7 +263,7 @@ wps.process.prototype.chainProcess = function(input, chainLink) {
     chainLink.process.description.processOutputs.output, chainLink.output);
   input.reference.mimeType = this.findMimeType(
     input.complexData.supported.format,
-    chainLink.process.description.processOutputs[output].complexOutput.supported.format);
+    chainLink.process.description.processOutputs.output[output].complexOutput.supported.format);
   var formats = {};
   formats[input.reference.mimeType] = true;
   chainLink.process.setResponseForm({
@@ -273,8 +288,10 @@ wps.process.prototype.findMimeType = function(sourceFormats, targetFormats) {
   targetFormats = targetFormats || this.formats;
   for (var i=0, ii=sourceFormats.length; i<ii; ++i) {
     var f = sourceFormats[i].mimeType;
-    if (f in targetFormats) {
-      return f;
+    for (var j=0, jj=targetFormats.length; j<jj; ++j) {
+      if (targetFormats[j].mimeType === f) {
+        return f;
+      }
     }
   }
   return null;

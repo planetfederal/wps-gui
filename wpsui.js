@@ -253,7 +253,20 @@ wps.ui.prototype.execute = function(ui) {
         var features = [];
         var inputs = {};
         for (var key in values) {
-          inputs[key] = values[key];
+          // check if the value is a reference to an existing process
+          if (ui.processes[values[key]]) {
+            var subId = values[key];
+            var subInputs = {};
+            for (var k in ui.values[subId]) {
+              subInputs[k] = ui.values[subId][k];
+            }
+            ui.processes[subId].configure({
+              inputs: subInputs
+            });
+            inputs[key] = ui.processes[subId].output();
+          } else {
+            inputs[key] = values[key];
+          }
         }
         process.execute({
           inputs: inputs,
