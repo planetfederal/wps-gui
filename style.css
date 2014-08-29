@@ -46,28 +46,20 @@ div.btn-group, a.btn {
 }
 
 a.brand {
-        line-height: 16px;
+    line-height: 24px;
 }
 a.brand span {
     vertical-align: middle;
-    font-size: 16px !important;
+    font-size: 24px !important;
+    color: white;
 }
-a.brand:hover span.red {
-    color: rgb(197, 112, 112) !important;
-}
-a.brand:hover {
-    color: #bbb !important;
-}
-a.brand img {
-    height: 16px;
-}
-
 .navbar-fixed-top {
     position: absolute !important;
     z-index: 100 !important;
 }
 .navbar-inner > .container-fluid {
     padding-right: 10px;
+    padding-top: 10px;
 }
 
 #workspace {
@@ -339,6 +331,7 @@ a.brand img {
 }
 
 .pull-right {
+    margin-right: 315px;
     margin-left: 20px;
 }
 
