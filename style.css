@@ -114,10 +114,9 @@ a.brand img {
 .palette-scroll {
     display: none;
     position: absolute;
-    top: 0;
+    top: 40px;
     left:0;
     right: 0;
-    bottom: 35px;
     padding: 5px;
     overflow-y: auto;
     box-sizing:border-box;
@@ -129,14 +128,14 @@ a.brand img {
 #palette-search {
     position: absolute;
     display: none;
-    bottom: 0;
+    top: 0;
     left:0;
     right:0;
     overflow: hidden;
     background: #f3f3f3;
     text-align: center;
     height: 35px;
-    padding: 3px;
+    padding: 6px;
     border-top: 1px solid #999;
     box-sizing:border-box;
     -moz-box-sizing: border-box;    
@@ -145,14 +144,14 @@ a.brand img {
 #palette-search i.glyphicon-search {
     position: absolute;
     pointer-events: none;
-    left: 3px;
-    top: 10px;
+    left: 10px;
+    top: 12px;
 }
 /* bartvde change to glyphicon */
 #palette-search i.glyphicon-remove {
     position: absolute;
-    right: 3px;
-    top: 10px;
+    right: 10px;
+    top: 12px;
 }
 
 #palette-search-clear {
@@ -163,11 +162,12 @@ a.brand img {
     border-radius: 0;
     border: none;
     width: 100%;
+    border: 1px solid black;
     box-shadow: none;
     -webkit-box-shadow: none;
-    padding: 3px 17px;
+    padding: 3px 20px;
     margin: 0px;
-    height: 30px;
+    height: 27px;
     box-sizing:border-box;
     -moz-box-sizing: border-box;    
     
