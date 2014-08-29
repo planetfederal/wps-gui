@@ -90,7 +90,7 @@ wps.process.prototype.configure = function(options) {
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
         if (inputs[input.identifier.value] !== undefined) {
-          this.setInputData(info.value.dataInputs.input, input, inputs[input.identifier.value]);
+          this.setInputData(info, input, inputs[input.identifier.value]);
         }
       }
       if (options.callback) {
@@ -174,7 +174,8 @@ wps.process.prototype.parseDescription = function(description) {
     server.processDescription[this.identifier]).value.processDescription[0];
 };
 
-wps.process.prototype.setInputData = function(inputs, input, data) {
+wps.process.prototype.setInputData = function(info, input, data) {
+  var inputs = info.value.dataInputs.input;
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
     input.reference = {
@@ -185,7 +186,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
     data.process.describe({
       callback: function() {
         --this.chained;
-        this.chainProcess(input, data);
+        this.chainProcess(info, input, data);
       },
       scope: this
     });
@@ -258,7 +259,7 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
   return output;
 };
 
-wps.process.prototype.chainProcess = function(input, chainLink) {
+wps.process.prototype.chainProcess = function(info, input, chainLink) {
   var output = this.getOutputIndex(
     chainLink.process.description.processOutputs.output, chainLink.output);
   input.reference.mimeType = this.findMimeType(
@@ -266,7 +267,7 @@ wps.process.prototype.chainProcess = function(input, chainLink) {
     chainLink.process.description.processOutputs.output[output].complexOutput.supported.format);
   var formats = {};
   formats[input.reference.mimeType] = true;
-  chainLink.process.setResponseForm({
+  chainLink.process.setResponseForm(info, {
     outputIndex: output,
     supportedFormats: formats
   });
