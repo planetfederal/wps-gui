@@ -183,8 +183,6 @@ wps.process.prototype.setInputData = function(input, data) {
         value: input.identifier.value
       },
       reference: {
-        body: {
-        },
         method: 'POST',
         href: data.process.server === this.server ?
           this.localWPS : this.client.servers[data.process.server].url
