@@ -68,33 +68,18 @@ wps.process.prototype.isComplete = function(values) {
 wps.process.prototype.configure = function(options) {
   this.describe({
     callback: function() {
-      var info = { 
-        name: { 
-          localPart: "Execute",
-          namespaceURI: "http://www.opengis.net/wps/1.0.0"
-        },
-        value: {
-          service: "WPS",
-          version: "1.0.0",
-          identifier: { 
-            value: this.description.identifier.value
-          },
-          dataInputs: {
-            input: []
-          }
-        }
-      };
       var description = this.description,
         inputs = options.inputs,
+        values = options.values,
         input, i, ii;
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
-        if (inputs[input.identifier.value] !== undefined) {
-          this.setInputData(info, input, inputs[input.identifier.value]);
+        if (values[input.identifier.value] !== undefined) {
+          this.setInputData(inputs, input, values[input.identifier.value]);
         }
       }
       if (options.callback) {
-        options.callback.call(options.scope, info);
+        options.callback.call(options.scope);
       }
     },
     scope: this
@@ -103,9 +88,30 @@ wps.process.prototype.configure = function(options) {
 };
 
 wps.process.prototype.execute = function(options) {
+  var info = { 
+    name: { 
+      localPart: "Execute",
+      namespaceURI: "http://www.opengis.net/wps/1.0.0"
+    },
+    value: {
+      service: "WPS",
+      version: "1.0.0",
+      identifier: { 
+        value: this.description.identifier.value
+      },
+      dataInputs: {
+        input: []
+      }
+    }
+  };
+  // unlike the OpenLayers 2 WPS client, we are not modifying this.description here
+  // we are creating new config for JSONIX to serialize
+  // so we are passing in options.inputs as the values to use
+  // and inputs will be added to the array represented by info.value.dataInputs.input
   this.configure({
-    inputs: options.inputs,
-    callback: function(info) {
+    inputs: info.value.dataInputs.input,
+    values: options.inputs,
+    callback: function() {
       var me = this;
       //TODO For now we only deal with a single output
       var outputIndex = this.getOutputIndex(
@@ -174,10 +180,10 @@ wps.process.prototype.parseDescription = function(description) {
     server.processDescription[this.identifier]).value.processDescription[0];
 };
 
-wps.process.prototype.setInputData = function(info, input, data) {
-  var inputs = info.value.dataInputs.input;
+wps.process.prototype.setInputData = function(inputs, input, data) {
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
+    // TODO we should be pushing here to inputs not modifying input itself
     input.reference = {
       method: 'POST',
       href: data.process.server === this.server ?
