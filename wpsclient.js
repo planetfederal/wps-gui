@@ -66,7 +66,22 @@ wps.process.prototype.isComplete = function(values) {
 };
 
 wps.process.prototype.configure = function(options) {
-  this.info.value.dataInputs.input = [];
+  this.info = {
+    name: {
+      localPart: "Execute",
+      namespaceURI: "http://www.opengis.net/wps/1.0.0"
+    },
+    value: {
+      service: "WPS",
+      version: "1.0.0",
+      identifier: {
+        value: this.description.identifier.value
+      },
+      dataInputs: {
+        input: []
+      }
+    }
+  };
   this.describe({
     callback: function() {
       var description = this.description,
@@ -88,20 +103,6 @@ wps.process.prototype.configure = function(options) {
 };
 
 wps.process.prototype.execute = function(options) {
-  this.info = { 
-    name: { 
-      localPart: "Execute",
-      namespaceURI: "http://www.opengis.net/wps/1.0.0"
-    },
-    value: {
-      service: "WPS",
-      version: "1.0.0",
-      identifier: { 
-        value: this.description.identifier.value
-      },
-      dataInputs: {}
-    }
-  };
   this.configure({
     inputs: options.inputs,
     callback: function() {
@@ -185,7 +186,7 @@ wps.process.prototype.setInputData = function(input, data) {
     data.process.describe({
       callback: function() {
         --this.chained;
-        this.chainProcess(info, input, data);
+        this.chainProcess(input, data);
       },
       scope: this
     });
