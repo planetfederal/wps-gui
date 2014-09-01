@@ -102,10 +102,6 @@ wps.process.prototype.execute = function(options) {
       dataInputs: {}
     }
   };
-  // unlike the OpenLayers 2 WPS client, we are not modifying this.description here
-  // we are creating new config for JSONIX to serialize
-  // so we are passing in options.inputs as the values to use
-  // and inputs will be added to the array represented by info.value.dataInputs.input
   this.configure({
     inputs: options.inputs,
     callback: function() {
