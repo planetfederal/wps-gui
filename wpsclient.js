@@ -66,7 +66,7 @@ wps.process.prototype.isComplete = function(values) {
 };
 
 wps.process.prototype.configure = function(options) {
-  this.inputs = [];
+  this.info.value.dataInputs.input = [];
   this.describe({
     callback: function() {
       var description = this.description,
@@ -88,7 +88,7 @@ wps.process.prototype.configure = function(options) {
 };
 
 wps.process.prototype.execute = function(options) {
-  var info = { 
+  this.info = { 
     name: { 
       localPart: "Execute",
       namespaceURI: "http://www.opengis.net/wps/1.0.0"
@@ -105,12 +105,11 @@ wps.process.prototype.execute = function(options) {
   this.configure({
     inputs: options.inputs,
     callback: function() {
-      info.value.dataInputs.input = this.inputs;
       var me = this;
       //TODO For now we only deal with a single output
       var outputIndex = this.getOutputIndex(
         me.description.processOutputs.output, options.output);
-      me.setResponseForm(info, {outputIndex: outputIndex});
+      me.setResponseForm({outputIndex: outputIndex});
       (function callback() {
         var idx = me.executeCallbacks.indexOf(callback);
         if (idx > -1) {
@@ -154,7 +153,7 @@ wps.process.prototype.execute = function(options) {
             options.success.call(options.scope, outputs);
           }
         };
-        xmlhttp.send(me.client.marshaller.marshalString(info));
+        xmlhttp.send(me.client.marshaller.marshalString(me.info));
       })();
     },
     scope: this
@@ -201,7 +200,7 @@ wps.process.prototype.setInputData = function(input, data) {
           break;
         } 
       } 
-      this.inputs.push({
+      this.info.value.dataInputs.input.push({
         identifier: {
           value: input.identifier.value
         },
@@ -213,7 +212,7 @@ wps.process.prototype.setInputData = function(input, data) {
         }
       });
     } else {
-      this.inputs.push({
+      this.info.value.dataInputs.input.push({
         identifier: {
           value: input.identifier.value
         },
@@ -227,14 +226,14 @@ wps.process.prototype.setInputData = function(input, data) {
   }
 };
 
-wps.process.prototype.setResponseForm = function(info, options) {
+wps.process.prototype.setResponseForm = function(options) {
   options = options || {};
   var output = this.description.processOutputs.output[options.outputIndex || 0];
   var mimeType;
   if (output.complexOutput) {
     mimeType = this.findMimeType(output.complexOutput.supported.format, options.supportedFormats);
   }
-  info.value.responseForm = {
+  this.info.value.responseForm = {
     rawDataOutput: {
       identifier: {
         value: output.identifier.value
@@ -259,7 +258,7 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
   return output;
 };
 
-wps.process.prototype.chainProcess = function(info, input, chainLink) {
+wps.process.prototype.chainProcess = function(input, chainLink) {
   var output = this.getOutputIndex(
     chainLink.process.description.processOutputs.output, chainLink.output);
   input.reference.mimeType = this.findMimeType(
@@ -267,7 +266,7 @@ wps.process.prototype.chainProcess = function(info, input, chainLink) {
     chainLink.process.description.processOutputs.output[output].complexOutput.supported.format);
   var formats = {};
   formats[input.reference.mimeType] = true;
-  chainLink.process.setResponseForm(info, {
+  chainLink.process.setResponseForm({
     outputIndex: output,
     supportedFormats: formats
   });
