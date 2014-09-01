@@ -319,7 +319,6 @@ wps.client = function(options) {
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
-  this.lazy = options.lazy !== undefined ? options.lazy : false;
   this.servers = {};
   for (var s in options.servers) {
     this.servers[s] = typeof options.servers[s] == 'string' ? {
@@ -345,9 +344,7 @@ wps.client.prototype.getProcess = function(serverID, processID, options) {
     server: serverID,
     identifier: processID
   });
-  if (!this.lazy) {
-    process.describe(options);
-  }
+  process.describe(options);
   return process;
 };
 
