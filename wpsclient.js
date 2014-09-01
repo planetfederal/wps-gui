@@ -66,16 +66,16 @@ wps.process.prototype.isComplete = function(values) {
 };
 
 wps.process.prototype.configure = function(options) {
+  this.inputs = [];
   this.describe({
     callback: function() {
       var description = this.description,
         inputs = options.inputs,
-        values = options.values,
         input, i, ii;
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
-        if (values[input.identifier.value] !== undefined) {
-          this.setInputData(inputs, input, values[input.identifier.value]);
+        if (inputs[input.identifier.value] !== undefined) {
+          this.setInputData(input, inputs[input.identifier.value]);
         }
       }
       if (options.callback) {
@@ -99,9 +99,7 @@ wps.process.prototype.execute = function(options) {
       identifier: { 
         value: this.description.identifier.value
       },
-      dataInputs: {
-        input: []
-      }
+      dataInputs: {}
     }
   };
   // unlike the OpenLayers 2 WPS client, we are not modifying this.description here
@@ -109,9 +107,9 @@ wps.process.prototype.execute = function(options) {
   // so we are passing in options.inputs as the values to use
   // and inputs will be added to the array represented by info.value.dataInputs.input
   this.configure({
-    inputs: info.value.dataInputs.input,
-    values: options.inputs,
+    inputs: options.inputs,
     callback: function() {
+      info.value.dataInputs.input = this.inputs;
       var me = this;
       //TODO For now we only deal with a single output
       var outputIndex = this.getOutputIndex(
@@ -180,7 +178,7 @@ wps.process.prototype.parseDescription = function(description) {
     server.processDescription[this.identifier]).value.processDescription[0];
 };
 
-wps.process.prototype.setInputData = function(inputs, input, data) {
+wps.process.prototype.setInputData = function(input, data) {
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
     // TODO we should be pushing here to inputs not modifying input itself
@@ -207,7 +205,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
           break;
         } 
       } 
-      inputs.push({
+      this.inputs.push({
         identifier: {
           value: input.identifier.value
         },
@@ -219,7 +217,7 @@ wps.process.prototype.setInputData = function(inputs, input, data) {
         }
       });
     } else {
-      inputs.push({
+      this.inputs.push({
         identifier: {
           value: input.identifier.value
         },
