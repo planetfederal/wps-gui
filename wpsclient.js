@@ -178,15 +178,23 @@ wps.process.prototype.setInputData = function(input, data) {
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
     // TODO we should be pushing here to inputs not modifying input itself
-    input.reference = {
-      method: 'POST',
-      href: data.process.server === this.server ?
-        this.localWPS : this.client.servers[data.process.server].url
+    var inputValue = {
+      identifier: {
+        value: input.identifier.value
+      },
+      reference: {
+        body: {
+        },
+        method: 'POST',
+        href: data.process.server === this.server ?
+          this.localWPS : this.client.servers[data.process.server].url
+      }
     };
+    this.info.value.dataInputs.input.push(inputValue);
     data.process.describe({
       callback: function() {
         --this.chained;
-        this.chainProcess(input, data);
+        this.chainProcess(input, inputValue, data);
       },
       scope: this
     });
@@ -259,19 +267,21 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
   return output;
 };
 
-wps.process.prototype.chainProcess = function(input, chainLink) {
+wps.process.prototype.chainProcess = function(input, inputValue, chainLink) {
   var output = this.getOutputIndex(
     chainLink.process.description.processOutputs.output, chainLink.output);
-  input.reference.mimeType = this.findMimeType(
+  inputValue.reference.mimeType = this.findMimeType(
     input.complexData.supported.format,
     chainLink.process.description.processOutputs.output[output].complexOutput.supported.format);
   var formats = {};
-  formats[input.reference.mimeType] = true;
+  formats[inputValue.reference.mimeType] = true;
   chainLink.process.setResponseForm({
     outputIndex: output,
     supportedFormats: formats
   });
-  input.reference.body = chainLink.process.description;
+  inputValue.reference.body = {
+    content: [chainLink.process.info]
+  };
   while (this.executeCallbacks.length > 0) {
     this.executeCallbacks[0]();
   }
