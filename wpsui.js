@@ -197,7 +197,6 @@ wps.editor.prototype.showEditDialog = function(node) {
 
 wps.ui = function(options) {
   this.parentContainer_ = options.parentContainer;
-  this.sideBar_ = options.sideBar;
   this.dropZone_ = options.dropZone;
   this.client_ = options.client;
   this.spaceWidth = options.spaceWidth || 5000;
@@ -281,7 +280,8 @@ wps.ui.prototype.execute = function(ui) {
           inputs: inputs,
           success: function(output) {
             if ($.isArray(output.result)) {
-              ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
+              $('#tab-results').html('<div id="map" style="width: 300px; height: 300px"></div>');
+              $('#tab-results').show();
               var source = new ol.source.Vector();
               var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
               var map = new ol.Map({
@@ -303,8 +303,10 @@ wps.ui.prototype.execute = function(ui) {
               view.fitExtent(
                 source.getExtent(), map.getSize());
             } else {
-              ui.sideBar_.html(String(output.result));
+              $('#tab-results').html(String(output.result));
+              $('#tab-results').show();
             }
+            $('#tab-inputs').hide();
           }
         });
       }
@@ -687,7 +689,8 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
   me.mousedownNode.selected = true;
   var help = me.mousedownNode._info._abstract ?
     '<div class="node-help">' + me.mousedownNode._info._abstract.value + "</div>" : '';
-  me.sideBar_.html(help);
+  $('#tab-inputs').html(help);
+  $('#tab-inputs').show();
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
   if (d3.event.button != 2) {
@@ -793,10 +796,10 @@ wps.ui.prototype.createProcess = function(process) {
     container:'body',
     content: summary
   });
-  var sidebar = this.sideBar_;
   $(d).click(summary, function(evt) {
     var help = '<div class="node-help">' + evt.data + "</div>";
-    sidebar.html(help);
+    $('#tab-inputs').html(help);
+    $('#tab-inputs').show();
   });
   $(d).draggable({
     helper: 'clone',
