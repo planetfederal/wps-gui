@@ -224,6 +224,15 @@ wps.ui = function(options) {
   this.values = {};
   this.inputMaps = {};
   this.outputStyle = new ol.style.Style({
+    image: new ol.style.Circle({
+      radius: 5,
+      stroke: new ol.style.Stroke({
+        color: 'black'
+      }),
+      fill: new ol.style.Fill({
+        color: 'red'
+      })
+    }),
     stroke: new ol.style.Stroke({
       color: 'red',
       width: 1 
@@ -274,7 +283,7 @@ wps.ui.prototype.execute = function(ui) {
             if ($.isArray(output.result)) {
               ui.sideBar_.html('<div id="map" style="width: 300px; height: 300px"></div>');
               var source = new ol.source.Vector();
-              var vector = new ol.layer.Vector({source: source});
+              var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
               var map = new ol.Map({
                 target: 'map',
                 layers: [
@@ -285,14 +294,10 @@ wps.ui.prototype.execute = function(ui) {
                 ],
                 view: new ol.View({
                   center: [0, 0],
-                  zoom: 1
+                  zoom: 1,
+                  maxZoom: 8
                 })
               });
-              source.addFeatures(ui.values[processId][key]);
-              for (var i=0, ii=output.result.length; i<ii; ++i) {
-                var f = output.result[i];
-                f.setStyle(ui.outputStyle);
-              }
               source.addFeatures(output.result);
               var view = map.getView();
               view.fitExtent(

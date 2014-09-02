@@ -6,6 +6,6 @@
     "jquery": "1.11.1",
     "jquery-ui": "1.11.0",
     "d3": "3.4.11",
-    "jsonix": "2.0.12"
+    "jsonix": "highsource/jsonix#55c0667f6f6ce19d45e548c39f9923e14015f310"
   }
 }
