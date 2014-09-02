@@ -21,6 +21,7 @@
     "ol.format.WKT#writeFeatures",
     "ol.format.WKT#readFeatures",
     "ol.style.Style",
+    "ol.style.Fill",
     "ol.style.Stroke",
     "ol.style.Circle",
     "ol.Feature#setStyle"
