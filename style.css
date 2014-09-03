@@ -376,19 +376,26 @@ a.brand span {
 .node {
   stroke: #999;
   cursor: move;
-  stroke-width: 2;
+  stroke-width: 3;
 }
 .node_input {
   fill: orange;
 }
 .node_input.node_required {
-  fill: orangered;
+  fill: rgb(255, 177, 111); 
 }
 .node_process {
   fill: rgb(231, 231, 74);
 }
 .node_incomplete {
-  stroke-dasharray: 2,4;
+  stroke-width: 3;
+  stroke-dasharray: 12,5;
+}
+.node_selected {
+   stroke: rgb(0, 175, 143);
+}
+.node_invalid {
+  stroke-color: red;
 }
 .node_output {
   fill: rgb(0, 255, 0);
@@ -449,9 +456,6 @@ a.brand span {
 }
 .node_invalid {
    stroke: #ff0000;
-}
-.node_selected {
-   stroke: #ff7f0e;
 }
 .node_highlighted {
    stroke: #dd1616;

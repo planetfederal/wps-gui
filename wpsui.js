@@ -42,7 +42,12 @@ wps.editor.prototype.setValue = function() {
 
 wps.editor.prototype.attachPropertyChangeHandler = function(editor, name, node) {
   $('#' + 'node-input-' + name).change(function() {
+    var valid = node.valid;
     node.valid = node._info.complexData || editor.validateNodeProperty(node._info, this.value);
+    if (valid !== node.valid) {
+      node.dirty = true;
+      editor.ui_.redraw();
+    }
     if (!node.valid) {
       $(this).addClass("input-error");
     } else {
@@ -672,6 +677,7 @@ wps.ui.prototype.updateNode = function(d) {
     thisNode.selectAll(".node").
       attr("width",function(d){return d.w;}).
       attr("height",function(d){return d.h;}).
+      classed("node_invalid", function(d) { return d.valid === false; }).
       classed("node_incomplete", function(d) { return !d.complete; }).
       classed("node_selected",function(d) { return d.selected; });
       thisNode.selectAll('text.node_label').text(function(d,i){
