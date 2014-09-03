@@ -106,6 +106,7 @@ a.brand span {
 .palette-scroll {
     display: none;
     position: absolute;
+    height: 90%;
     top: 40px;
     left:0;
     right: 0;
