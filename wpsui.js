@@ -237,7 +237,7 @@ wps.ui = function(options) {
       width: 1 
     })
   });
-  $('#btn-run-process').click($.proxy(this.execute,null, this));
+  $('#btn-run-process').click($.proxy(this.execute, null, this));
   var me = this;
   d3.select(window).on("keydown",function() {
     if (me.locked_ !== true && d3.event.target == document.body) {
@@ -247,6 +247,31 @@ wps.ui = function(options) {
       }
     }
   });
+  this.initializeTabs();
+};
+
+wps.ui.prototype.activateTab = function(link) {
+  var ul = $('#sidebar-tabs');
+ if (typeof link === "string") {
+    link = ul.find("a[href='#"+link+"']");
+  }
+  if (!link.parent().hasClass("active")) {
+    ul.children().removeClass("active");
+    link.parent().addClass("active");
+  }
+  $('#sidebar-content').children().hide();
+  var tab = link.attr('href');
+  $(tab).show();
+};
+
+wps.ui.prototype.initializeTabs = function() {
+  var ul = $('#sidebar-tabs');
+  var me = this;
+  var onTabClick = function() {
+    me.activateTab($(this));
+    return false;
+  };
+  ul.find("li.red-ui-tab a").on("click", onTabClick);
 };
 
 wps.ui.prototype.execute = function(ui) {
@@ -281,7 +306,7 @@ wps.ui.prototype.execute = function(ui) {
           success: function(output) {
             if ($.isArray(output.result)) {
               $('#tab-results').html('<div id="map" style="width: 300px; height: 300px"></div>');
-              $('#tab-results').show();
+              ui.activateTab('tab-results');
               var source = new ol.source.Vector();
               var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
               var map = new ol.Map({
@@ -304,9 +329,8 @@ wps.ui.prototype.execute = function(ui) {
                 source.getExtent(), map.getSize());
             } else {
               $('#tab-results').html(String(output.result));
-              $('#tab-results').show();
+              ui.activateTab('tab-results');
             }
-            $('#tab-inputs').hide();
           }
         });
       }
@@ -690,7 +714,7 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
   var help = me.mousedownNode._info._abstract ?
     '<div class="node-help">' + me.mousedownNode._info._abstract.value + "</div>" : '';
   $('#tab-inputs').html(help);
-  $('#tab-inputs').show();
+  ui.activateTab('tab-inputs');
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
   if (d3.event.button != 2) {
@@ -796,10 +820,11 @@ wps.ui.prototype.createProcess = function(process) {
     container:'body',
     content: summary
   });
+  var me = this;
   $(d).click(summary, function(evt) {
     var help = '<div class="node-help">' + evt.data + "</div>";
     $('#tab-inputs').html(help);
-    $('#tab-inputs').show();
+    me.activateTab('tab-inputs');
   });
   $(d).draggable({
     helper: 'clone',
