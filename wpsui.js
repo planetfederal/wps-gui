@@ -76,6 +76,7 @@ wps.editor.prototype.showEditForm = function(node) {
   var hasMap = false, i, ii, pIds = [];
   // simple input
   var name = node._info.identifier.value;
+  html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
     html += '<label for="node-input-' + name + '">' + name + '</label>';

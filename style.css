@@ -545,7 +545,12 @@ g.link_unknown path.link_line {
 
 .form-row {
     clear: both;
-    margin-bottom: 7px;
+    margin: 7px 7px 7px 7px;
+}
+div.form-row-abstract {
+    background-color: #EEEEEE;
+    font-style: italic;
+    padding: 5px 5px 10px 5px;
 }
 .form-row label {
     display: inline-block;
