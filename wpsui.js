@@ -696,10 +696,6 @@ wps.ui.prototype.nodeMouseDown = function(ui, d) {
     me.clearSelection();
   }
   me.mousedownNode.selected = true;
-  var help = me.mousedownNode._info._abstract ?
-    '<div class="node-help">' + me.mousedownNode._info._abstract.value + "</div>" : '';
-  $('#tab-inputs').html(help);
-  ui.activateTab('tab-inputs');
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
   if (d3.event.button != 2) {
@@ -804,12 +800,6 @@ wps.ui.prototype.createProcess = function(process) {
     html: true,
     container:'body',
     content: summary
-  });
-  var me = this;
-  $(d).click(summary, function(evt) {
-    var help = '<div class="node-help">' + evt.data + "</div>";
-    $('#tab-inputs').html(help);
-    me.activateTab('tab-inputs');
   });
   $(d).draggable({
     helper: 'clone',
