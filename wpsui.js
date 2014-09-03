@@ -233,11 +233,50 @@ wps.ui = function(options) {
     }
   });
   this.initializeTabs();
+  this.initializeSplitter();
+};
+
+wps.ui.prototype.resizeTabs = function() {
+  var ul = $('#sidebar-tabs');
+  var tabs = ul.find("li.red-ui-tab");
+  var width = ul.width();
+  var tabCount = tabs.size();
+  var tabWidth = (width-6-(tabCount*7))/tabCount;
+  var pct = 100*tabWidth/width;
+  tabs.css({width:pct+"%"});
+};
+
+wps.ui.prototype.initializeSplitter = function() {
+  var sidebarSeparator =  {};
+  var me = this;
+  $("#sidebar-separator").draggable({
+    axis: "x",
+    start:function(event,ui) {
+      var winWidth = $(window).width();
+      sidebarSeparator.start = ui.position.left;
+      sidebarSeparator.chartWidth = $("#workspace").width();
+      sidebarSeparator.chartRight = winWidth-$("#workspace").width()-$("#workspace").offset().left-2;
+      sidebarSeparator.width = $("#sidebar").width();
+    },
+    drag: function(event,ui) {
+      var d = ui.position.left-sidebarSeparator.start;
+      var newSidebarWidth = sidebarSeparator.width-d;
+      var newChartRight = sidebarSeparator.chartRight-d;
+      $("#workspace").css("right",newChartRight);
+      $("#chart-zoom-controls").css("right",newChartRight+20);
+      $("#sidebar").width(newSidebarWidth);
+      me.resizeTabs();
+    },
+    stop:function(event,ui) {
+      $("#sidebar-separator").css("left","auto");
+      $("#sidebar-separator").css("right",($("#sidebar").width()+13)+"px");
+    }
+  });
 };
 
 wps.ui.prototype.activateTab = function(link) {
   var ul = $('#sidebar-tabs');
- if (typeof link === "string") {
+  if (typeof link === "string") {
     link = ul.find("a[href='#"+link+"']");
   }
   if (!link.parent().hasClass("active")) {
