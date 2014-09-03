@@ -127,7 +127,8 @@ wps.editor.prototype.showEditForm = function(node) {
       html += "</select>";
     }
     hasMap = true;
-    html += '<div id="map" style="width:400px;height:200px;border:1px black solid"></div>';
+    var id = "input-map-" + node.id;
+    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
   }
   html += '</form>';
   $('#tab-inputs').html(html);
@@ -142,7 +143,7 @@ wps.editor.prototype.showEditForm = function(node) {
       this.ui_.inputMaps[node.id].source = new ol.source.Vector();
       this.ui_.inputMaps[node.id].vector = new ol.layer.Vector({source: this.ui_.inputMaps[node.id].source});
       this.ui_.inputMaps[node.id].map = new ol.Map({
-        target: 'map',
+        target: 'input-map-' + node.id,
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
@@ -172,7 +173,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }, 0);
     } else {
       map = this.ui_.inputMaps[node.id].map;
-      map.set('target', 'map');
+      map.set('target', 'input-map-' + node.id);
       window.setTimeout(function() {
         map.updateSize();
       }, 0);
