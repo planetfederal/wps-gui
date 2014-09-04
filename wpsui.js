@@ -242,6 +242,26 @@ wps.ui = function(options) {
   this.initializeSplitter();
 };
 
+wps.ui.prototype.load = function() {
+  var nodes = localStorage.getItem("wps-gui");
+  if (nodes !== null) {
+    this.nodes = JSON.parse(nodes);
+    this.redraw();
+  }
+};
+
+wps.ui.prototype.save = function() {
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    this.nodes[i].dirty = true;
+    delete this.nodes[i]._ports;
+  }
+  localStorage.setItem("wps-gui", JSON.stringify(this.nodes));
+};
+
+wps.ui.prototype.clear = function() { 
+  localStorage.removeItem("wps-gui");
+};
+
 wps.ui.prototype.resizeTabs = function() {
   var ul = $('#sidebar-tabs');
   var tabs = ul.find("li.red-ui-tab");
