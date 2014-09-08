@@ -570,8 +570,8 @@ wps.ui.prototype.createDropTarget = function() {
           me.nodes.push(input);
           // create a link as well between input and process
           link = {
-            source: input,
-            target: nn,
+            source: input.id,
+            target: nn.id,
             _parent: nn.id
           };
           me.nodes.push(link);
@@ -589,9 +589,9 @@ wps.ui.prototype.createDropTarget = function() {
           me.nodes.push(output);
           // create a link as well between process and output
           link = {
-            source: nn,
+            source: nn.id,
             _parent: nn.id,
-            target: output
+            target: output.id
           };
           me.nodes.push(link);
         }
@@ -604,7 +604,7 @@ wps.ui.prototype.createDropTarget = function() {
 
 wps.ui.prototype.createLinkPaths = function() {
   var me = this;
-  var link = this.vis.selectAll(".link").data(this.nodes.filter(function(d) { return d.source && d.target; }), function(d) { return d.source.id+":"+d.sourcePort+":"+d.target.id;});
+  var link = this.vis.selectAll(".link").data(this.nodes.filter(function(d) { return d.source && d.target; }), function(d) { return d.source+":"+d.target;});
   var linkEnter = link.enter().insert("g",".node").attr("class","link");
   linkEnter.each(function(d,i) {
     var l = d3.select(this);
@@ -618,11 +618,20 @@ wps.ui.prototype.createLinkPaths = function() {
     if (!d.source || !d.target) {
       return null;
     }
-    var numOutputs = d.source.outputs || 1;
-    var sourcePort = d.sourcePort || 0;
+    var source, target;
+    for (var i=0, ii=me.nodes.length; i<ii; ++i) {
+      if (d.source === me.nodes[i].id) {
+        source = me.nodes[i];
+      }
+      if (d.target === me.nodes[i].id) {
+        target = me.nodes[i];
+      }
+    }
+    var numOutputs = source.outputs || 1;
+    var sourcePort = 0;
     var y = -((numOutputs-1)/2)*13 +13*sourcePort;
-    var dy = d.target.y-(d.source.y+y);
-    var dx = (d.target.x-d.target.w/2)-(d.source.x+d.source.w/2);
+    var dy = target.y-(source.y+y);
+    var dx = (target.x-target.w/2)-(source.x+source.w/2);
     var delta = Math.sqrt(dy*dy+dx*dx);
     var scale = me.lineCurveScale;
     var scaleY = 0;
@@ -635,14 +644,14 @@ wps.ui.prototype.createLinkPaths = function() {
         scaleY = ((dy>0)?0.5:-0.5)*(((3*me.nodeHeight)-Math.abs(dy))/(3*me.nodeHeight))*(Math.min(me.nodeWidth,Math.abs(dx))/(me.nodeWidth)) ;
       }
     }
-    d.x1 = d.source.x+d.source.w/2;
-    d.y1 = d.source.y+y;
-    d.x2 = d.target.x-d.target.w/2;
-    d.y2 = d.target.y;
-    return "M "+(d.source.x+d.source.w/2)+" "+(d.source.y+y)+
-      " C "+(d.source.x+d.source.w/2+scale*me.nodeWidth)+" "+(d.source.y+y+scaleY*me.nodeHeight)+" "+
-      (d.target.x-d.target.w/2-scale*me.nodeWidth)+" "+(d.target.y-scaleY*me.nodeHeight)+" "+
-      (d.target.x-d.target.w/2)+" "+d.target.y;
+    d.x1 = source.x+source.w/2;
+    d.y1 = source.y+y;
+    d.x2 = target.x-target.w/2;
+    d.y2 = target.y;
+    return "M "+(source.x+source.w/2)+" "+(source.y+y)+
+      " C "+(source.x+source.w/2+scale*me.nodeWidth)+" "+(source.y+y+scaleY*me.nodeHeight)+" "+
+      (target.x-target.w/2-scale*me.nodeWidth)+" "+(target.y-scaleY*me.nodeHeight)+" "+
+      (target.x-target.w/2)+" "+target.y;
   });
 };
 
