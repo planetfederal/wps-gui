@@ -202,8 +202,17 @@ wps.process.prototype.setInputData = function(input, data) {
       var format = this.findMimeType(complexData.supported.format);
       var content;
       for (var i=0, ii=this.formats.length; i<ii; ++i) {
-        if (this.formats[i].mimeType === format) { 
-          content = this.formats[i].format.writeFeatures(this.toFeatures(data));
+        if (this.formats[i].mimeType === format) {
+          if (typeof(data) === "string") {
+            if (format === "application/wkt") {
+              content = data;
+            } else {
+              // TODO reuse format
+              content = this.formats[i].format.writeFeatures(new ol.format.WKT().readFeatures(data));
+            }
+          } else {
+            content = this.formats[i].format.writeFeatures(this.toFeatures(data));
+          }
           break;
         } 
       } 

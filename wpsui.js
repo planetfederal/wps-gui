@@ -21,21 +21,26 @@ wps.editor.prototype.setValue = function() {
     } else {
       value = $('#node-input-' + name).val();
     }
-    ui.values[processId][name] = value;
+    me.editingNode_.value = value;
   }
   ui.locked_ = false;
   me.editingNode_.dirty = true;
   me.editingNode_.complete = true;
   // check if the process is complete as well
   var process = ui.processes[processId], parentNode;
+  var values = {};
   for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
-    if (ui.nodes[i].id === processId) {
-      parentNode = ui.nodes[i];
-      break;
+    var node = ui.nodes[i];
+    if (node.type === "input" && node.value !== undefined) {
+      values[node._info.identifier.value] = node.value;
     }
+    if (node.id === processId) {
+      parentNode = node;
+    }
+
   }
   var old = parentNode.complete;
-  parentNode.complete = process.isComplete(ui.values[processId]);
+  parentNode.complete = process.isComplete(values);
   parentNode.dirty = (old !== parentNode.complete);
   ui.redraw();
 };
@@ -74,9 +79,6 @@ wps.editor.prototype.showEditForm = function(node) {
   }
   this.ui_.locked_ = true;
   this.editingNode_ = node;
-  if (!this.ui_.values[node._parent]) {
-    this.ui_.values[node._parent] = {};
-  }
   var html = '<form id="dialog-form" class="form-horizontal">';
   var hasMap = false, i, ii, pIds = [];
   // simple input
@@ -89,7 +91,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
-        if (this.ui_.values[node._parent][name] === key) {
+        if (node.value === key) {
           html += '<option selected value="'+key+'">'+key+'</option>';
         } else {
           html += '<option value="'+key+'">'+key+'</option>';
@@ -97,13 +99,13 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '</select>';
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
-      if (this.ui_.values[node._parent][name] === true) {
+      if (node.value === true) {
         html += '<input type="checkbox" id="node-input-' + name + '" checked>';
       } else {
         html += '<input type="checkbox" id="node-input-' + name + '">';
       }
     } else {
-      var value = this.ui_.values[node._parent][name];
+      var value = node.value;
       value = (value === undefined) ? '' : value;
       html += '<input type="text" id="node-input-' + name + '" value="' + value + '">';
     }
@@ -166,8 +168,9 @@ wps.editor.prototype.showEditForm = function(node) {
       });
       this.ui_.inputMaps[node.id].map.addInteraction(this.ui_.inputMaps[node.id].draw);
       this.ui_.inputMaps[node.id].source.on('change', function(evt) {
-        this.ui_.values[node._parent][name] = this.ui_.inputMaps[node.id].source.getFeatures();
-        node.valid = this.ui_.values[node._parent][name].length >= 1;
+        var features = this.ui_.inputMaps[node.id].source.getFeatures();
+        node.value = new ol.format.WKT().writeFeatures(features);
+        node.valid = features.length >= 1;
         if (node.valid) {
           this.setValue();
         }
@@ -211,7 +214,6 @@ wps.ui = function(options) {
   this.createZoomToolbar();
   this.editor_ = new wps.editor(this);
   this.processes = {};
-  this.values = {};
   this.inputMaps = {};
   this.localStorageKey = 'wps-gui';
   this.outputStyle = new ol.style.Style({
@@ -334,7 +336,14 @@ wps.ui.prototype.execute = function(ui) {
     var node = selection.datum();
     if (node.type === 'process') {
       hasSelected = true;
-      var processId = node.id, process = ui.processes[processId], values = ui.values[processId];
+      var processId = node.id, process = ui.processes[processId];
+      var values = {};
+      for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+        var n = ui.nodes[i];
+        if (n.type === 'input' && n._parent === processId) {
+          values[n._info.identifier.value] = n.value;
+        }
+      }
       if (values && process.isComplete(values)) {
         var features = [];
         var inputs = {};
@@ -343,8 +352,10 @@ wps.ui.prototype.execute = function(ui) {
           if (ui.processes[values[key]]) {
             var subId = values[key];
             var subInputs = {};
-            for (var k in ui.values[subId]) {
-              subInputs[k] = ui.values[subId][k];
+            for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
+              if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
+                subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
+              }
             }
             ui.processes[subId].configure({
               inputs: subInputs
