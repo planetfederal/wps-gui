@@ -896,3 +896,6 @@ i.spinner {
     background: url(spin.svg) no-repeat 50% 50%;
     background-size: contain
 }
+.wpsbuilder {
+    margin-right: 20px;
+}

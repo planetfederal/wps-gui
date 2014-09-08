@@ -213,6 +213,7 @@ wps.ui = function(options) {
   this.processes = {};
   this.values = {};
   this.inputMaps = {};
+  this.localStorageKey = 'wps-gui';
   this.outputStyle = new ol.style.Style({
     image: new ol.style.Circle({
       radius: 5,
@@ -240,26 +241,28 @@ wps.ui = function(options) {
   });
   this.initializeTabs();
   this.initializeSplitter();
+  $('#file-open').click($.proxy(this.load, null, this));
+  $('#file-save').click($.proxy(this.save, null, this));
 };
 
-wps.ui.prototype.load = function() {
-  var nodes = localStorage.getItem("wps-gui");
+wps.ui.prototype.load = function(ui) {
+  var nodes = localStorage.getItem(ui.localStorageKey);
   if (nodes !== null) {
-    this.nodes = JSON.parse(nodes);
-    this.redraw();
+    ui.nodes = JSON.parse(nodes);
+    ui.redraw();
   }
 };
 
-wps.ui.prototype.save = function() {
-  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
-    this.nodes[i].dirty = true;
-    delete this.nodes[i]._ports;
+wps.ui.prototype.save = function(ui) {
+  for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+    ui.nodes[i].dirty = true;
+    delete ui.nodes[i]._ports;
   }
-  localStorage.setItem("wps-gui", JSON.stringify(this.nodes));
+  localStorage.setItem(ui.localStorageKey, JSON.stringify(ui.nodes));
 };
 
 wps.ui.prototype.clear = function() { 
-  localStorage.removeItem("wps-gui");
+  localStorage.removeItem(this.localStorageKey);
 };
 
 wps.ui.prototype.resizeTabs = function() {
