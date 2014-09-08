@@ -175,6 +175,9 @@ wps.editor.prototype.showEditForm = function(node) {
           this.setValue();
         }
       }, this);
+      if (node.value) {
+        this.ui_.inputMaps[node.id].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
+      } 
       map = this.ui_.inputMaps[node.id].map;
       window.setTimeout(function() {
         map.updateSize();
@@ -251,6 +254,15 @@ wps.ui.prototype.load = function(ui) {
   var nodes = localStorage.getItem(ui.localStorageKey);
   if (nodes !== null) {
     ui.nodes = JSON.parse(nodes);
+    // recreate process state
+    for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+      var node = ui.nodes[i];
+      if (node.type === "process") {
+        var process = ui.client_.getProcess('wpsgui', node._info.identifier.value, {callback: function(info) {
+          ui.processes[node.id] = process;
+        }});
+      }
+    }
     ui.redraw();
   }
 };
@@ -259,6 +271,7 @@ wps.ui.prototype.save = function(ui) {
   for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
     ui.nodes[i].dirty = true;
     delete ui.nodes[i]._ports;
+    delete ui.nodes[i].selected;
   }
   localStorage.setItem(ui.localStorageKey, JSON.stringify(ui.nodes));
 };
