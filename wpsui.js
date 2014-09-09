@@ -343,8 +343,8 @@ wps.ui.prototype.exportClipboard = function(ui) {
     nodes.push(ui.nodes[i].getState());
   }
   var html = '<div class="form-row">';
-  html += '<label for="node-input-export" style="width:100%"><i class="icon-share">Nodes:</i></label>';
-  html += '<textarea class="input-block-level" id="node-input-export" rows="5"></textarea>';
+  html += '<label for="node-input-export" style="width:100%"><i class="glyphicon glyphicon-share"> Nodes:</i></label>';
+  html += '<textarea readonly class="form-control" id="node-input-export" rows="5"></textarea>';
   html += '</div>';
   html += '<div class="form-tips"> Select the text above and copy to the clipboard with Ctrl-A Ctrl-C.</div>';
   $("#dialog-form").html(html);
