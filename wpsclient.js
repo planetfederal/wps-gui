@@ -326,7 +326,7 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([OWS_V_1_1_0, WPS_V_1_0_0]);
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
