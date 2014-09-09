@@ -26,8 +26,8 @@
             <ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu1">
               <li role="presentation"><a role="menuitem" id="file-open" tabindex="-1" href="#">Open</a></li>
               <li role="presentation"><a role="menuitem" id="file-save" tabindex="-1" href="#">Save</a></li>
-              <li role="presentation"><a role="menuitem" tabindex="-1" href="#">Import from clipboard</a></li>
-              <li role="presentation"><a role="menuitem" tabindex="-1" href="#">Export to clipboard</a></li>
+              <li role="presentation"><a role="menuitem" id="import-clipboard" tabindex="-1" href="#">Import from clipboard</a></li>
+              <li role="presentation"><a role="menuitem" id="export-clipboard" tabindex="-1" href="#">Export to clipboard</a></li>
               <li role="presentation" class="divider"></li>
               <li role="presentation"><a role="menuitem" tabindex="-1" href="#">Delete</a></li>
             </ul>
@@ -70,6 +70,8 @@
         <div id="sidebar-separator"></div>
       </div>
     </div>
+
+    <div id="dialog" class="hide"><form id="dialog-form" class="form-horizontal"></form></div>
 
     <script src="ol.js"></script>
     <script src="components/jquery/dist/jquery.min.js"></script>

@@ -248,6 +248,76 @@ wps.ui = function(options) {
   this.initializeSplitter();
   $('#file-open').click($.proxy(this.load, null, this));
   $('#file-save').click($.proxy(this.save, null, this));
+  $('#export-clipboard').click($.proxy(this.exportClipboard, null, this));
+  $( "#dialog" ).dialog({
+    modal: true,
+    autoOpen: false,
+    closeOnEscape: false,
+    width: 500
+  });
+};
+
+wps.ui.link = function(options) {
+  this.source = options.source;
+  this.target = options.target;
+  this._parent = options._parent;
+};
+
+wps.ui.link.prototype.getState = function() {
+  // TODO see if there is need to serialize the links or they can be recreated
+  return {
+    source: this.source,
+    target: this.target,
+    _parent: this._parent
+  };
+};
+
+// TODO maybe have separate node classes per type?
+wps.ui.node = function(options) {
+  // generate an identifier
+  this.id = (1+Math.random()*4294967295).toString(16);
+  this.w = options.w;
+  this.x = options.x;
+  this.y = options.y;
+  this.z = 0;
+  // type can be 'process', 'input' or 'output'
+  this.type = options.type;
+  // is the node dirty so does it need a redraw or not
+  this.dirty = options.dirty;
+  // information about the node coming from WPS DescribeProcess
+  this._info = options._info;
+  // number of inputs
+  this.inputs = options.inputs;
+  // number of outputs
+  this.outputs = options.outputs;
+  // label to use for display
+  this.label = options.label;
+  // the parent node's id
+  this._parent = options._parent;
+  // is the input required or not
+  this.required = options.required;
+  // is the node complete or not
+  this.complete = options.complete;
+};
+
+wps.ui.node.prototype.getState = function() {
+  return {
+    id: this.id,
+    w: this.w,
+    x: this.x,
+    y: this.y,
+    z: this.z,
+    type: this.type,
+    _info: this._info,
+    inputs: this.inputs,
+    outputs: this.outputs,
+    label: this.label,
+    _parent: this._parent,
+    required: this.required,
+    complete: this.complete,
+    dirty: true,
+    value: this.value
+  };
 };
 
 wps.ui.prototype.load = function(ui) {
@@ -267,13 +337,30 @@ wps.ui.prototype.load = function(ui) {
   }
 };
 
-wps.ui.prototype.save = function(ui) {
+wps.ui.prototype.exportClipboard = function(ui) {
+  var nodes = [];
   for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
-    ui.nodes[i].dirty = true;
-    delete ui.nodes[i]._ports;
-    delete ui.nodes[i].selected;
+    nodes.push(ui.nodes[i].getState());
   }
-  localStorage.setItem(ui.localStorageKey, JSON.stringify(ui.nodes));
+  var html = '<div class="form-row">';
+  html += '<label for="node-input-export" style="width:100%"><i class="icon-share">Nodes:</i></label>';
+  html += '<textarea class="input-block-level" id="node-input-export" rows="5"></textarea>';
+  html += '</div>';
+  html += '<div class="form-tips"> Select the text above and copy to the clipboard with Ctrl-A Ctrl-C.</div>';
+  $("#dialog-form").html(html);
+  $("#dialog").dialog("option", "title", "Export nodes to clipboard").dialog( "open" );
+  // bootstrap's hide class has important, so we need to remove it
+  $("#dialog").removeClass('hide');
+  $("#node-input-export").val(JSON.stringify(nodes));
+  $("#node-input-export").focus();
+};
+
+wps.ui.prototype.save = function(ui) {
+  var nodes = [];
+  for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+    nodes.push(ui.nodes[i].getState());
+  }
+  localStorage.setItem(ui.localStorageKey, JSON.stringify(nodes));
 };
 
 wps.ui.prototype.clear = function() { 
@@ -565,58 +652,66 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[1] /= me.scaleFactor;
         mousePos[0] /= me.scaleFactor;
         /* TODO no workspaces as yet, so z is 0 */
-        var nn = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0],y:mousePos[1],w:this.nodeWidth,z:0};
+        var config = {
+          x: mousePos[0],
+          y:mousePos[1],
+          w: this.nodeWidth,
+          type: 'process',
+          dirty: true,
+          _info: info,
+          inputs: info.dataInputs.input.length,
+          outputs: info.processOutputs.output.length,
+          label: selected_tool 
+        };
+        var nn = new wps.ui.node(config);
         // TODO maybe cache per process type?
         me.processes[nn.id] = process;
-        nn.type = 'process';
-        nn.dirty = true;
-        nn._info = info;
-        nn.inputs = info.dataInputs.input.length;
-        nn.outputs = info.processOutputs.output.length;
-        // TODO make dynamic
-        nn._def = {
-          label: selected_tool
-        };
         var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
         for (i=0, ii=nn.inputs; i<ii; ++i) {
-          var input = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]-200,y:mousePos[1]+deltaY,w:this.nodeWidth,z:0};
-          deltaY -= delta;
-          input.outputs = 1;
-          input._parent = nn.id;
-          input.dirty = true;
-          input.type = 'input';
-          input._info = info.dataInputs.input[i];
-          input.required = !(input._info.minOccurs === 0 && input._info.maxOccurs === 1);
-          input.complete = false;
-          input._def = {
+          var inputConfig = {
+            x: mousePos[0]-200,
+            y: mousePos[1]+deltaY,
+            w: this.nodeWidth,
+            outputs: 1,
+            _parent: nn.id,
+            dirty: true,
+            type: 'input',
+            _info: info.dataInputs.input[i],
+            required: !(info.dataInputs.input[i].minOccurs === 0 && info.dataInputs.input[i].maxOccurs === 1),
+            complete: false,
             label: info.dataInputs.input[i].title.value
           };
+          var input = new wps.ui.node(inputConfig);
+          deltaY -= delta;
           me.nodes.push(input);
           // create a link as well between input and process
-          link = {
+          link = new wps.ui.link({
             source: input.id,
             target: nn.id,
             _parent: nn.id
-          };
+          });
           me.nodes.push(link);
         }
         for (i=0, ii=nn.outputs; i<ii; ++i) {
-          var output = { id:(1+Math.random()*4294967295).toString(16),x: mousePos[0]+200,y:mousePos[1],w:this.nodeWidth,z:0};
-          output.inputs = 1;
-          output.dirty = true;
-          output.type = 'output';
-          output._parent = nn.id;
-          output._info = info.processOutputs.output[i];
-          output._def = { 
+          var outputConfig = {
+            x: mousePos[0]+200,
+            y: mousePos[1],
+            w: this.nodeWidth,
+            inputs: 1,
+            dirty: true,
+            type: 'output',
+            _parent: nn.id,
+            _info: info.processOutputs.output[i],
             label: info.processOutputs.output[i].title.value
           };
+          var output = new wps.ui.node(outputConfig);
           me.nodes.push(output);
           // create a link as well between process and output
-          link = {
+          link = new wps.ui.link({
             source: nn.id,
             _parent: nn.id,
             target: output.id
-          };
+          });
           me.nodes.push(link);
         }
         me.nodes.push(nn);
@@ -687,10 +782,10 @@ wps.ui.prototype.redraw = function() {
   var nodeEnter = node.enter().insert("svg:g").attr("class", "node nodegroup");
   var me = this;
   nodeEnter.each(function(d,i) {
-    if (d._def) {
+    if (d.label) {
       var node = d3.select(this);
       node.attr("id",d.id);
-      var l = d._def.label;
+      var l = d.label;
       l = (typeof l === "function" ? l.call(d) : l)||"";
       d.w = Math.max(me.nodeWidth,me.calculateTextWidth(l)+(d.inputs>0?7:0) );
       d.h = Math.max(me.nodeHeight,(d.outputs||0) * 15);
@@ -737,7 +832,7 @@ wps.ui.prototype.updateNode = function(d) {
       classed("node_incomplete", function(d) { return !d.complete; }).
       classed("node_selected",function(d) { return d.selected; });
       thisNode.selectAll('text.node_label').text(function(d,i){
-        return d._def.label || "";
+        return d.label || "";
       }).
         attr('y', function(d){return (d.h/2)-1;}).
         attr('class',function(d){
