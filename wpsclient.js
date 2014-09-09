@@ -391,7 +391,12 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
     for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
       // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
       // TODO see if we can clear this up later
-      coverages.push(info.contents.coverageSummary[i].content[1].value);
+      for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
+        var content = info.contents.coverageSummary[i].content[j];
+        if (content.name.localPart === "Identifier") {
+          coverages.push(content.value);
+        }
+      }
     }
     callback.call(me, coverages);
   };
