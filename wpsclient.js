@@ -326,7 +326,7 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0]);
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, WFS_2_0]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
@@ -360,6 +360,23 @@ wps.client.prototype.getProcess = function(serverID, processID, options) {
     process.describe(options);
   }
   return process;
+};
+
+wps.client.prototype.getFeatureTypes = function(serverID, callback) {
+    var server = this.servers[serverID];
+  var xmlhttp = new XMLHttpRequest();
+  var url = server.url + '?service=WFS&VERSION=2.0.0&request=GetCapabilities';
+  var me = this;
+  xmlhttp.open("GET", url, true);
+  xmlhttp.onload = function() {
+    var featureTypes = [];
+    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+    for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
+      featureTypes.push(info.featureTypeList.featureType[i].name);
+    }
+    callback.call(me, featureTypes);
+  };
+  xmlhttp.send();
 };
 
 wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
