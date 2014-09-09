@@ -326,7 +326,7 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, WFS_2_0]);
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, WFS_2_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
@@ -375,6 +375,25 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
       featureTypes.push(info.featureTypeList.featureType[i].name);
     }
     callback.call(me, featureTypes);
+  };
+  xmlhttp.send();
+};
+
+wps.client.prototype.getCoverages = function(serverID, callback) {
+    var server = this.servers[serverID];
+  var xmlhttp = new XMLHttpRequest();
+  var url = server.url + '?service=WCS&VERSION=1.1.0&request=GetCapabilities';
+  var me = this;
+  xmlhttp.open("GET", url, true);
+  xmlhttp.onload = function() {
+    var coverages = [];
+    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+    for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
+      // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
+      // TODO see if we can clear this up later
+      coverages.push(info.contents.coverageSummary[i].content[1].value);
+    }
+    callback.call(me, coverages);
   };
   xmlhttp.send();
 };
