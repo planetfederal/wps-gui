@@ -1,7 +1,7 @@
 var WCS_1_1_Module_Factory = function () {
   var WCS_1_1 = {
     name: 'WCS_1_1',
-    defaultElementNamespaceURI: 'http:\/\/www.opengis.net\/wcs\/1.1',
+    defaultElementNamespaceURI: 'http:\/\/www.opengis.net\/wcs\/1.1.1',
     typeInfos: [{
         type: 'classInfo',
         localName: 'AxisSubset',
