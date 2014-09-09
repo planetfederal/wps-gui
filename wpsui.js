@@ -246,14 +246,32 @@ wps.ui = function(options) {
   });
   this.initializeTabs();
   this.initializeSplitter();
-  $('#file-open').click($.proxy(this.load, null, this));
+  $('#file-open').click($.proxy(wps.ui.load, null, this));
   $('#file-save').click($.proxy(this.save, null, this));
   $('#export-clipboard').click($.proxy(this.exportClipboard, null, this));
+  $('#import-clipboard').click($.proxy(this.importClipboard, null, this));
   $( "#dialog" ).dialog({
     modal: true,
     autoOpen: false,
     closeOnEscape: false,
-    width: 500
+    width: 500,
+    buttons: [{
+      text: "Ok",
+      click: function() {
+        var nodes = $("#node-input-import").val();
+        if (nodes) {
+          wps.ui.load(me, null, nodes);
+        }
+        $("#node-input-import").val("");
+        $(this).dialog("close");
+      }
+    }, {
+      text: "Cancel",
+      click: function() {
+        $("#node-input-import").val("");
+        $(this).dialog("close");
+      }
+    }]
   });
 };
 
@@ -320,8 +338,10 @@ wps.ui.node.prototype.getState = function() {
   };
 };
 
-wps.ui.prototype.load = function(ui) {
-  var nodes = localStorage.getItem(ui.localStorageKey);
+wps.ui.load = function(ui, evt, nodes) {
+  if (!nodes) {
+    nodes = localStorage.getItem(ui.localStorageKey);
+  }
   if (nodes !== null) {
     ui.nodes = JSON.parse(nodes);
     // recreate process state
@@ -355,16 +375,24 @@ wps.ui.prototype.exportClipboard = function(ui) {
   $("#node-input-export").focus();
 };
 
+wps.ui.prototype.importClipboard = function(ui) {
+  var html = '<div class="form-row">';
+  html += '<label for="node-input-import" style="width:100%"><i class="glyphicon glyphicon-share"> Nodes:</i></label>';
+  html += '<textarea placeholder="Paste nodes here" class="form-control" id="node-input-import" rows="5"></textarea>';
+  html += '</div>';
+  $("#dialog-form").html(html);
+  $("#node-input-import").val("");
+  $("#dialog").dialog("option", "title", "Import nodes from clipboard").dialog( "open" );
+  // bootstrap's hide class has important, so we need to remove it
+  $("#dialog").removeClass('hide');
+};
+
 wps.ui.prototype.save = function(ui) {
   var nodes = [];
   for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
     nodes.push(ui.nodes[i].getState());
   }
   localStorage.setItem(ui.localStorageKey, JSON.stringify(nodes));
-};
-
-wps.ui.prototype.clear = function() { 
-  localStorage.removeItem(this.localStorageKey);
 };
 
 wps.ui.prototype.resizeTabs = function() {
