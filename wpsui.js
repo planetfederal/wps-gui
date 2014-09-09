@@ -293,7 +293,7 @@ wps.ui.link.prototype.getState = function() {
 // TODO maybe have separate node classes per type?
 wps.ui.node = function(options) {
   // generate an identifier
-  this.id = (1+Math.random()*4294967295).toString(16);
+  this.id = options.id || (1+Math.random()*4294967295).toString(16);
   this.w = options.w;
   this.x = options.x;
   this.y = options.y;
@@ -346,6 +346,12 @@ wps.ui.load = function(ui, evt, nodes) {
     ui.nodes = JSON.parse(nodes);
     // recreate process state
     for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+      var config = ui.nodes[i];
+      if (config.source && config.target) {
+        ui.nodes[i] = new wps.ui.link(config);
+      } else {
+        ui.nodes[i] = new wps.ui.node(config);
+      }
       var node = ui.nodes[i];
       if (node.type === "process") {
         var process = ui.client_.getProcess('wpsgui', node._info.identifier.value, {callback: function(info) {
