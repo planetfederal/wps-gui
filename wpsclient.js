@@ -363,7 +363,7 @@ wps.client.prototype.getProcess = function(serverID, processID, options) {
 };
 
 wps.client.prototype.getFeatureTypes = function(serverID, callback) {
-    var server = this.servers[serverID];
+  var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WFS&VERSION=2.0.0&request=GetCapabilities';
   var me = this;
@@ -380,7 +380,7 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
 };
 
 wps.client.prototype.getCoverages = function(serverID, callback) {
-    var server = this.servers[serverID];
+  var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WCS&VERSION=1.1.0&request=GetCapabilities';
   var me = this;

@@ -125,11 +125,33 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }
     }
-    if (pIds.length > 0) {
+    // check for text/xml; subtype=wfs-collection/1.0 or text/xml; subtype=wfs-collection/1.1
+    var vectorLayer = false;
+    for (i=0, ii=node._info.complexData.supported.format.length; i<ii; ++i) {
+      if (node._info.complexData.supported.format[i].mimeType.indexOf('subtype=wfs-collection') !== -1) {
+        vectorLayer = true;
+        break;
+      }
+    }
+    if (pIds.length > 0 || vectorLayer === true) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       html += '<option value="">Draw geometry</option>';
+      // TODO should we use a different syntax for values e.g. subprocess|id and layer|name ?
       for (i=0, ii=pIds.length; i<ii; ++i) {
-        html += '<option value="' + pIds[i] + '">' + pIds[i] + "</option>";
+        if (node.value === pIds[i]) {
+          html += '<option selected value="' + pIds[i] + '">' + pIds[i] + "</option>";
+        } else {
+          html += '<option value="' + pIds[i] + '">' + pIds[i] + "</option>";
+        }
+      }
+      if (vectorLayer === true) {
+        for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
+          if (node.value === this.ui_.featureTypes[i]) {
+            html += '<option selected value="' + this.ui_.featureTypes[i] + '">' + this.ui_.featureTypes[i] + "</option>";
+          } else {
+            html += '<option value="' + this.ui_.featureTypes[i] + '">' + this.ui_.featureTypes[i] + "</option>";
+          }
+        }
       }
       html += "</select>";
     }
@@ -140,7 +162,7 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '</form>';
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
-  if (hasMap === false || pIds.length > 0) {
+  if (hasMap === false || pIds.length > 0 || vectorLayer === true) {
     this.attachPropertyChangeHandler(this, name, node);
   }
   if (hasMap === true) {
@@ -193,9 +215,16 @@ wps.editor.prototype.showEditForm = function(node) {
 };
 
 wps.ui = function(options) {
+  var me = this;
   this.parentContainer_ = options.parentContainer;
   this.dropZone_ = options.dropZone;
   this.client_ = options.client;
+  if (options.getVectorLayers === true) {
+    // TODO do not hardcode serverID
+    this.client_.getFeatureTypes('wpsgui', function(featureTypes) {
+      me.featureTypes = featureTypes;
+    });
+  }
   this.spaceWidth = options.spaceWidth || 5000;
   this.spaceHeight = options.spaceHeight || 5000;
   this.scaleFactor = options.scaleFactor || 1;
@@ -235,7 +264,6 @@ wps.ui = function(options) {
     })
   });
   $('#btn-run-process').click($.proxy(this.execute, null, this));
-  var me = this;
   d3.select(window).on("keydown",function() {
     if (me.locked_ !== true && d3.event.target == document.body) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
