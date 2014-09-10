@@ -136,21 +136,18 @@ wps.editor.prototype.showEditForm = function(node) {
     if (pIds.length > 0 || vectorLayer === true) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       html += '<option value="">Draw geometry</option>';
-      // TODO should we use a different syntax for values e.g. subprocess|id and layer|name ?
+      var prefix = 'process|', selected;
       for (i=0, ii=pIds.length; i<ii; ++i) {
-        if (node.value === pIds[i]) {
-          html += '<option selected value="' + pIds[i] + '">' + pIds[i] + "</option>";
-        } else {
-          html += '<option value="' + pIds[i] + '">' + pIds[i] + "</option>";
-        }
+        var pId = pIds[i];
+        selected = (node.value === prefix + pId) ? 'selected' : '';
+        html += '<option ' + selected + ' value="' + prefix + pId + '">' + pId + "</option>";
       }
       if (vectorLayer === true) {
+        prefix = 'vector|';
         for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
-          if (node.value === this.ui_.featureTypes[i]) {
-            html += '<option selected value="' + this.ui_.featureTypes[i] + '">' + this.ui_.featureTypes[i] + "</option>";
-          } else {
-            html += '<option value="' + this.ui_.featureTypes[i] + '">' + this.ui_.featureTypes[i] + "</option>";
-          }
+          var featureType = this.ui_.featureTypes[i];
+          selected = (node.value === prefix + featureType) ? 'selected' : '';
+          html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
         }
       }
       html += "</select>";
@@ -510,19 +507,38 @@ wps.ui.prototype.execute = function(ui) {
         var features = [];
         var inputs = {};
         for (var key in values) {
-          // check if the value is a reference to an existing process
-          if (ui.processes[values[key]]) {
-            var subId = values[key];
-            var subInputs = {};
-            for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
-              if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
-                subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
+          // vector or subprocess
+          if (values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1) {
+            if (values[key].indexOf('process|') !== -1) {
+              var subId = values[key].substring(values[key].indexOf('process|') + 8);
+              var subInputs = {};
+              for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
+                if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
+                  subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
+                }
               }
+              ui.processes[subId].configure({
+                inputs: subInputs
+              });
+              inputs[key] = ui.processes[subId].output();
+            } else {
+              inputs[key] = {
+                content: [{
+                  name: {
+                    namespaceURI: "http://www.opengis.net/wfs",
+                    localPart: "GetFeature"
+                  },
+                  value: {
+                    outputFormat: "GML2",
+                    service: "WFS",
+                    version: "1.0.0",
+                    query: [{
+                      typeName: values[key].substring(values[key].indexOf('vector|')+7)
+                    }]
+                  }
+                }]
+              };
             }
-            ui.processes[subId].configure({
-              inputs: subInputs
-            });
-            inputs[key] = ui.processes[subId].output();
           } else {
             inputs[key] = values[key];
           }

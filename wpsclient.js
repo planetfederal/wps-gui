@@ -175,10 +175,10 @@ wps.process.prototype.parseDescription = function(description) {
 };
 
 wps.process.prototype.setInputData = function(input, data) {
+  var inputValue;
   if (data instanceof wps.process.chainlink) {
     ++this.chained;
-    // TODO we should be pushing here to inputs not modifying input itself
-    var inputValue = {
+    inputValue = {
       identifier: {
         value: input.identifier.value
       },
@@ -196,6 +196,21 @@ wps.process.prototype.setInputData = function(input, data) {
       },
       scope: this
     });
+  } else if (data.content) {
+    inputValue = {
+      identifier: {
+        value: input.identifier.value
+      },
+      reference: {
+        method: 'POST',
+        mimeType: 'text/xml',
+        href: this.localWPS
+      }
+    };
+    inputValue.reference.body = {
+      content: data.content
+    };
+    this.info.value.dataInputs.input.push(inputValue);
   } else {
     var complexData = input.complexData;
     if (complexData) {
@@ -326,7 +341,7 @@ wps.process.chainlink = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, WFS_2_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, Filter_1_0_0, GML_2_1_2, WFS_1_0_0, WFS_2_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
