@@ -514,7 +514,29 @@ wps.ui.prototype.execute = function(ui) {
               var subInputs = {};
               for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
                 if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
-                  subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
+                  if (ui.nodes[j].value.indexOf('vector|') !== -1) {
+                    // TODO get rid of code duplication here
+                    // maybe this part should even be in wpsclient.js instead
+                    subInputs[ui.nodes[j]._info.identifier.value] = {
+                      content: [{
+                        name: {
+                          namespaceURI: "http://www.opengis.net/wfs",
+                          localPart: "GetFeature"
+                        },
+                        value: {
+                          outputFormat: "GML2",
+                          service: "WFS",
+                          version: "1.1.0",
+                          query: [{
+                            srsName: 'EPSG:900913', /* TODO get the map's projection */
+                            typeName: [ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)]
+                          }]
+                        }
+                      }]
+                    };
+                  } else {
+                    subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
+                  }
                 }
               }
               ui.processes[subId].configure({
