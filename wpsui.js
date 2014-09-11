@@ -562,12 +562,13 @@ wps.ui.prototype.execute = function(ui) {
                 ],
                 view: new ol.View({
                   center: [0, 0],
-                  zoom: 1,
-                  maxZoom: 8
+                  zoom: 1
                 })
               });
               source.addFeatures(output.result);
               var view = map.getView();
+              // TODO protect this call against zooming in too far (e.g. a single point geom).
+              // we used to use maxZoom on the view for this
               view.fitExtent(
                 source.getExtent(), map.getSize());
             } else {
