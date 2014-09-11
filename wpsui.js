@@ -531,9 +531,10 @@ wps.ui.prototype.execute = function(ui) {
                   value: {
                     outputFormat: "GML2",
                     service: "WFS",
-                    version: "1.0.0",
+                    version: "1.1.0",
                     query: [{
-                      typeName: values[key].substring(values[key].indexOf('vector|')+7)
+                      srsName: 'EPSG:900913', /* TODO get the map's projection */
+                      typeName: [values[key].substring(values[key].indexOf('vector|')+7)]
                     }]
                   }
                 }]
