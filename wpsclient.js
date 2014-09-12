@@ -18,6 +18,9 @@ wps.process = function(options) {
   }
   this.executeCallbacks = [];
   this.formats = [{
+    mimeType: 'text/xml; subtype=wfs-collection/1.1',
+    format: new ol.format.WFS()
+  }, {
     mimeType: 'application/wkt',
     format: new ol.format.WKT()
   }, {

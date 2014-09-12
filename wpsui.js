@@ -528,7 +528,7 @@ wps.ui.prototype.execute = function(ui) {
                           service: "WFS",
                           version: "1.1.0",
                           query: [{
-                            srsName: 'EPSG:900913', /* TODO get the map's projection */
+                            srsName: 'EPSG:3857', /* TODO get the map's projection */
                             typeName: [ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)]
                           }]
                         }
@@ -555,7 +555,7 @@ wps.ui.prototype.execute = function(ui) {
                     service: "WFS",
                     version: "1.1.0",
                     query: [{
-                      srsName: 'EPSG:900913', /* TODO get the map's projection */
+                      srsName: 'EPSG:3857', /* TODO get the map's projection */
                       typeName: [values[key].substring(values[key].indexOf('vector|')+7)]
                     }]
                   }

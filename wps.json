@@ -20,6 +20,8 @@
     "ol.format.GeoJSON",
     "ol.format.WKT#writeFeatures",
     "ol.format.WKT#readFeatures",
+    "ol.format.WFS",
+    "ol.format.WFS#readFeatures",
     "ol.style.Style",
     "ol.style.Fill",
     "ol.style.Stroke",
