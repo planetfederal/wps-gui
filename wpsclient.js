@@ -10,6 +10,7 @@ wps.process = function(options) {
   this.description = null;
   this.localWPS = 'http://geoserver/wps';
   this.localWFS = 'http://geoserver/wfs';
+  this.localWCS = 'http://geoserver/wcs';
   this.chained = 0;
   for (var prop in options)   {
     if (this.hasOwnProperty(prop)) {
@@ -208,7 +209,7 @@ wps.process.prototype.setInputData = function(input, data) {
       reference: {
         method: 'POST',
         mimeType: 'text/xml',
-        href: this.localWFS
+        href: this[data.href]
       }
     };
     inputValue.reference.body = {

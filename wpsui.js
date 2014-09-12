@@ -83,6 +83,7 @@ wps.editor.prototype.showEditForm = function(node) {
   var hasMap = false, i, ii, pIds = [];
   // simple input
   var name = node._info.identifier.value;
+  var pId;
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
@@ -112,7 +113,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '</div>';
   } else if (node._info.complexData) {
     // check if there are any processes with geometry output that can serve as input here
-    for (var pId in this.ui_.processes) {
+    for (pId in this.ui_.processes) {
       if (pId !== node._parent) {
         var description = this.ui_.processes[pId].description;
         if (description.processOutputs && description.processOutputs.output) {
@@ -126,19 +127,33 @@ wps.editor.prototype.showEditForm = function(node) {
       }
     }
     // check for text/xml; subtype=wfs-collection/1.0 or text/xml; subtype=wfs-collection/1.1
-    var vectorLayer = false;
+    var vectorLayer = false, rasterLayer = false;
     for (i=0, ii=node._info.complexData.supported.format.length; i<ii; ++i) {
-      if (node._info.complexData.supported.format[i].mimeType.indexOf('subtype=wfs-collection') !== -1) {
+      var mime = node._info.complexData.supported.format[i].mimeType;
+      if (mime.indexOf('subtype=wfs-collection') !== -1) {
         vectorLayer = true;
-        break;
+      }
+      if (mime.indexOf('image/tiff') !== -1) {
+        rasterLayer = true;
       }
     }
-    if (pIds.length > 0 || vectorLayer === true) {
+    var prefix, selected;
+    if (rasterLayer === true) {
+      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      prefix = 'raster|';
+      for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
+        var coverage = this.ui_.coverages[i];
+        selected = (node.value === prefix + coverage) ? 'selected' : '';
+        html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
+      }
+      html += "</select>";
+    }
+    else if (pIds.length > 0 || vectorLayer === true) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       html += '<option value="">Draw geometry</option>';
-      var prefix = 'process|', selected;
+      prefix = 'process|';
       for (i=0, ii=pIds.length; i<ii; ++i) {
-        var pId = pIds[i];
+        pId = pIds[i];
         selected = (node.value === prefix + pId) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + pId + '">' + pId + "</option>";
       }
@@ -152,9 +167,11 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
     }
-    hasMap = true;
-    var id = "input-map-" + node.id;
-    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
+    if (rasterLayer !== true) {
+      hasMap = true;
+      var id = "input-map-" + node.id;
+      html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
+    }
   }
   html += '</form>';
   $('#tab-inputs').html(html);
@@ -220,6 +237,9 @@ wps.ui = function(options) {
     // TODO do not hardcode serverID
     this.client_.getFeatureTypes('wpsgui', function(featureTypes) {
       me.featureTypes = featureTypes;
+    });
+    this.client_.getCoverages('wpsgui', function(coverages) {
+      me.coverages = coverages;
     });
   }
   this.spaceWidth = options.spaceWidth || 5000;
@@ -508,7 +528,7 @@ wps.ui.prototype.execute = function(ui) {
         var inputs = {};
         for (var key in values) {
           // vector or subprocess
-          if (values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1) {
+          if (values[key].indexOf('raster|') !== -1 || values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1) {
             if (values[key].indexOf('process|') !== -1) {
               var subId = values[key].substring(values[key].indexOf('process|') + 8);
               var subInputs = {};
@@ -518,6 +538,7 @@ wps.ui.prototype.execute = function(ui) {
                     // TODO get rid of code duplication here
                     // maybe this part should even be in wpsclient.js instead
                     subInputs[ui.nodes[j]._info.identifier.value] = {
+                      href: 'localWFS',
                       content: [{
                         name: {
                           namespaceURI: "http://www.opengis.net/wfs",
@@ -543,8 +564,9 @@ wps.ui.prototype.execute = function(ui) {
                 inputs: subInputs
               });
               inputs[key] = ui.processes[subId].output();
-            } else {
+            } else if (values[key].indexOf('vector|') !== -1) {
               inputs[key] = {
+                href: 'localWFS',
                 content: [{
                   name: {
                     namespaceURI: "http://www.opengis.net/wfs",
@@ -558,6 +580,26 @@ wps.ui.prototype.execute = function(ui) {
                       srsName: 'EPSG:3857', /* TODO get the map's projection */
                       typeName: [values[key].substring(values[key].indexOf('vector|')+7)]
                     }]
+                  }
+                }]
+              };
+            } else {
+              inputs[key] = {
+                href: 'localWCS',
+                content: [{
+                  name: {
+                    namespaceURI: "http://www.opengis.net/wcs/1.1.1",
+                    localPart: "GetCoverage"
+                  },
+                  value: {
+                    identifier: {
+                      value: values[key].substring(values[key].indexOf('raster|')+7)
+                    },
+                    output: {
+                      format: "image/tiff"
+                    },
+                    service: "WCS",
+                    version: "1.1.1"
                   }
                 }]
               };
