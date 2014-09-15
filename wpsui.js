@@ -142,7 +142,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
-        var coverage = this.ui_.coverages[i];
+        var coverage = this.ui_.coverages[i].name;
         selected = (node.value === prefix + coverage) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
       }
@@ -524,6 +524,10 @@ wps.ui.prototype.execute = function(ui) {
         }
       }
       if (values && process.isComplete(values)) {
+        var srsName = 'EPSG:3857';
+        if (process.identifier.indexOf('ras:') === 0) {
+          srsName = 'EPSG:4326';
+        }
         var features = [];
         var inputs = {};
         for (var key in values) {
@@ -549,7 +553,7 @@ wps.ui.prototype.execute = function(ui) {
                           service: "WFS",
                           version: "1.1.0",
                           query: [{
-                            srsName: 'EPSG:3857', /* TODO get the map's projection */
+                            srsName: srsName,
                             typeName: [ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)]
                           }]
                         }
@@ -577,13 +581,22 @@ wps.ui.prototype.execute = function(ui) {
                     service: "WFS",
                     version: "1.1.0",
                     query: [{
-                      srsName: 'EPSG:3857', /* TODO get the map's projection */
+                      srsName: srsName,
                       typeName: [values[key].substring(values[key].indexOf('vector|')+7)]
                     }]
                   }
                 }]
               };
             } else {
+              var coverage = values[key].substring(values[key].indexOf('raster|')+7);
+              var lowerCorner, upperCorner;
+              for (var c=0, cc=ui.coverages.length; c<cc; ++c) {
+                if (ui.coverages[c].name === coverage) {
+                  lowerCorner = ui.coverages[c].lowerCorner;
+                  upperCorner = ui.coverages[c].upperCorner;
+                  break;
+                }
+              }
               inputs[key] = {
                 href: 'localWCS',
                 content: [{
@@ -592,8 +605,21 @@ wps.ui.prototype.execute = function(ui) {
                     localPart: "GetCoverage"
                   },
                   value: {
+                    domainSubset: {
+                      boundingBox: {
+                        name: {
+                          namespaceURI: "http://www.opengis.net/ows/1.1",
+                          localPart: "BoundingBox"
+                        },
+                        value: {
+                          crs: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
+                          lowerCorner: lowerCorner,
+                          upperCorner: upperCorner
+                        }
+                      }
+                    },
                     identifier: {
-                      value: values[key].substring(values[key].indexOf('raster|')+7)
+                      value: coverage
                     },
                     output: {
                       format: "image/tiff"
