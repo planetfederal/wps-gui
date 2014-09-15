@@ -244,19 +244,33 @@ wps.process.prototype.setInputData = function(input, data) {
       }]
     };
     this.info.value.dataInputs.input.push(inputValue);
-  } else if (data.content) {
+  } else if (data instanceof wps.process.localWFS) {
     inputValue = {
       identifier: {
         value: input.identifier.value
       },
       reference: {
         method: 'POST',
-        mimeType: (data.href === 'localWFS') ? 'text/xml' : 'image/tiff',
-        href: this[data.href]
+        mimeType: 'text/xml',
+        href: this.localWFS
       }
     };
     inputValue.reference.body = {
-      content: data.content
+      content: [{
+        name: {
+          namespaceURI: "http://www.opengis.net/wfs",
+          localPart: "GetFeature"
+        },
+        value: {
+          outputFormat: "GML2",
+          service: "WFS",
+          version: "1.1.0",
+          query: [{
+            srsName: data.srsName,
+            typeName: [data.typeName]
+          }]
+        }
+      }]
     };
     this.info.value.dataInputs.input.push(inputValue);
   } else {
@@ -399,6 +413,15 @@ wps.process.localWCS = function(options) {
   }
 };
 
+wps.process.localWFS = function(options) {
+  this.srsName = null;
+  this.typeName = null;
+  for (var prop in options)   {
+    if (this.hasOwnProperty(prop)) {
+      this[prop] = options[prop];
+    }
+  }
+};
 
 wps.client = function(options) {
   this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, WFS_1_1_0, WFS_2_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);

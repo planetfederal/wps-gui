@@ -530,6 +530,7 @@ wps.ui.prototype.execute = function(ui) {
         }
         var features = [];
         var inputs = {};
+        var coverage, c, cc, lowerCorner, upperCorner;
         for (var key in values) {
           // vector or subprocess
           if (values[key].indexOf('raster|') !== -1 || values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1) {
@@ -539,26 +540,24 @@ wps.ui.prototype.execute = function(ui) {
               for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
                 if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
                   if (ui.nodes[j].value.indexOf('vector|') !== -1) {
-                    // TODO get rid of code duplication here
-                    // maybe this part should even be in wpsclient.js instead
-                    subInputs[ui.nodes[j]._info.identifier.value] = {
-                      href: 'localWFS',
-                      content: [{
-                        name: {
-                          namespaceURI: "http://www.opengis.net/wfs",
-                          localPart: "GetFeature"
-                        },
-                        value: {
-                          outputFormat: "GML2",
-                          service: "WFS",
-                          version: "1.1.0",
-                          query: [{
-                            srsName: srsName,
-                            typeName: [ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)]
-                          }]
-                        }
-                      }]
-                    };
+                    subInputs[ui.nodes[j]._info.identifier.value] = new wps.process.localWFS({
+                      srsName: srsName,
+                      typeName: ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)
+                    });
+                  } else if (ui.nodes[j].value.indexOf('raster|') !== -1) {
+                    coverage = ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('raster|')+7);
+                    for (c=0, cc=ui.coverages.length; c<cc; ++c) {
+                      if (ui.coverages[c].name === coverage) {
+                        lowerCorner = ui.coverages[c].lowerCorner;
+                        upperCorner = ui.coverages[c].upperCorner;
+                        break;
+                      }
+                    }
+                    subInputs[ui.nodes[j]._info.identifier.value] = new wps.process.localWCS({
+                      lowerCorner: lowerCorner,
+                      upperCorner: upperCorner,
+                      identifier: coverage
+                    });
                   } else {
                     subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
                   }
@@ -569,28 +568,13 @@ wps.ui.prototype.execute = function(ui) {
               });
               inputs[key] = ui.processes[subId].output();
             } else if (values[key].indexOf('vector|') !== -1) {
-              inputs[key] = {
-                href: 'localWFS',
-                content: [{
-                  name: {
-                    namespaceURI: "http://www.opengis.net/wfs",
-                    localPart: "GetFeature"
-                  },
-                  value: {
-                    outputFormat: "GML2",
-                    service: "WFS",
-                    version: "1.1.0",
-                    query: [{
-                      srsName: srsName,
-                      typeName: [values[key].substring(values[key].indexOf('vector|')+7)]
-                    }]
-                  }
-                }]
-              };
+              inputs[key] = new wps.process.localWFS({
+                srsName: srsName,
+                typeName: values[key].substring(values[key].indexOf('vector|')+7)
+              });
             } else {
-              var coverage = values[key].substring(values[key].indexOf('raster|')+7);
-              var lowerCorner, upperCorner;
-              for (var c=0, cc=ui.coverages.length; c<cc; ++c) {
+              coverage = values[key].substring(values[key].indexOf('raster|')+7);
+              for (c=0, cc=ui.coverages.length; c<cc; ++c) {
                 if (ui.coverages[c].name === coverage) {
                   lowerCorner = ui.coverages[c].lowerCorner;
                   upperCorner = ui.coverages[c].upperCorner;
