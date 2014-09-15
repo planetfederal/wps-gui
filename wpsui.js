@@ -597,7 +597,12 @@ wps.ui.prototype.execute = function(ui) {
                   break;
                 }
               }
-              inputs[key] = {
+              inputs[key] = new wps.process.localWCS({
+                lowerCorner: lowerCorner,
+                upperCorner: upperCorner,
+                identifier: coverage
+              });
+ {
                 href: 'localWCS',
                 content: [{
                   name: {

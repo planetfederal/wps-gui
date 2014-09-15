@@ -201,6 +201,49 @@ wps.process.prototype.setInputData = function(input, data) {
       },
       scope: this
     });
+  } else if (data instanceof wps.process.localWCS) {
+    inputValue = {
+      identifier: {
+        value: data.identifier
+      },
+      reference: {
+        method: 'POST',
+        mimeType: 'image/tiff',
+        href: this.localWCS
+      }
+    };
+    inputValue.reference.body = {
+      content: [{
+        name: {
+          namespaceURI: "http://www.opengis.net/wcs/1.1.1",
+          localPart: "GetCoverage"
+        },
+        value: {
+          domainSubset: {
+            boundingBox: {
+              name: {
+                namespaceURI: "http://www.opengis.net/ows/1.1",
+                localPart: "BoundingBox"
+              },
+              value: {
+                crs: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
+                lowerCorner: lowerCorner,
+                upperCorner: upperCorner
+              }
+            }
+          },
+          identifier: {
+            value: data.identifier
+          },
+          output: {
+            format: "image/tiff"
+          },
+          service: "WCS",
+          version: "1.1.1"
+        }
+      }]
+    };
+    this.info.value.dataInputs.input.push(inputValue);
   } else if (data.content) {
     inputValue = {
       identifier: {
@@ -344,6 +387,18 @@ wps.process.chainlink = function(options) {
     }
   }
 };
+
+wps.process.localWCS = function(options) {
+  this.lowerCorner = null;
+  this.upperCorner = null;
+  this.identifier = null;
+  for (var prop in options)   {
+    if (this.hasOwnProperty(prop)) {
+      this[prop] = options[prop];
+    }
+  }
+};
+
 
 wps.client = function(options) {
   this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, WFS_1_1_0, WFS_2_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
