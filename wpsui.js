@@ -602,38 +602,6 @@ wps.ui.prototype.execute = function(ui) {
                 upperCorner: upperCorner,
                 identifier: coverage
               });
- {
-                href: 'localWCS',
-                content: [{
-                  name: {
-                    namespaceURI: "http://www.opengis.net/wcs/1.1.1",
-                    localPart: "GetCoverage"
-                  },
-                  value: {
-                    domainSubset: {
-                      boundingBox: {
-                        name: {
-                          namespaceURI: "http://www.opengis.net/ows/1.1",
-                          localPart: "BoundingBox"
-                        },
-                        value: {
-                          crs: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
-                          lowerCorner: lowerCorner,
-                          upperCorner: upperCorner
-                        }
-                      }
-                    },
-                    identifier: {
-                      value: coverage
-                    },
-                    output: {
-                      format: "image/tiff"
-                    },
-                    service: "WCS",
-                    version: "1.1.1"
-                  }
-                }]
-              };
             }
           } else {
             inputs[key] = values[key];

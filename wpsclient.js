@@ -204,7 +204,7 @@ wps.process.prototype.setInputData = function(input, data) {
   } else if (data instanceof wps.process.localWCS) {
     inputValue = {
       identifier: {
-        value: data.identifier
+        value: input.identifier.value
       },
       reference: {
         method: 'POST',
@@ -227,8 +227,8 @@ wps.process.prototype.setInputData = function(input, data) {
               },
               value: {
                 crs: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
-                lowerCorner: lowerCorner,
-                upperCorner: upperCorner
+                lowerCorner: data.lowerCorner,
+                upperCorner: data.upperCorner
               }
             }
           },
