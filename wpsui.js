@@ -533,7 +533,7 @@ wps.ui.prototype.execute = function(ui) {
         var coverage, c, cc, lowerCorner, upperCorner;
         for (var key in values) {
           // vector or subprocess
-          if (values[key].indexOf('raster|') !== -1 || values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1) {
+          if ((typeof values[key] === 'string') && (values[key].indexOf('raster|') !== -1 || values[key].indexOf('vector|') !== -1 || values[key].indexOf('process|') !== -1)) {
             if (values[key].indexOf('process|') !== -1) {
               var subId = values[key].substring(values[key].indexOf('process|') + 8);
               var subInputs = {};
@@ -588,7 +588,7 @@ wps.ui.prototype.execute = function(ui) {
               });
             }
           } else {
-            inputs[key] = values[key];
+            inputs[key] = '' + values[key];
           }
         }
         process.execute({
