@@ -208,7 +208,7 @@ wps.process.prototype.setInputData = function(input, data) {
       },
       reference: {
         method: 'POST',
-        mimeType: 'text/xml',
+        mimeType: (data.href === 'localWFS') ? 'text/xml' : 'image/tiff',
         href: this[data.href]
       }
     };
