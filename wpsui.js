@@ -314,8 +314,15 @@ wps.ui = function(options) {
   d3.select(window).on("keydown",function() {
     if (me.locked_ !== true && d3.event.target == document.body) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
-        me.deleteSelection();
-        d3.event.preventDefault();
+        try {
+          me.deleteSelection();
+        } catch(err) {
+          if (window.console) {
+            window.console.error(err);
+          }
+        } finally {
+          d3.event.preventDefault();
+        }
       }
     }
   });
@@ -668,6 +675,15 @@ wps.ui.prototype.deleteSelection = function() {
   if (selection[0].length > 0) {
     var node = selection.datum();
     if (node.type === 'process') {
+      if (this.inputMaps && this.inputMaps[node.id] && this.inputMaps[node.id].map) {
+        this.inputMaps[node.id].map.setTarget(null);
+        delete this.inputMaps[node.id].vector;
+        delete this.inputMaps[node.id].source;
+        delete this.inputMaps[node.id].draw;
+        delete this.inputMaps[node.id].map;
+      }
+      $('#tab-inputs').html('');
+      $('#tab-results').html('');
       this.nodes.splice(this.nodes.indexOf(node), 1);
       for (var i=this.nodes.length-1; i>=0; --i) {
         if (this.nodes[i]._parent === node.id) {
