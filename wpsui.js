@@ -169,7 +169,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     if (rasterLayer !== true) {
       hasMap = true;
-      var id = "input-map-" + node.id;
+      var id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
     }
   }
@@ -181,46 +181,76 @@ wps.editor.prototype.showEditForm = function(node) {
   }
   if (hasMap === true) {
     var map;
-    if (!this.ui_.inputMaps[node.id]) {
-      this.ui_.inputMaps[node.id] = {};
-      this.ui_.inputMaps[node.id].source = new ol.source.Vector();
-      this.ui_.inputMaps[node.id].vector = new ol.layer.Vector({source: this.ui_.inputMaps[node.id].source});
-      this.ui_.inputMaps[node.id].map = new ol.Map({
-        target: 'input-map-' + node.id,
+    var mapId = node._parent;
+    if (!this.ui_.inputMaps[mapId]) {
+      this.ui_.inputMaps[mapId] = {};
+      this.ui_.inputMaps[mapId].source = new ol.source.Vector();
+      this.ui_.inputMaps[mapId].vector = new ol.layer.Vector({source: this.ui_.inputMaps[mapId].source, style: function(feature) {
+        var selection = d3.selectAll(".node_selected");
+        if (selection[0].length > 0) {
+          var node = selection.datum();
+          if (feature.get('node') === node.id) {
+            return [
+              new ol.style.Style({
+                stroke: new ol.style.Stroke({
+                  color: 'orange',
+                  width: 1
+                })
+              })
+            ];
+          } else {
+            return [
+              new ol.style.Style({
+                stroke: new ol.style.Stroke({
+                  color: 'gray',
+                  width: 1
+                })
+              })
+            ];
+          }
+        }
+      }});
+      this.ui_.inputMaps[mapId].map = new ol.Map({
+        target: 'input-map-' + mapId,
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
           }),
-          this.ui_.inputMaps[node.id].vector
+          this.ui_.inputMaps[mapId].vector
         ],
         view: new ol.View({
           center: [0, 0],
           zoom: 1
         })
       });
-      this.ui_.inputMaps[node.id].draw = new ol.interaction.Draw({
-        source: this.ui_.inputMaps[node.id].source,
+      this.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
+        source: this.ui_.inputMaps[mapId].source,
         type: 'Polygon'
       });
-      this.ui_.inputMaps[node.id].map.addInteraction(this.ui_.inputMaps[node.id].draw);
-      this.ui_.inputMaps[node.id].source.on('change', function(evt) {
-        var features = this.ui_.inputMaps[node.id].source.getFeatures();
-        node.value = new ol.format.WKT().writeFeatures(features);
-        node.valid = features.length >= 1;
-        if (node.valid) {
-          this.setValue();
+      this.ui_.inputMaps[mapId].map.addInteraction(this.ui_.inputMaps[mapId].draw);
+      this.ui_.inputMaps[mapId].draw.on('drawend', function(evt) {
+        var selection = d3.selectAll(".node_selected");
+        if (selection[0].length > 0) {
+          var node = selection.datum();
+          evt.feature.set('node', node.id);
+          // TODO should we consider adding to any existing features here?
+          node.value = new ol.format.WKT().writeFeatures([evt.feature]);
+          node.valid = evt.feature;
+          if (node.valid) {
+            this.setValue();
+          }
         }
       }, this);
       if (node.value) {
-        this.ui_.inputMaps[node.id].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
+        this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       } 
-      map = this.ui_.inputMaps[node.id].map;
+      map = this.ui_.inputMaps[mapId].map;
       window.setTimeout(function() {
         map.updateSize();
       }, 0);
     } else {
-      map = this.ui_.inputMaps[node.id].map;
-      map.set('target', 'input-map-' + node.id);
+      map = this.ui_.inputMaps[mapId].map;
+      map.set('target', 'input-map-' + mapId);
       window.setTimeout(function() {
         map.updateSize();
       }, 0);
@@ -1007,6 +1037,11 @@ wps.ui.prototype.nodeMouseUp = function(ui, d) {
 };
 
 wps.ui.prototype.updateSelection = function() {
+  if (this.mousedownNode) {
+    if (this.inputMaps[this.mousedownNode._parent]) {
+      this.inputMaps[this.mousedownNode._parent].vector.changed();
+    }
+  }
   // TODO?
 };
 

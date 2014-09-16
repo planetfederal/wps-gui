@@ -13,9 +13,11 @@
     "ol.source.Vector#on",
     "ol.source.Vector#getFeatures",
     "ol.layer.Vector",
+    "ol.layer.Vector#changed",
     "ol.layer.Tile",
     "ol.source.OSM",
     "ol.interaction.Draw",
+    "ol.interaction.Draw#on",
     "ol.format.WKT",
     "ol.format.GeoJSON",
     "ol.format.WKT#writeFeatures",
@@ -26,6 +28,8 @@
     "ol.style.Fill",
     "ol.style.Stroke",
     "ol.style.Circle",
+    "ol.Feature#set",
+    "ol.Feature#get",
     "ol.Feature#setStyle"
   ],
   "compile": {
