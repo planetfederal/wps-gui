@@ -797,7 +797,7 @@ wps.ui.prototype.createDropTarget = function() {
         for (i=0, ii=nn.inputs; i<ii; ++i) {
           var inputConfig = {
             x: mousePos[0]-200,
-            y: mousePos[1]+deltaY,
+            y: mousePos[1]-deltaY,
             w: this.nodeWidth,
             outputs: 1,
             _parent: nn.id,
