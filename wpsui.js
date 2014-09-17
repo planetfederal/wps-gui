@@ -112,9 +112,9 @@ wps.editor.prototype.showEditForm = function(node) {
     } else {
       var value = node.value;
       value = (value === undefined) ? '' : value;
-      html += '<input type="text" id="node-input-' + name + '" value="' + value + '">';
+      html += '</div><input type="text" id="node-input-' + name + '" value="' + value + '" class="form-control">';
     }
-    html += '</div>';
+    html += '<div class="form-row input-validate"><button type="button" class="btn btn-default" id="input-save" onclick="window.wpsui.checkInput()">Save</button></div>';
   } else if (node._info.complexData) {
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
@@ -247,7 +247,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }, this);
       if (node.value) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
-      } 
+      }
       map = this.ui_.inputMaps[mapId].map;
       window.setTimeout(function() {
         map.updateSize();
@@ -311,7 +311,7 @@ wps.ui = function(options) {
     }),
     stroke: new ol.style.Stroke({
       color: 'red',
-      width: 1 
+      width: 1
     })
   });
   $('#btn-run-process').click($.proxy(this.execute, null, this));
@@ -477,6 +477,15 @@ wps.ui.prototype.importClipboard = function(ui) {
   $("#dialog").dialog("option", "title", "Import nodes from clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
+};
+
+wps.ui.prototype.checkInput = function() {
+  // TODO add input validation here
+  if (true) {
+    $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
+  } else {
+    $(".input-validate").prepend('<span><span class="glyphicon glyphicon-remove"></span> Invalid input</span>');
+  }
 };
 
 wps.ui.prototype.save = function(ui) {
@@ -831,7 +840,7 @@ wps.ui.prototype.createDropTarget = function() {
     drop: function( event, ui ) {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
-      var process = me.client_.getProcess('wpsgui', selected_tool, {callback: function(info) { 
+      var process = me.client_.getProcess('wpsgui', selected_tool, {callback: function(info) {
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;
@@ -847,7 +856,7 @@ wps.ui.prototype.createDropTarget = function() {
           _info: info,
           inputs: info.dataInputs.input.length,
           outputs: info.processOutputs.output.length,
-          label: selected_tool 
+          label: selected_tool
         };
         var nn = new wps.ui.node(config);
         // TODO maybe cache per process type?
