@@ -2,6 +2,8 @@
   "exports": [
     "ol.View",
     "ol.View#fitExtent",
+    "ol.View#setCenter",
+    "ol.View#setZoom",
     "ol.Map",
     "ol.Map#getSize",
     "ol.Map#updateSize",

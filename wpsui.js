@@ -660,10 +660,14 @@ wps.ui.prototype.execute = function(ui) {
               });
               source.addFeatures(output.result);
               var view = map.getView();
-              // TODO protect this call against zooming in too far (e.g. a single point geom).
-              // we used to use maxZoom on the view for this
-              view.fitExtent(
-                source.getExtent(), map.getSize());
+              var extent = source.getExtent();
+              if (extent[0] === extent[2]) {
+                view.setCenter([extent[0], extent[1]]);
+                view.setZoom(8);
+              } else {
+                view.fitExtent(
+                  source.getExtent(), map.getSize());
+              }
             } else {
               $('#tab-results').html(String(output.result));
               ui.activateTab('tab-results');
