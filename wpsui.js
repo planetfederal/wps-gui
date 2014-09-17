@@ -91,7 +91,7 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
-    html += '<label for="node-input-' + name + '">' + name + '</label>';
+    html += '<label for="node-input-' + name + '">' + name + '</label></div>';
     if (node._info.literalData.allowedValues) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
       for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
@@ -112,9 +112,10 @@ wps.editor.prototype.showEditForm = function(node) {
     } else {
       var value = node.value;
       value = (value === undefined) ? '' : value;
-      html += '</div><input type="text" id="node-input-' + name + '" value="' + value + '" class="form-control">';
+      html += '<div class="form-row" id="' + name + '-field">';
+      html += '<input type="text" id="node-input-' + name + '" value="' + value + '" class="form-control"></div>';
     }
-    html += '<div class="form-row input-validate"><button type="button" class="btn btn-default" id="input-save" onclick="window.wpsui.checkInput()">Save</button></div>';
+    html += '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + name + '\')">Save</button></div>';
   } else if (node._info.complexData) {
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
@@ -479,12 +480,13 @@ wps.ui.prototype.importClipboard = function(ui) {
   $("#dialog").removeClass('hide');
 };
 
-wps.ui.prototype.checkInput = function() {
-  // TODO add input validation here
-  if (true) {
+wps.ui.prototype.checkInput = function(name) {
+  if (true) { // TODO add input validation here
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
+    $("#" + name + "-field").addClass("has-success");
   } else {
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-remove"></span> Invalid input</span>');
+    $("#" + name + "-field").addClass("has-error");
   }
 };
 

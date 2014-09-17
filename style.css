@@ -349,7 +349,7 @@ a.brand span {
 
 #sidebar-content #input-save {
   float: right;
-  margin-right: 3%;
+  margin-right: 2%;
 }
 
 .node_label_italic {
@@ -566,8 +566,9 @@ div.form-row-abstract {
     display: inline-block;
     width: 100px;
 }
-.form-row input {
-    width:97%;
+.form-row input, .form-control {
+    width:95% !important;
+    margin-left: 2%;
 }
 
 input.input-append-left {
