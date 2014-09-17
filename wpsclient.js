@@ -133,6 +133,21 @@ wps.process.prototype.execute = function(options) {
         xmlhttp.open('POST', me.client.servers[me.server].url, true);
         xmlhttp.setRequestHeader('Content-type', 'application/xml');
         xmlhttp.onload = function() {
+
+          // check for exceptions
+          if (this.responseText.indexOf('ExceptionText') !== -1) {
+            var exception = '';
+            var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
+            if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
+              for (var e=0, ee=info['status'].processFailed.exceptionReport.exception.length; e<ee; ++e) {
+                exception += info['status'].processFailed.exceptionReport.exception[e].exceptionText.join('<br/>');
+              }
+            }
+            if (options.failure) {
+              options.failure.call(options.scope, exception);
+              return;
+            }
+          }
           var output = me.description.processOutputs.output[outputIndex]; 
           var result;
           if (output.literalOutput) {

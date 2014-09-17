@@ -634,6 +634,11 @@ wps.ui.prototype.execute = function(ui) {
         }
         process.execute({
           inputs: inputs,
+          failure: function(exception) {
+            // TODO show this in the debug tab instead
+            $('#tab-results').html(exception);
+            ui.activateTab('tab-results');
+          },
           success: function(output) {
             if ($.isArray(output.result)) {
               $('#tab-results').html('<div id="map" style="width: 300px; height: 300px"></div>');
