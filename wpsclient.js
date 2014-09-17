@@ -148,7 +148,13 @@ wps.process.prototype.execute = function(options) {
             //TODO For now we assume a spatial output if complexOutput
             for (var i=0, ii=me.formats.length; i<ii; ++i) {
               if (me.formats[i].mimeType === mimeType) {
-                result = me.formats[i].format.readFeatures(this.responseText);
+                try {
+                  result = me.formats[i].format.readFeatures(this.responseText);
+                } catch(e) {
+                  if (window.console) {
+                    window.console.error(e);
+                  }
+                }
                 break;
               }
             }

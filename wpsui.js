@@ -7,6 +7,8 @@ wps.editor = function(ui) {
   this.ui_ = ui;
 };
 
+wps.editor.DRAW = "_DRAW_";
+
 wps.editor.prototype.setValue = function() {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
@@ -21,7 +23,9 @@ wps.editor.prototype.setValue = function() {
     } else {
       value = $('#node-input-' + name).val();
     }
-    me.editingNode_.value = value;
+    if (value !== wps.editor.DRAW) {
+      me.editingNode_.value = value;
+    }
   }
   ui.locked_ = false;
   me.editingNode_.dirty = true;
@@ -150,7 +154,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     else if (pIds.length > 0 || vectorLayer === true) {
       html += '<select style="width: 60%;" id="node-input-' + name + '">';
-      html += '<option value="">Draw geometry</option>';
+      html += '<option value="' + wps.editor.DRAW + '">Draw geometry</option>';
       prefix = 'process|';
       for (i=0, ii=pIds.length; i<ii; ++i) {
         pId = pIds[i];
