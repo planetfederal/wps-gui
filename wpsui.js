@@ -736,7 +736,7 @@ wps.ui.prototype.createZoomToolbar = function() {
   $('#btn-zoom-in').click(this, this.zoomIn);
 };
 
-wps.ui.prototype.canvasMouseMove = function(ui) {
+wps.ui.canvasMouseMove = function(ui) {
   var me = ui;
   me.mousePosition = d3.touches(this)[0]||d3.mouse(this);
   // MOVING
@@ -772,7 +772,7 @@ wps.ui.prototype.canvasMouseMove = function(ui) {
   me.redraw();
 };
 
-wps.ui.prototype.canvasMouseUp = function(ui) {
+wps.ui.canvasMouseUp = function(ui) {
   var me = ui;
   if (me.mouseMode === 0 && me.mousedownLink === null) {
     me.clearSelection();
@@ -788,7 +788,7 @@ wps.ui.prototype.canvasMouseUp = function(ui) {
   me.resetMouseVars();
 };
 
-wps.ui.prototype.canvasMouseDown = function(ui) {
+wps.ui.canvasMouseDown = function(ui) {
   var me = ui;
   if (!me.mousedownNode && !me.mousedownLink) {
     me.selectedLink = null;
@@ -815,9 +815,9 @@ wps.ui.prototype.createCanvas = function() {
     append('svg:g').
     on("dblclick.zoom", null).
     append('svg:g').
-    on("mousedown", $.proxy(this.canvasMouseDown, null, this)).
-    on("mouseup", $.proxy(this.canvasMouseUp, null, this)).
-    on("mousemove", $.proxy(this.canvasMouseMove, null, this));
+    on("mousedown", $.proxy(wps.ui.canvasMouseDown, null, this)).
+    on("mouseup", $.proxy(wps.ui.canvasMouseUp, null, this)).
+    on("mousemove", $.proxy(wps.ui.canvasMouseMove, null, this));
   var outer_background = this.vis.append('svg:rect').
     attr('width', this.spaceWidth).
     attr('height', this.spaceHeight).
@@ -1054,7 +1054,7 @@ wps.ui.prototype.clearSelection = function() {
   this.selectedLink = null;
 };
 
-wps.ui.prototype.nodeMouseUp = function(ui, d) {
+wps.ui.nodeMouseUp = function(ui, d) {
   var me = ui;
   if (me.mousedownNode == d) {
     me.editor_.showEditForm(d);
@@ -1074,7 +1074,7 @@ wps.ui.prototype.updateSelection = function() {
   // TODO?
 };
 
-wps.ui.prototype.nodeMouseDown = function(ui, d) {
+wps.ui.nodeMouseDown = function(ui, d) {
   var me = ui;
   me.mousedownNode = d;
   var now = Date.now();
@@ -1116,8 +1116,8 @@ wps.ui.prototype.createProcessRect = function(node) {
     }).
     attr("rx", 6).
     attr("ry", 6).
-    on("mouseup", $.proxy(this.nodeMouseUp, null, this)).
-    on("mousedown", $.proxy(this.nodeMouseDown, null, this));
+    on("mouseup", $.proxy(wps.ui.nodeMouseUp, null, this)).
+    on("mousedown", $.proxy(wps.ui.nodeMouseDown, null, this));
 };
 
 wps.ui.prototype.createProcessText = function(node, d) {
