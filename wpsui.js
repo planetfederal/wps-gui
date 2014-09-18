@@ -462,8 +462,8 @@ wps.ui.prototype.importClipboard = function(ui) {
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
-  var node;
-  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+  var node, i, ii;
+  for (i=0, ii=this.nodes.length; i<ii; ++i) {
     node = this.nodes[i];
     if (node.id === nodeId) {
       break;
@@ -479,6 +479,17 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-remove"></span> Invalid input</span>');
     $("#" + name + "-field").addClass("has-error");
+    // find parent node and mark it as not complete
+    for (i=0, ii=this.nodes.length; i<ii; ++i) {
+      if (this.nodes[i].id === node._parent) {
+        this.nodes[i].complete = false;
+        this.nodes[i].dirty = true;
+        this.redraw();
+        break;
+      }
+    }
+    // TODO do we set the value to the invalid value or not?
+    //this.editor_.setValue();
   } else {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
@@ -562,6 +573,9 @@ wps.ui.prototype.execute = function(ui) {
   var selection = d3.selectAll(".node_selected");
   if (selection[0].length > 0) {
     var node = selection.datum();
+    if (node.complete !== true) {
+      return;
+    }
     if (node.type === 'process') {
       hasSelected = true;
       var processId = node.id, process = ui.processes[processId];
