@@ -8,12 +8,13 @@ wps.editor = function(ui) {
 };
 
 wps.editor.DRAW = "_DRAW_";
+wps.editor.PREFIX = "node-input-";
 
 wps.editor.prototype.setValue = function() {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
   var processId = me.editingNode_._parent;
-  var formField = $('#node-input-' + name);
+  var formField = $('#' + wps.editor.PREFIX + name);
   var value;
   if (formField.length > 0) {
     if (me.editingNode_._info.literalData &&
@@ -21,7 +22,7 @@ wps.editor.prototype.setValue = function() {
       me.editingNode_._info.literalData.dataType.value === 'xs:boolean') {
         value = formField.is(':checked');
     } else {
-      value = $('#node-input-' + name).val();
+      value = $('#' + wps.editor.PREFIX + name).val();
     }
     if (value !== wps.editor.DRAW) {
       me.editingNode_.value = value;
@@ -50,7 +51,7 @@ wps.editor.prototype.setValue = function() {
 };
 
 wps.editor.prototype.attachPropertyChangeHandler = function(editor, name, node) {
-  $('#' + 'node-input-' + name).change(function() {
+  $('#' + wps.editor.PREFIX + name).change(function() {
     var valid = node.valid;
     node.valid = node._info.complexData || editor.validateNodeProperty(node._info, this.value);
     if (valid !== node.valid) {
@@ -91,9 +92,9 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
-    html += '<label for="node-input-' + name + '">' + name + '</label></div>';
+    html += '<label for="' + wps.editor.PREFIX + name + '">' + name + '</label></div>';
     if (node._info.literalData.allowedValues) {
-      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      html += '<select style="width: 60%;" id="' + wps.editor.PREFIX + name + '">';
       for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
         if (node.value === key) {
@@ -105,15 +106,15 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '</select>';
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
       if (node.value === true) {
-        html += '<input type="checkbox" id="node-input-' + name + '" checked>';
+        html += '<input type="checkbox" id="' + wps.editor.PREFIX + name + '" checked>';
       } else {
-        html += '<input type="checkbox" id="node-input-' + name + '">';
+        html += '<input type="checkbox" id="' + wps.editor.PREFIX + name + '">';
       }
     } else {
       var value = node.value;
       value = (value === undefined) ? '' : value;
       html += '<div class="form-row" id="' + name + '-field">';
-      html += '<input type="text" id="node-input-' + name + '" value="' + value + '" class="form-control"></div>';
+      html += '<input type="text" id="' + wps.editor.PREFIX + name + '" value="' + value + '" class="form-control"></div>';
     }
     html += '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + name + '\')">Save</button></div>';
   } else if (node._info.complexData) {
@@ -144,7 +145,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     var prefix, selected;
     if (rasterLayer === true) {
-      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      html += '<select style="width: 60%;" id="' + wps.editor.PREFIX + name + '">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
         var coverage = this.ui_.coverages[i].name;
@@ -154,7 +155,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += "</select>";
     }
     else if (pIds.length > 0 || vectorLayer === true) {
-      html += '<select style="width: 60%;" id="node-input-' + name + '">';
+      html += '<select style="width: 60%;" id="' + wps.editor.PREFIX + name + '">';
       html += '<option value="' + wps.editor.DRAW + '">Draw geometry</option>';
       prefix = 'process|';
       for (i=0, ii=pIds.length; i<ii; ++i) {
