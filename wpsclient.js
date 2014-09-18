@@ -303,7 +303,15 @@ wps.process.prototype.setInputData = function(input, data) {
   } else {
     var complexData = input.complexData;
     if (complexData) {
-      var format = this.findMimeType(complexData.supported.format);
+      // ol.format.WFS has no writeFeatures so skip it
+      var formats = [{
+        mimeType: 'application/wkt',
+        format: new ol.format.WKT()
+      }, {
+        mimeType: 'application/json',
+        format: new ol.format.GeoJSON()
+      }];
+      var format = this.findMimeType(complexData.supported.format, formats);
       var content;
       for (var i=0, ii=this.formats.length; i<ii; ++i) {
         if (this.formats[i].mimeType === format) {
@@ -313,6 +321,9 @@ wps.process.prototype.setInputData = function(input, data) {
             } else {
               // TODO reuse format
               content = this.formats[i].format.writeFeatures(new ol.format.WKT().readFeatures(data));
+              if (format === 'application/json') {
+                content = JSON.stringify(content);
+              }
             }
           } else {
             content = this.formats[i].format.writeFeatures(this.toFeatures(data));

@@ -22,6 +22,7 @@
     "ol.interaction.Draw#on",
     "ol.format.WKT",
     "ol.format.GeoJSON",
+    "ol.format.GeoJSON#writeFeatures",
     "ol.format.WKT#writeFeatures",
     "ol.format.WKT#readFeatures",
     "ol.format.WFS",
