@@ -876,30 +876,32 @@ wps.ui.prototype.createDropTarget = function() {
         me.processes[nn.id] = process;
         var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
         for (i=0, ii=nn.inputs; i<ii; ++i) {
-          var inputConfig = {
-            x: mousePos[0]-200,
-            y: mousePos[1]-deltaY,
-            w: this.nodeWidth,
-            inputs: 1,
-            outputs: 1,
-            _parent: nn.id,
-            dirty: true,
-            type: 'input',
-            _info: info.dataInputs.input[i],
-            required: !(info.dataInputs.input[i].minOccurs === 0 && info.dataInputs.input[i].maxOccurs === 1),
-            complete: false,
-            label: info.dataInputs.input[i].title.value
-          };
-          var input = new wps.ui.node(inputConfig);
-          deltaY -= delta;
-          me.nodes.push(input);
-          // create a link as well between input and process
-          link = new wps.ui.link({
-            source: input.id,
-            target: nn.id,
-            _parent: nn.id
-          });
-          me.nodes.push(link);
+          for (var j=0, jj=Math.max(info.dataInputs.input[i].minOccurs, 1); j<jj; ++j) {
+            var inputConfig = {
+              x: mousePos[0]-200,
+              y: mousePos[1]-deltaY,
+              w: this.nodeWidth,
+              inputs: 1,
+              outputs: 1,
+              _parent: nn.id,
+              dirty: true,
+              type: 'input',
+              _info: info.dataInputs.input[i],
+              required: !(info.dataInputs.input[i].minOccurs === 0 && info.dataInputs.input[i].maxOccurs === 1),
+              complete: false,
+              label: info.dataInputs.input[i].title.value
+            };
+            var input = new wps.ui.node(inputConfig);
+            deltaY -= delta;
+            me.nodes.push(input);
+            // create a link as well between input and process
+            link = new wps.ui.link({
+              source: input.id,
+              target: nn.id,
+              _parent: nn.id
+            });
+            me.nodes.push(link);
+          }
         }
         for (i=0, ii=nn.outputs; i<ii; ++i) {
           var outputConfig = {
