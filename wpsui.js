@@ -50,23 +50,6 @@ wps.editor.prototype.setValue = function() {
   ui.redraw();
 };
 
-wps.editor.prototype.attachPropertyChangeHandler = function(editor, name, node) {
-  $('#' + wps.editor.PREFIX + node._parent + '-' + name).change(function() {
-    var valid = node.valid;
-    node.valid = node._info.complexData || editor.validateNodeProperty(node._info, this.value);
-    if (valid !== node.valid) {
-      node.dirty = true;
-      editor.ui_.redraw();
-    }
-    if (!node.valid) {
-      $(this).addClass("input-error");
-    } else {
-      $(this).removeClass("input-error");
-      editor.setValue();
-    }
-  });
-};
-
 wps.editor.prototype.validateNodeProperty = function(info, value) {
   var dataType = info.literalData.dataType.value;
   if (dataType === 'xs:double') {
@@ -116,7 +99,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<div class="form-row" id="' + name + '-field">';
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control"></div>';
     }
-    html += '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + name + '\')">Save</button></div>';
+    html += '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
   } else if (node._info.complexData) {
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
@@ -182,9 +165,6 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '</form>';
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
-  if (hasMap === false || pIds.length > 0 || vectorLayer === true) {
-    this.attachPropertyChangeHandler(this, name, node);
-  }
   if (hasMap === true) {
     var map;
     var mapId = node._parent;
@@ -481,13 +461,29 @@ wps.ui.prototype.importClipboard = function(ui) {
   $("#dialog").removeClass('hide');
 };
 
-wps.ui.prototype.checkInput = function(name) {
-  if (true) { // TODO add input validation here
-    $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
-    $("#" + name + "-field").addClass("has-success");
-  } else {
+wps.ui.prototype.checkInput = function(nodeId, name, id) {
+  var node;
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    node = this.nodes[i];
+    if (node.id === nodeId) {
+      break;
+    }
+  }
+  var valid = node.valid;
+  node.valid = node._info.complexData || this.editor_.validateNodeProperty(node._info, $('#' + id).val());
+  if (valid !== node.valid) {
+    node.dirty = true;
+    this.redraw();
+  }
+  if (!node.valid) {
+    $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-remove"></span> Invalid input</span>');
     $("#" + name + "-field").addClass("has-error");
+  } else {
+    $('.form-row.input-validate').children('span').remove();
+    $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
+    $("#" + name + "-field").addClass("has-success");
+    this.editor_.setValue();
   }
 };
 
