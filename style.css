@@ -384,7 +384,7 @@ a.brand span {
   stroke-width: 3;
 }
 .node_input {
-  fill: orange;
+  fill: #FDF0C2;
 }
 .node_input.node_required {
   fill: rgb(255, 177, 111);
