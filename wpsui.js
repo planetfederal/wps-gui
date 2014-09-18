@@ -104,12 +104,17 @@ wps.editor.prototype.showEditForm = function(node) {
   } else if (node._info.complexData) {
     // create input fields for geoms
     html += '<div class="form-row">';
-    html += '<label for="' + id + '">' + name + '</label></div>';
+    html += '<label for="' + id + '">' + name + '</label>';
+    // Optional: add more inputs if process allows
+    if (node._info.maxOccurs > node._info.minOccurs) {
+      html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
+    }
+    html += '</div>';
+
     value = (value === undefined) ? '' : value;
     html += '<div class="form-row" id="' + name + '-field">';
     html += '<input type="text" placeholder="WKT or GML" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     html += saveButton;
-    html += '<div class="form-row"><button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ Add more geoms</button></div>';
 
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
@@ -146,10 +151,11 @@ wps.editor.prototype.showEditForm = function(node) {
         html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
       }
       html += "</select>";
-      html += saveButton;
     }
     else if (pIds.length > 0 || vectorLayer === true) {
-      html += '<select style="width: 60%;" id="' + id + '">';
+      html += '<p class="form-row"><em>&mdash; or &mdash;</em></p>';
+      html += '<p><small>Draw or Select an existing geom:</small></p>';
+      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       html += '<option value="' + wps.editor.DRAW + '">Draw geometry</option>';
       prefix = 'process|';
       for (i=0, ii=pIds.length; i<ii; ++i) {
@@ -166,7 +172,6 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }
       html += "</select>";
-      html += saveButton;
     }
     if (rasterLayer !== true) {
       hasMap = true;
