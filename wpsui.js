@@ -583,7 +583,14 @@ wps.ui.prototype.execute = function(ui) {
       for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
         var n = ui.nodes[i];
         if (n.type === 'input' && n._parent === processId) {
-          values[n._info.identifier.value] = n.value;
+          if (n._info.minOccurs > 1) {
+            if (values[n._info.identifier.value] === undefined) {
+              values[n._info.identifier.value] = [];
+            }
+            values[n._info.identifier.value].push(n.value);
+          } else {
+            values[n._info.identifier.value] = n.value;
+          }
         }
       }
       if (values && process.isComplete(values)) {
@@ -651,7 +658,11 @@ wps.ui.prototype.execute = function(ui) {
               });
             }
           } else {
-            inputs[key] = '' + values[key];
+            if (toString.call(values[key]) === "[object Array]") {
+              inputs[key] = values[key];
+            } else {
+              inputs[key] = '' + values[key];
+            }
           }
         }
         process.execute({

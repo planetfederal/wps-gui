@@ -95,7 +95,13 @@ wps.process.prototype.configure = function(options) {
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
         if (inputs[input.identifier.value] !== undefined) {
-          this.setInputData(input, inputs[input.identifier.value]);
+          if (toString.call(inputs[input.identifier.value]) === "[object Array]") {
+            for (var j=0, jj=inputs[input.identifier.value].length; j<jj; ++j) {
+              this.setInputData(input, inputs[input.identifier.value][j]);
+            }
+          } else {
+            this.setInputData(input, inputs[input.identifier.value]);
+          }
         }
       }
       if (options.callback) {
