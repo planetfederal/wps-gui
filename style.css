@@ -360,6 +360,13 @@ a.brand span {
   margin-left: 2%;
 }
 
+/* fix for firefox dropdowns */
+@-moz-document url-prefix() {
+  option, #sidebar-content option {
+    padding: 5px;
+  }
+}
+
 #sidebar-content #add-geoms {
   margin-right: 3%;
   float: right;

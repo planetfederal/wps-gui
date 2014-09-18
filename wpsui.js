@@ -78,8 +78,11 @@ wps.editor.prototype.showEditForm = function(node) {
   if (node._info.literalData) {
     html += '<div class="form-row">';
     html += '<label for="' + id + '">' + name + '</label></div>';
+
     if (node._info.literalData.allowedValues) {
-      html += '<select style="width: 60%;" id="' + id + '">';
+      html += '<select class="form-control input-sm" style="width: 70%;" id="' + id + '">';
+      html += '<option value="" selected disabled>Select a value...</option>';
+
       for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
         selected = (node.value === key) ? 'selected' : '';
@@ -87,10 +90,11 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '</select>';
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
-      html += '<select style="width: 60%;" id="' + id + '">';
+      html += '<select  class="form-control input-sm" style="width: 70% !important;" id="' + id + '">';
+      html += '<option value="" selected disabled>Select a value...</option>';
       selected = (node.value === true) ? 'selected' : '';
       html += '<option ' + selected + ' value="'+true+'">True</option>';
-      selected = (node.value !== true) ? 'selected' : '';
+      selected = (node.value === false) ? 'selected' : '';
       html += '<option ' + selected + ' value="'+false+'">False</option>';
       html += '</select>';
     } else {
@@ -143,7 +147,9 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     var prefix;
     if (rasterLayer === true) {
-      html += '<select style="width: 60%;" id="' + id + '">';
+      html += '<p class="form-row"><em>&mdash; or &mdash;</em></p>';
+      html += '<p><small>Draw or Select an existing geom:</small></p>';
+      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
         var coverage = this.ui_.coverages[i].name;
@@ -489,7 +495,8 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     }
   }
   var valid = node.valid;
-  node.valid = node._info.complexData || this.editor_.validateNodeProperty(node._info, $('#' + id).val());
+  var nodeEl = $('#' + id);
+  node.valid = node._info.complexData || this.editor_.validateNodeProperty(node._info, nodeEl.val());
   if (valid !== node.valid) {
     node.dirty = true;
     this.redraw();
@@ -515,6 +522,17 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     $("#" + name + "-field").addClass("has-success");
     this.editor_.setValue();
   }
+
+  // Finally add listeners in case field changes
+  nodeEl.keyup(function(event) {
+    $('.form-row.input-validate').children('span').remove();
+  });
+  // try select dropdown
+  nodeEl.change(function() {
+    $('.form-row.input-validate').children('span').remove();
+  });
+
+
 };
 
 wps.ui.prototype.save = function(ui) {
