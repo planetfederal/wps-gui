@@ -72,6 +72,7 @@ wps.editor.prototype.showEditForm = function(node) {
   // simple input
   var name = node._info.identifier.value;
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name;
+  var selected;
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
@@ -80,16 +81,13 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select style="width: 60%;" id="' + id + '">';
       for (i=0, ii=node._info.literalData.allowedValues.valueOrRange.length; i<ii; ++i) {
         var key = node._info.literalData.allowedValues.valueOrRange[i].value;
-        if (node.value === key) {
-          html += '<option selected value="'+key+'">'+key+'</option>';
-        } else {
-          html += '<option value="'+key+'">'+key+'</option>';
-        }
+        selected = (node.value === key) ? 'selected' : '';
+        html += '<option ' + selected + ' value="'+key+'">'+key+'</option>';
       }
       html += '</select>';
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
       html += '<select style="width: 60%;" id="' + id + '">';
-      var selected = (node.value === true) ? 'selected' : '';
+      selected = (node.value === true) ? 'selected' : '';
       html += '<option ' + selected + ' value="'+true+'">True</option>';
       selected = (node.value !== true) ? 'selected' : '';
       html += '<option ' + selected + ' value="'+false+'">False</option>';        
@@ -127,7 +125,7 @@ wps.editor.prototype.showEditForm = function(node) {
         rasterLayer = true;
       }
     }
-    var prefix, selected;
+    var prefix;
     if (rasterLayer === true) {
       html += '<select style="width: 60%;" id="' + id + '">';
       prefix = 'raster|';
@@ -159,7 +157,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     if (rasterLayer !== true) {
       hasMap = true;
-      var id = "input-map-" + node._parent;
+      id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
     }
   }
