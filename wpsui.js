@@ -72,6 +72,7 @@ wps.editor.prototype.showEditForm = function(node) {
   // simple input
   var name = node._info.identifier.value;
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name;
+  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
   var selected;
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
@@ -98,7 +99,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<div class="form-row" id="' + name + '-field">';
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control"></div>';
     }
-    html += '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
+    html += saveButton;
   } else if (node._info.complexData) {
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
@@ -135,6 +136,7 @@ wps.editor.prototype.showEditForm = function(node) {
         html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
       }
       html += "</select>";
+      html += saveButton;
     }
     else if (pIds.length > 0 || vectorLayer === true) {
       html += '<select style="width: 60%;" id="' + id + '">';
@@ -154,6 +156,7 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }
       html += "</select>";
+      html += saveButton;
     }
     if (rasterLayer !== true) {
       hasMap = true;
@@ -608,12 +611,12 @@ wps.ui.prototype.execute = function(ui) {
               var subInputs = {};
               for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
                 if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
-                  if (ui.nodes[j].value.indexOf('vector|') !== -1) {
+                  if ((typeof ui.nodes[j].value === 'string') && ui.nodes[j].value.indexOf('vector|') !== -1) {
                     subInputs[ui.nodes[j]._info.identifier.value] = new wps.process.localWFS({
                       srsName: srsName,
                       typeName: ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('vector|')+7)
                     });
-                  } else if (ui.nodes[j].value.indexOf('raster|') !== -1) {
+                  } else if ((typeof ui.nodes[j].value === 'string') && ui.nodes[j].value.indexOf('raster|') !== -1) {
                     coverage = ui.nodes[j].value.substring(ui.nodes[j].value.indexOf('raster|')+7);
                     for (c=0, cc=ui.coverages.length; c<cc; ++c) {
                       if (ui.coverages[c].name === coverage) {
