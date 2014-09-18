@@ -148,7 +148,7 @@ wps.editor.prototype.showEditForm = function(node) {
     var prefix;
     if (rasterLayer === true) {
       html += '<p class="form-row"><em>&mdash; or &mdash;</em></p>';
-      html += '<p><small>Draw or Select an existing geom:</small></p>';
+      html += '<p><small>Draw or Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
