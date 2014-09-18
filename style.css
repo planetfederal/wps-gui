@@ -30,7 +30,7 @@ body {
     display: none;
 }
 #dropTarget div {
-    display: table-cell; 
+    display: table-cell;
     vertical-align: middle;
     text-align: center;
     font-size: 40px;
@@ -113,7 +113,7 @@ a.brand span {
     padding: 5px;
     overflow-y: auto;
     box-sizing:border-box;
-    -moz-box-sizing: border-box;    
+    -moz-box-sizing: border-box;
 }
 .palette-spinner {
     padding-top: 40px;
@@ -131,7 +131,7 @@ a.brand span {
     padding: 6px;
     border-top: 1px solid #999;
     box-sizing:border-box;
-    -moz-box-sizing: border-box;    
+    -moz-box-sizing: border-box;
 }
 /* bartvde change to glyphicon */
 #palette-search i.glyphicon-search {
@@ -162,8 +162,8 @@ a.brand span {
     margin: 0px;
     height: 27px;
     box-sizing:border-box;
-    -moz-box-sizing: border-box;    
-    
+    -moz-box-sizing: border-box;
+
 }
 #palette-search input:focus {
     border: none;
@@ -234,7 +234,7 @@ a.brand span {
    top:8px;
    left: -5px;
    box-sizing: border-box;
-    -moz-box-sizing: border-box;    
+    -moz-box-sizing: border-box;
    background:#d9d9d9;
    border-radius: 3px;
    width: 10px;
@@ -253,7 +253,7 @@ a.brand span {
 #sidebar {
     background: #fff;
     box-sizing: border-box;
-    -moz-box-sizing: border-box;    
+    -moz-box-sizing: border-box;
 }
 #sidebar.closing {
     background: #eee;
@@ -347,6 +347,11 @@ a.brand span {
     top: 30px; left: 0px; right: 0; bottom: 1px;
 }
 
+#sidebar-content #input-save {
+  float: right;
+  margin-right: 2%;
+}
+
 .node_label_italic {
     font-style: italic;
 }
@@ -382,7 +387,7 @@ a.brand span {
   fill: orange;
 }
 .node_input.node_required {
-  fill: rgb(255, 177, 111); 
+  fill: rgb(255, 177, 111);
 }
 .node_process {
   fill: rgb(231, 231, 74);
@@ -561,8 +566,9 @@ div.form-row-abstract {
     display: inline-block;
     width: 100px;
 }
-.form-row input {
-    width:70%;
+.form-row input, .form-control {
+    width:95% !important;
+    margin-left: 2%;
 }
 
 input.input-append-left {
@@ -783,7 +789,7 @@ ul.red-ui-tabs li {
 }
 
 ul.red-ui-tabs li a.red-ui-tab-label {
-    display: block; 
+    display: block;
     padding: 3px 16px;
     color: #666;
 }
