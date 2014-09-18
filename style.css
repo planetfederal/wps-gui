@@ -350,6 +350,11 @@ a.brand span {
 #sidebar-content #input-save {
   float: right;
   margin-right: 2%;
+  margin-bottom: 15px;
+}
+
+#sidebar-content #add-geoms {
+  margin-left: 2%;
 }
 
 .node_label_italic {
@@ -556,11 +561,13 @@ g.link_unknown path.link_line {
 .form-row {
     clear: both;
     margin: 7px 7px 7px 7px;
+    font-size: 13px;
 }
 div.form-row-abstract {
     background-color: #EEEEEE;
     font-style: italic;
-    padding: 5px 5px 10px 5px;
+    padding: 10px 5px 10px 5px;
+    font-size: 13px;
 }
 .form-row label {
     display: inline-block;
@@ -570,7 +577,6 @@ div.form-row-abstract {
     width:95% !important;
     margin-left: 2%;
 }
-
 input.input-append-left {
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;

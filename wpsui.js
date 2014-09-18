@@ -72,7 +72,7 @@ wps.editor.prototype.showEditForm = function(node) {
   // simple input
   var name = node._info.identifier.value;
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name;
-  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
+  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
   var selected;
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
@@ -91,16 +91,26 @@ wps.editor.prototype.showEditForm = function(node) {
       selected = (node.value === true) ? 'selected' : '';
       html += '<option ' + selected + ' value="'+true+'">True</option>';
       selected = (node.value !== true) ? 'selected' : '';
-      html += '<option ' + selected + ' value="'+false+'">False</option>';        
+      html += '<option ' + selected + ' value="'+false+'">False</option>';
       html += '</select>';
     } else {
       var value = node.value;
       value = (value === undefined) ? '' : value;
       html += '<div class="form-row" id="' + name + '-field">';
-      html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control"></div>';
+      html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     }
     html += saveButton;
+
   } else if (node._info.complexData) {
+    // create input fields for geoms
+    html += '<div class="form-row">';
+    html += '<label for="' + id + '">' + name + '</label></div>';
+    value = (value === undefined) ? '' : value;
+    html += '<div class="form-row" id="' + name + '-field">';
+    html += '<input type="text" placeholder="WKT or GML" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
+    html += saveButton;
+    html += '<div class="form-row"><button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ Add more geoms</button></div>';
+
     // check if there are any processes with geometry output that can serve as input here
     for (pId in this.ui_.processes) {
       if (pId !== node._parent) {
@@ -161,7 +171,7 @@ wps.editor.prototype.showEditForm = function(node) {
     if (rasterLayer !== true) {
       hasMap = true;
       id = "input-map-" + node._parent;
-      html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid"></div>';
+      html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
     }
   }
   html += '</form>';
@@ -464,6 +474,8 @@ wps.ui.prototype.importClipboard = function(ui) {
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
+  // TODO: add validation for geom nodes - WKT or GML or geometry on the map?
+
   var node, i, ii;
   for (i=0, ii=this.nodes.length; i<ii; ++i) {
     node = this.nodes[i];
@@ -997,6 +1009,45 @@ wps.ui.prototype.createLinkPaths = function() {
       (target.x-target.w/2-scale*me.nodeWidth)+" "+(target.y-scaleY*me.nodeHeight)+" "+
       (target.x-target.w/2)+" "+target.y;
   });
+};
+
+wps.ui.prototype.createExtraInputNode = function() {
+  var selected_node = this.editor_.editingNode_;
+  var inputs = [], maxY = 0;
+
+  // find lowest input node for process being edited
+  for (var i in this.nodes) {
+    var node = this.nodes[i];
+    if (node.target && node.target == selected_node._parent) {
+      var y = node.y1;
+      if (maxY < y) {
+        maxY = y;
+      }
+    }
+  }
+  var link, i, ii, delta = 50;
+  var inputConfig = {
+    x: selected_node.x,
+    y: maxY + delta,
+    w: selected_node.w,
+    inputs: 0,
+    outputs: 1,
+    _parent: selected_node._parent,
+    dirty: true,
+    type: 'input',
+    _info: selected_node._info,
+    complete: false,
+    label: "geom"
+  };
+  var input = new wps.ui.node(inputConfig);
+  this.nodes.push(input);
+  // create a link as well between input and process
+  link = new wps.ui.link({
+    source: input.id,
+    target: selected_node._parent,
+    _parent: selected_node._parent
+  });
+  this.nodes.push(link);
 };
 
 wps.ui.prototype.redraw = function() {
