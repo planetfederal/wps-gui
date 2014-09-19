@@ -1037,9 +1037,9 @@ wps.ui.prototype.createLinkPaths = function() {
 wps.ui.prototype.createExtraInputNode = function() {
   var selected_node = this.editor_.editingNode_;
   var inputs = [], maxY = 0;
-
+  var i;
   // find lowest input node for process being edited
-  for (var i in this.nodes) {
+  for (i in this.nodes) {
     var node = this.nodes[i];
     if (node.target && node.target == selected_node._parent) {
       var y = node.y1;
@@ -1048,7 +1048,7 @@ wps.ui.prototype.createExtraInputNode = function() {
       }
     }
   }
-  var link, i, ii, delta = 50;
+  var link, delta = 50;
   var inputConfig = {
     x: selected_node.x,
     y: maxY + delta,
@@ -1071,6 +1071,7 @@ wps.ui.prototype.createExtraInputNode = function() {
     _parent: selected_node._parent
   });
   this.nodes.push(link);
+  this.redraw();
 };
 
 wps.ui.prototype.redraw = function() {
