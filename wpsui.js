@@ -314,6 +314,9 @@ wps.ui = function(options) {
         color: 'red'
       })
     }),
+    fill: new ol.style.Fill({
+      color: 'rgba(255, 0, 0, 0.2)'
+    }),
     stroke: new ol.style.Stroke({
       color: 'red',
       width: 1
