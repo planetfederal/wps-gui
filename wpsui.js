@@ -116,11 +116,9 @@ wps.editor.prototype.showEditForm = function(node) {
     // create input fields for geoms
 
     // Tabs for WKT/GML text vs. map
-    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li><li><a href="#map-input" role="tab" data-toggle="tab" onclick="window.wpsui.activateMap(\'' + node._parent + '\')">via Map</a></li></ul>';
-    html += '<div class="tab-content"><div class="tab-pane fade in active" id="text-input">';
-
-    html += '<div class="form-row">';
-    html += '<label for="' + id + '">' + name + '</label>';
+    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
+    html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
+    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
     // Optional: add more inputs if process allows
     if (node._info.maxOccurs > node._info.minOccurs) {
       html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
@@ -133,7 +131,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<input type="text" placeholder="WKT or GML" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     html += saveButton;
     // end tab-pane, begin map-pane
-    html += '</div><div class="tab-pane" id="map-input">';
+    html += '</div><div class="tab-pane active" id="map-input">';
     html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
     if (node._info.maxOccurs > node._info.minOccurs) {
       html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
@@ -240,7 +238,7 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }});
       this.ui_.inputMaps[mapId].map = new ol.Map({
-        // set target when map tab is activated
+        target: 'input-map-' + mapId,
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
@@ -273,6 +271,16 @@ wps.editor.prototype.showEditForm = function(node) {
       if (node.value) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
+      map = this.ui_.inputMaps[mapId].map;
+      window.setTimeout(function() {
+        map.updateSize();
+      }, 0);
+    } else {
+      map = this.ui_.inputMaps[mapId].map;
+      map.set('target', 'input-map-' + mapId);
+      window.setTimeout(function() {
+        map.updateSize();
+      }, 0);
     }
   }
 };
@@ -495,20 +503,6 @@ wps.ui.prototype.importClipboard = function(ui) {
   $("#dialog").dialog("option", "title", "Import nodes from clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
-};
-
-wps.ui.prototype.activateMap = function(mapId) {
-  // check map is not already loaded
-  var map = this.editor_.ui_.inputMaps[mapId].map;
-  var editor = this.editor_;
-
-  window.setTimeout(function() {
-    if (editor.needsMap && $('#input-map-' + mapId).length > 0) {
-      map.setTarget(document.getElementById('input-map-' + mapId));
-      editor.needsMap = false;
-    }
-      map.updateSize();
-    }, 250);
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
