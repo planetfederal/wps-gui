@@ -10,13 +10,13 @@ wps.editor = function(ui) {
 wps.editor.DRAW = "_DRAW_";
 wps.editor.PREFIX = "node-input-";
 
-wps.editor.prototype.setValue = function() {
+wps.editor.prototype.setValue = function(geom) {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
   var processId = me.editingNode_._parent;
   var formField = $('#' + wps.editor.PREFIX + processId + '-' + name);
   var value;
-  if (formField.length > 0) {
+  if (geom !== true && formField.length > 0) {
     if (me.editingNode_._info.literalData &&
       me.editingNode_._info.literalData.dataType &&
       me.editingNode_._info.literalData.dataType.value === 'xs:boolean') {
@@ -246,7 +246,7 @@ wps.editor.prototype.showEditForm = function(node) {
           node.value = new ol.format.WKT().writeFeatures([evt.feature]);
           node.valid = evt.feature;
           if (node.valid) {
-            this.setValue();
+            this.setValue(true);
           }
         }
       }, this);
