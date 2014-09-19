@@ -812,17 +812,45 @@ wps.ui.prototype.createZoomToolbar = function() {
 wps.ui.canvasMouseMove = function(ui) {
   var me = ui;
   me.mousePosition = d3.touches(this)[0]||d3.mouse(this);
+  var mousePos = me.mousePosition;
+  // JOINING
+  if (me.mouseMode == 2) {
+    // update drag line
+    me.dragLine.attr("class", "drag_line");
+    var numOutputs = (me.mousedownPortType === 0)?(me.mousedownNode.outputs || 1):1;
+    var sourcePort = me.mousedownPortIndex;
+    var y = -((numOutputs-1)/2)*13 +13*sourcePort;
+    var sc = (me.mousedownPortType === 0)?1:-1;
+    var dy = mousePos[1]-(me.mousedownNode.y+y);
+    var dx = mousePos[0]-(me.mousedownNode.x+sc*me.mousedownNode.w/2);
+    var delta = Math.sqrt(dy*dy+dx*dx);
+    var scale = me.lineCurveScale;
+    var scaleY = 0;
+    if (delta < me.nodeWidth) {
+      scale = 0.75-0.75*((me.nodeWidth-delta)/me.nodeWidth);
+    }
+    if (dx*sc < 0) {
+      scale += 2*(Math.min(5*me.nodeWidth,Math.abs(dx))/(5*me.nodeWidth));
+      if (Math.abs(dy) < 3*me.nodeHeight) {
+        scaleY = ((dy>0)?0.5:-0.5)*(((3*me.nodeHeight)-Math.abs(dy))/(3*me.nodeHeight))*(Math.min(me.nodeWidth,Math.abs(dx))/(me.nodeWidth)) ;
+      }
+    }
+    me.dragLine.attr("d",
+      "M "+(me.mousedownNode.x+sc*me.mousedownNode.w/2)+" "+(me.mousedownNode.y+y)+
+        " C "+(me.mousedownNode.x+sc*(me.mousedownNode.w/2+me.nodeWidth*scale))+" "+(me.mousedownNode.y+y+scaleY*me.nodeHeight)+" "+
+        (mousePos[0]-sc*(scale)*me.nodeWidth)+" "+(mousePos[1]-scaleY*me.nodeHeight)+" "+
+        mousePos[0]+" "+mousePos[1]);
+    d3.event.preventDefault();
+  }
   // MOVING
-  if (me.mouseMode == 1) {
-    var m = me.mousePosition;
-    var d = (me.mouseOffset[0]-m[0])*(me.mouseOffset[0]-m[0]) + (me.mouseOffset[1]-m[1])*(me.mouseOffset[1]-m[1]);
+  else if (me.mouseMode == 1) {
+    var d = (me.mouseOffset[0]-mousePos[0])*(me.mouseOffset[0]-mousePos[0]) + (me.mouseOffset[1]-mousePos[1])*(me.mouseOffset[1]-mousePos[1]);
     if (d > 2) {
       // MOVING_ACTIVE
       me.mouseMode = 3;
       me.clickElapsed = 0;
     }
   } else if (me.mouseMode == 3) {
-    var mousePos = me.mousePosition;
     var minX = 0;
     var minY = 0;
     var n, node;
@@ -895,6 +923,7 @@ wps.ui.prototype.createCanvas = function() {
     attr('width', this.spaceWidth).
     attr('height', this.spaceHeight).
     attr('fill','#fff');
+  this.dragLine = this.vis.append("svg:path").attr("class", "drag_line");
 };
 
 wps.ui.prototype.createDropTarget = function() {
@@ -1103,11 +1132,64 @@ wps.ui.prototype.redraw = function() {
   this.createLinkPaths();
 };
 
+wps.ui.portMouseDown = function(ui, portType, portIndex, d) {
+  ui.mousedownNode = d;
+  ui.selectedLink = null;
+  ui.mouseMode = 2;  // JOINING
+  ui.mousedownPortType = portType;
+  ui.mousedownPortIndex = portIndex || 0;
+  document.body.style.cursor = "crosshair";
+  d3.event.preventDefault();
+};
+
+wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
+  document.body.style.cursor = "";
+  if (ui.mouseMode === 2 && ui.mousedownNode) {
+    ui.mouseupNode = d;
+    if (portType == ui.mousedownPortType || ui.mouseupNode === ui.mousedownNode) {
+      ui.dragLine.attr("class", "drag_line_hidden");
+      ui.resetMouseVars();
+      return;
+    }
+    var src, dst, src_port;
+    if (ui.mousedownPortType === 0) {
+      src = ui.mousedownNode;
+      src_port = ui.mousedownPortIndex;
+      dst = ui.mouseupNode;
+    } else if (ui.mousedownPortType === 1) {
+      src = ui.mouseupNode;
+      dst = ui.mousedownNode;
+      src_port = portIndex;
+    }
+    var existingLink = false;
+    for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+      var node = ui.nodes[i];
+      existingLink = existingLink || (node.source === src && node.target === dst && node.sourcePort == src_port);
+    }
+    if (!existingLink) {
+      var link = {
+        source: src,
+        sourcePort:src_port,
+        target: dst,
+        dirty: true
+      };
+      ui.nodes.push(link);
+    }
+    ui.selectedLink = null;
+    ui.redraw();
+  }
+};
+
 wps.ui.prototype.createInputLink = function(node, d, text) {
   if (d.inputs > 0) {
+    var me = this;
     text.attr("x",8);
     node.append("rect").attr("class","port port_input").attr("rx",3).attr("ry",3).attr("x",-5).attr("width",10).attr("height",10).
-      attr("y", 10);
+      attr("y", 10).
+      on("mouseup", $.proxy(wps.ui.portMouseUp, null, this, 1, 0)).
+      on("mousedown",$.proxy(wps.ui.portMouseDown, null, this, 1, 0)).
+      on("mouseout",function(d) { var port = d3.select(this); port.classed("port_hovered",false);}).
+      on("mouseover",function(d,i) { var port = d3.select(this); port.classed("port_hovered",(me.mouseMode!=2 /*|| mousedown_port_type != 0*/ ));});
   }
 };
 
@@ -1146,7 +1228,11 @@ wps.ui.prototype.updateNode = function(d) {
       var y = (d.h/2)-((numOutputs-1)/2)*13;
       d.ports = d.ports || d3.range(numOutputs);
       d._ports = thisNode.selectAll(".port_output").data(d.ports);
-      d._ports.enter().append("rect").attr("class","port port_output").attr("rx",3).attr("ry",3).attr("width",10).attr("height",10);
+      var mouseMode = this.mouseMode;
+      d._ports.enter().append("rect").attr("class","port port_output").
+        attr("rx",3).attr("ry",3).attr("width",10).attr("height",10).
+        on("mouseout",function(d) { var port = d3.select(this); port.classed("port_hovered",false);}).
+        on("mouseover",function(d,i) { var port = d3.select(this); port.classed("port_hovered",(mouseMode!=2 /*|| mousedown_port_type != 0*/ ));});
       d._ports.exit().remove();
       if (d._ports) {
         numOutputs = d.outputs || 1;
@@ -1180,6 +1266,7 @@ wps.ui.nodeMouseUp = function(ui, d) {
     d3.event.stopPropagation();
     return;
   }
+  wps.ui.portMouseUp(d, d._def.inputs > 0 ? 1 : 0, 0);
 };
 
 wps.ui.prototype.updateSelection = function() {
