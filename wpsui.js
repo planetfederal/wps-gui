@@ -51,14 +51,17 @@ wps.editor.prototype.setValue = function(geom) {
 };
 
 wps.editor.prototype.validateNodeProperty = function(info, value) {
-  var dataType = info.literalData.dataType.value;
-  if (dataType === 'xs:double') {
-    return (!isNaN(parseFloat(value)));
-  } else if (dataType === 'xs:int') {
-    return Math.floor(value) == value;
-  } else {
-    return true;
+  if (info.literalData.dataType) {
+    var dataType = info.literalData.dataType.value;
+    if (dataType === 'xs:double') {
+      return (!isNaN(parseFloat(value)));
+    } else if (dataType === 'xs:int') {
+      return Math.floor(value) == value;
+    } else {
+      return true;
+    }
   }
+  return true;
 };
 
 wps.editor.prototype.showEditForm = function(node) {
@@ -71,6 +74,7 @@ wps.editor.prototype.showEditForm = function(node) {
   // begin form
   var html = '<form id="dialog-form" class="form-horizontal">';
   var hasMap = false, i, ii, pIds = [];
+  this.needsMap = false;
   // simple input
   var name = node._info.identifier.value;
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name;
@@ -112,7 +116,7 @@ wps.editor.prototype.showEditForm = function(node) {
     // create input fields for geoms
 
     // Tabs for WKT/GML text vs. map
-    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li><li><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li></ul>';
+    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li><li><a href="#map-input" role="tab" data-toggle="tab" onclick="window.wpsui.activateMap(\'' + node._parent + '\')">via Map</a></li></ul>';
     html += '<div class="tab-content"><div class="tab-pane fade in active" id="text-input">';
 
     html += '<div class="form-row">';
@@ -174,7 +178,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += "</select>";
     }
     else if (pIds.length > 0 || vectorLayer === true) {
-      html += '<p><small>Draw or Select an existing geom:</small></p>';
+      html += '<p><small>Draw or Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       html += '<option value="' + wps.editor.DRAW + '">Draw geometry</option>';
       prefix = 'process|';
@@ -195,6 +199,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     if (rasterLayer !== true) {
       hasMap = true;
+      this.needsMap = true;
       id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
     }
@@ -235,7 +240,7 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }});
       this.ui_.inputMaps[mapId].map = new ol.Map({
-        target: 'input-map-' + mapId,
+        // set target when map tab is activated
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
@@ -268,16 +273,6 @@ wps.editor.prototype.showEditForm = function(node) {
       if (node.value) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
-      map = this.ui_.inputMaps[mapId].map;
-      window.setTimeout(function() {
-        map.updateSize();
-      }, 0);
-    } else {
-      map = this.ui_.inputMaps[mapId].map;
-      map.set('target', 'input-map-' + mapId);
-      window.setTimeout(function() {
-        map.updateSize();
-      }, 0);
     }
   }
 };
@@ -500,6 +495,20 @@ wps.ui.prototype.importClipboard = function(ui) {
   $("#dialog").dialog("option", "title", "Import nodes from clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
+};
+
+wps.ui.prototype.activateMap = function(mapId) {
+  // check map is not already loaded
+  var map = this.editor_.ui_.inputMaps[mapId].map;
+  var editor = this.editor_;
+
+  window.setTimeout(function() {
+    if (editor.needsMap && $('#input-map-' + mapId).length > 0) {
+      map.setTarget(document.getElementById('input-map-' + mapId));
+      editor.needsMap = false;
+    }
+      map.updateSize();
+    }, 250);
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
