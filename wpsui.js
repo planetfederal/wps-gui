@@ -57,6 +57,8 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
       return (!isNaN(parseFloat(value)));
     } else if (dataType === 'xs:int') {
       return Math.floor(value) == value;
+    } else if (dataType === 'xs:boolean') {
+      return (value === true || value === false);
     } else {
       return true;
     }
@@ -110,6 +112,11 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<div class="form-row" id="' + name + '-field">';
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     }
+    if (node.dirty === false) {
+      node.value = '';
+      node.valid = false;
+    }
+
     html += saveButton;
 
   } else if (node._info.complexData) {
@@ -517,7 +524,7 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   }
   var valid = node.valid;
   var nodeEl = $('#' + id);
-  node.valid = node._info.complexData || this.editor_.validateNodeProperty(node._info, nodeEl.val());
+  node.valid = node._info.complexData !== undefined || this.editor_.validateNodeProperty(node._info, nodeEl.val());
   if (valid !== node.valid) {
     node.dirty = true;
     this.redraw();
