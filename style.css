@@ -372,6 +372,20 @@ a.brand span {
   float: right;
 }
 
+#sidebar-content ul.nav-pills.text-or-map {
+  border: 1px solid #ccc;
+}
+#sidebar-content ul.nav-pills.text-or-map > li > a {
+  border-radius: 0;
+  color: #666;
+}
+
+#sidebar-content ul.nav-pills.text-or-map > li.active > a, ul.nav-pills.text-or-map > li.active > a:hover, ul.nav-pills.text-or-map > li.active > a:focus {
+  background-color: #9f9f9f;
+  color: #fff;
+  outline: none;
+}
+
 .node_label_italic {
     font-style: italic;
 }
