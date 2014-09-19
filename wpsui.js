@@ -58,7 +58,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     } else if (dataType === 'xs:int') {
       return Math.floor(value) == value;
     } else if (dataType === 'xs:boolean') {
-      return (value === true || value === false);
+      return (value === "true" || value === "false");
     } else {
       return true;
     }
@@ -135,7 +135,7 @@ wps.editor.prototype.showEditForm = function(node) {
     value = (value === undefined) ? '' : value;
 
     html += '<div class="form-row" id="' + name + '-field">';
-    html += '<input type="text" placeholder="WKT or GML" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
+    html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
     html += saveButton;
     // end tab-pane, begin map-pane
     html += '</div><div class="tab-pane active" id="map-input">';
@@ -173,7 +173,7 @@ wps.editor.prototype.showEditForm = function(node) {
     var prefix;
     if (rasterLayer === true) {
       html += '<p class="form-row"><p><small>Draw or Select from existing:</small></p>';
-      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
+      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
         var coverage = this.ui_.coverages[i].name;
@@ -184,8 +184,8 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     else if (pIds.length > 0 || vectorLayer === true) {
       html += '<p><small>Draw or Select from existing:</small></p>';
-      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
-      html += '<option value="' + wps.editor.DRAW + '">Draw geometry</option>';
+      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
+      html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = 'process|';
       for (i=0, ii=pIds.length; i<ii; ++i) {
         pId = pIds[i];
@@ -552,12 +552,31 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   }
 
   // Finally add listeners in case field changes
+  var _this = this;
   nodeEl.keyup(function(event) {
     $('.form-row.input-validate').children('span').remove();
+    // find node and mark it as not complete
+    for (i=0, ii=_this.nodes.length; i<ii; ++i) {
+      if (_this.nodes[i].id === node.id) {
+        _this.nodes[i].complete = false;
+        _this.nodes[i].dirty = true;
+        _this.redraw();
+        break;
+      }
+    }
   });
   // try select dropdown
   nodeEl.change(function() {
     $('.form-row.input-validate').children('span').remove();
+    // find node and mark it as not complete
+    for (i=0, ii=_this.nodes.length; i<ii; ++i) {
+      if (_this.nodes[i].id === node.id) {
+        _this.nodes[i].complete = false;
+        _this.nodes[i].dirty = true;
+        _this.redraw();
+        break;
+      }
+    }
   });
 
 
