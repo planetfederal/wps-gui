@@ -84,7 +84,7 @@ wps.editor.prototype.showEditForm = function(node) {
   this.needsMap = false;
   // simple input
   var name = node._info.identifier.value;
-  var pId, id = wps.editor.PREFIX + node._parent + '-' + name;
+  var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
   var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
   var selected;
 
