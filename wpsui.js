@@ -10,11 +10,16 @@ wps.editor = function(ui) {
 wps.editor.DRAW = "_DRAW_";
 wps.editor.PREFIX = "node-input-";
 
-wps.editor.prototype.setValue = function(geom) {
+wps.editor.prototype.setValue = function(geom, id) {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
   var processId = me.editingNode_._parent;
-  var formField = $('#' + wps.editor.PREFIX + processId + '-' + name);
+  var formField;
+  if (id) {
+    formField = $('#' + id);
+  } else {
+    formField = $('#' + wps.editor.PREFIX + processId + '-' + name);
+  }
   var value;
   if (geom !== true && formField.length > 0) {
     if (me.editingNode_._info.literalData &&
@@ -201,6 +206,9 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }
       html += "</select>";
+      // update the id with '-map'
+      saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-map' + '\')">Save</button></div>';
+      html += saveButton;
     }
     if (rasterLayer !== true) {
       hasMap = true;
@@ -548,7 +556,7 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
     $("#" + name + "-field").addClass("has-success");
-    this.editor_.setValue();
+    this.editor_.setValue(false, id);
   }
 
   // Finally add listeners in case field changes
