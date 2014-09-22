@@ -753,7 +753,9 @@ wps.ui.prototype.execute = function(ui) {
             if (toString.call(values[key]) === "[object Array]") {
               inputs[key] = values[key];
             } else {
-              inputs[key] = '' + values[key];
+              if (values[key] !== undefined) {
+                inputs[key] = '' + values[key];
+              }
             }
           }
         }
