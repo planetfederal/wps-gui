@@ -1297,8 +1297,8 @@ wps.ui.prototype.updateNode = function(d, ui) {
           var port = d3.select(this);
           port.classed("port_hovered",(me.mouseMode!=2 || me.mousedownPortType !== 0 ));
         }).
-        on("mouseup", $.proxy(wps.ui.portMouseUp, null, this, 0, 0)).
-        on("mousedown",$.proxy(wps.ui.portMouseDown, null, this, 0, 0));
+        on("mouseup", function() { return wps.ui.portMouseUp.call(null, me, 0, 0, d); }).
+        on("mousedown", function() { return wps.ui.portMouseDown.call(null, me, 0, 0, d); });
       d._ports.exit().remove();
       if (d._ports) {
         numOutputs = d.outputs || 1;
