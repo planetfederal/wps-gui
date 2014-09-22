@@ -1320,7 +1320,7 @@ wps.ui.nodeMouseUp = function(ui, d) {
     d3.event.stopPropagation();
     return;
   }
-  wps.ui.portMouseUp(d, d._def.inputs > 0 ? 1 : 0, 0);
+  wps.ui.portMouseUp(d, d.inputs > 0 ? 1 : 0, 0);
 };
 
 wps.ui.prototype.updateSelection = function() {
