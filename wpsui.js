@@ -929,6 +929,9 @@ wps.ui.canvasMouseMove = function(ui) {
 
 wps.ui.canvasMouseUp = function(ui) {
   var me = ui;
+  if (me.mousedownNode && me.mouseMode === 2) {
+    me.dragLine.attr("class", "drag_line_hidden");
+  }
   if (me.mouseMode === 0 && me.mousedownLink === null) {
     me.clearSelection();
     me.updateSelection();
@@ -1181,7 +1184,7 @@ wps.ui.prototype.redraw = function() {
     }
   });
   node.each(function(d,i) {
-    me.updateNode.call(this, d);
+    me.updateNode.call(this, d, me);
   });
   this.createLinkPaths();
 };
@@ -1243,7 +1246,7 @@ wps.ui.prototype.createInputLink = function(node, d, text) {
       on("mouseup", $.proxy(wps.ui.portMouseUp, null, this, 1, 0)).
       on("mousedown",$.proxy(wps.ui.portMouseDown, null, this, 1, 0)).
       on("mouseout",function(d) { var port = d3.select(this); port.classed("port_hovered",false);}).
-      on("mouseover",function(d,i) { var port = d3.select(this); port.classed("port_hovered",(me.mouseMode!=2 /*|| mousedown_port_type != 0*/ ));});
+      on("mouseover",function(d,i) { var port = d3.select(this); port.classed("port_hovered",(me.mouseMode!=2 || me.mousedownPortType !== 1 ));});
   }
 };
 
@@ -1259,7 +1262,8 @@ wps.ui.prototype.calculateTextWidth = function(str) {
   return 20+w;
 };
 
-wps.ui.prototype.updateNode = function(d) {
+wps.ui.prototype.updateNode = function(d, ui) {
+  var me = ui;
   // TODO check in what cases d.w or d.h are undefined
   if (d.dirty && d.w && d.h) {
     var thisNode = d3.select(this);
@@ -1285,8 +1289,16 @@ wps.ui.prototype.updateNode = function(d) {
       var mouseMode = this.mouseMode;
       d._ports.enter().append("rect").attr("class","port port_output").
         attr("rx",3).attr("ry",3).attr("width",10).attr("height",10).
-        on("mouseout",function(d) { var port = d3.select(this); port.classed("port_hovered",false);}).
-        on("mouseover",function(d,i) { var port = d3.select(this); port.classed("port_hovered",(mouseMode!=2 /*|| mousedown_port_type != 0*/ ));});
+        on("mouseout",function(d) {
+          var port = d3.select(this);
+          port.classed("port_hovered",false);
+        }).
+        on("mouseover",function(d,i) {
+          var port = d3.select(this);
+          port.classed("port_hovered",(me.mouseMode!=2 || me.mousedownPortType !== 0 ));
+        }).
+        on("mouseup", $.proxy(wps.ui.portMouseUp, null, this, 0, 0)).
+        on("mousedown",$.proxy(wps.ui.portMouseDown, null, this, 0, 0));
       d._ports.exit().remove();
       if (d._ports) {
         numOutputs = d.outputs || 1;
