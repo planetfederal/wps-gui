@@ -1200,6 +1200,9 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
       src = ui.mouseupNode;
       dst = ui.mousedownNode;
     }
+    if (src.type === dst.type) {
+      return;
+    }
     var existingLink = false;
     for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
       var node = ui.nodes[i];
