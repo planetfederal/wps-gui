@@ -164,6 +164,20 @@ wps.process.prototype.execute = function(options) {
             } else {
               result = this.responseText;
             }
+          } else if (output.boundingBoxOutput) {
+            var box = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
+            var feature = new ol.Feature();
+            var geom = new ol.geom.Polygon([
+              [
+                box.lowerCorner,
+                [box.lowerCorner[0], box.upperCorner[1]],
+                box.upperCorner,
+                [box.upperCorner[0], box.lowerCorner[1]],
+                box.lowerCorner
+              ]
+            ]);
+            feature.setGeometry(geom);
+            result = [feature];
           } else if (output.complexOutput) {
             if (output.complexOutput._default.format.mimeType === 'text/xml') {
               result = this.responseText;

@@ -31,6 +31,9 @@
     "ol.style.Fill",
     "ol.style.Stroke",
     "ol.style.Circle",
+    "ol.Feature",
+    "ol.geom.Polygon",
+    "ol.Feature#setGeometry",
     "ol.Feature#set",
     "ol.Feature#get",
     "ol.Feature#setStyle"
