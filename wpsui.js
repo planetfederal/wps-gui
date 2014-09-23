@@ -62,7 +62,7 @@ wps.editor.prototype.showEditForm = function(node) {
 
   // begin form
   var html = '<form id="dialog-form" class="form-horizontal">';
-  var hasMap = false, i, ii, pIds = [];
+  var hasMap = false, i, ii;
   this.needsMap = false;
   // simple input
   var name = node._info.identifier.value;
@@ -131,21 +131,6 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
     }
     html += '</div>';
-
-    // check if there are any processes with geometry output that can serve as input here
-    for (pId in this.ui_.processes) {
-      if (pId !== node._parent) {
-        var description = this.ui_.processes[pId].description;
-        if (description.processOutputs && description.processOutputs.output) {
-          for (i=0, ii=description.processOutputs.output.length; i<ii; ++i) {
-            var output = description.processOutputs.output[i];
-            if (output.complexOutput) {
-              pIds.push(pId);
-            }
-          }
-        }
-      }
-    }
     // check for text/xml; subtype=wfs-collection/1.0 or text/xml; subtype=wfs-collection/1.1
     var vectorLayer = false, rasterLayer = false;
     for (i=0, ii=node._info.complexData.supported.format.length; i<ii; ++i) {
@@ -169,16 +154,11 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
     }
-    else if (pIds.length > 0 || vectorLayer === true) {
+    else if (vectorLayer === true) {
       html += '<p><small>Draw or Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = 'process|';
-      for (i=0, ii=pIds.length; i<ii; ++i) {
-        pId = pIds[i];
-        selected = (node.value === prefix + pId) ? 'selected' : '';
-        html += '<option ' + selected + ' value="' + prefix + pId + '">' + pId + "</option>";
-      }
       if (vectorLayer === true) {
         prefix = 'vector|';
         for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
@@ -1226,11 +1206,30 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
       existingLink = existingLink || (node.source === src && node.target === dst);
     }
     if (!existingLink) {
-      // TODO we should do some checks here, do output type and input type match?
+      var checkMatch = function(input, output) {
+        var match = false;
+        if (input._info.complexData && output._info.complexOutput) {
+          for (var f=0, ff=input._info.complexData.supported.format.length; f<ff; ++f) {
+            for (var g=0, gg=output._info.complexOutput.supported.format.length; g<gg; ++g) {
+              if (input._info.complexData.supported.format[f].mimeType === output._info.complexOutput.supported.format[g].mimeType) {
+                match = true;
+                break;
+              }
+            }
+          }
+        }
+        return match;
+      };
       if (src.type === 'input') {
+        if (!checkMatch(src, dst)) {
+          return;
+        }
         src.value = 'process|' + dst._parent;
         ui.afterSetValue(src);
       } else if (dst.type === 'input') {
+        if (!checkMatch(dst, src)) {
+          return;
+        }
         dst.value = 'process|' + src._parent;
         ui.afterSetValue(dst);
       }
