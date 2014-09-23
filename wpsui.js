@@ -1208,28 +1208,25 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
       ui.resetMouseVars();
       return;
     }
-    var src, dst, src_port;
+    var src, dst;
     if (ui.mousedownPortType === 0) {
       src = ui.mousedownNode;
-      src_port = ui.mousedownPortIndex;
       dst = ui.mouseupNode;
     } else if (ui.mousedownPortType === 1) {
       src = ui.mouseupNode;
       dst = ui.mousedownNode;
-      src_port = portIndex;
     }
     var existingLink = false;
     for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
       var node = ui.nodes[i];
-      existingLink = existingLink || (node.source === src && node.target === dst && node.sourcePort == src_port);
+      existingLink = existingLink || (node.source === src && node.target === dst);
     }
     if (!existingLink) {
-      var link = {
-        source: src,
-        sourcePort:src_port,
-        target: dst,
-        dirty: true
-      };
+      var link = new wps.ui.link({
+        source: src.id,
+        target: dst.id,
+        _parent: dst.id
+      });
       ui.nodes.push(link);
     }
     ui.selectedLink = null;
