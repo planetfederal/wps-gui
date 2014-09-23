@@ -165,18 +165,22 @@ wps.process.prototype.execute = function(options) {
               result = this.responseText;
             }
           } else if (output.complexOutput) {
-            var mimeType = me.findMimeType(output.complexOutput.supported.format);
-            //TODO For now we assume a spatial output if complexOutput
-            for (var i=0, ii=me.formats.length; i<ii; ++i) {
-              if (me.formats[i].mimeType === mimeType) {
-                try {
-                  result = me.formats[i].format.readFeatures(this.responseText);
-                } catch(e) {
-                  if (window.console) {
-                    window.console.error(e);
+            if (output.complexOutput._default.format.mimeType === 'text/xml') {
+              result = this.responseText;
+            } else {
+              var mimeType = me.findMimeType(output.complexOutput.supported.format);
+              //TODO For now we assume a spatial output if complexOutput
+              for (var i=0, ii=me.formats.length; i<ii; ++i) {
+                if (me.formats[i].mimeType === mimeType) {
+                  try {
+                    result = me.formats[i].format.readFeatures(this.responseText);
+                  } catch(e) {
+                    if (window.console) {
+                      window.console.error(e);
+                    }
                   }
+                  break;
                 }
-                break;
               }
             }
           }
