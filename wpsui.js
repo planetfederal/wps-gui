@@ -34,25 +34,7 @@ wps.editor.prototype.setValue = function(geom, id) {
     }
   }
   ui.locked_ = false;
-  me.editingNode_.dirty = true;
-  me.editingNode_.complete = true;
-  // check if the process is complete as well
-  var process = ui.processes[processId], parentNode;
-  var values = {};
-  for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
-    var node = ui.nodes[i];
-    if (node.type === "input" && node.value !== undefined) {
-      values[node._info.identifier.value] = node.value;
-    }
-    if (node.id === processId) {
-      parentNode = node;
-    }
-
-  }
-  var old = parentNode.complete;
-  parentNode.complete = process.isComplete(values);
-  parentNode.dirty = (old !== parentNode.complete);
-  ui.redraw();
+  ui.afterSetValue(me.editingNode_);
 };
 
 wps.editor.prototype.validateNodeProperty = function(info, value) {
@@ -283,7 +265,7 @@ wps.editor.prototype.showEditForm = function(node) {
           }
         }
       }, this);
-      if (node.value) {
+      if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
       map = this.ui_.inputMaps[mapId].map;
@@ -488,6 +470,28 @@ wps.ui.load = function(ui, evt, nodes) {
     }
     ui.redraw();
   }
+};
+
+wps.ui.prototype.afterSetValue = function(node) {
+  var processId = node._parent;
+  node.dirty = true;
+  node.complete = true;
+  // check if the process is complete as well
+  var process = this.processes[processId], parentNode;
+  var values = {};
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if (n.type === "input" && n.value !== undefined) {
+      values[n._info.identifier.value] = n.value;
+    }
+    if (n.id === processId) {
+      parentNode = n;
+    }
+  }
+  var old = parentNode.complete;
+  parentNode.complete = process.isComplete(values);
+  parentNode.dirty = (old !== parentNode.complete);
+  this.redraw();
 };
 
 wps.ui.prototype.exportClipboard = function(ui) {
@@ -1222,6 +1226,14 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
       existingLink = existingLink || (node.source === src && node.target === dst);
     }
     if (!existingLink) {
+      // TODO we should do some checks here, do output type and input type match?
+      if (src.type === 'input') {
+        src.value = 'process|' + dst._parent;
+        ui.afterSetValue(src);
+      } else if (dst.type === 'input') {
+        dst.value = 'process|' + src._parent;
+        ui.afterSetValue(dst);
+      }
       var link = new wps.ui.link({
         source: src.id,
         target: dst.id,
