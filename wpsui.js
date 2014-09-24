@@ -180,6 +180,7 @@ wps.editor.prototype.showEditForm = function(node) {
     bboxTool = true;
     hasMap = true;
     id = "input-map-" + node._parent;
+    html += '<p class="form-row"><p><small>Use the SHIFT key to draw a box.</small></p>';
     html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
   }
   html += '</div></div>'; // end map-pane, tab-content
