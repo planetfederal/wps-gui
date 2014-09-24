@@ -1315,6 +1315,7 @@ wps.ui.prototype.updateNode = function(d, ui) {
       attr("height",function(d){return d.h;}).
       classed("node_invalid", function(d) { return d.valid === false; }).
       classed("node_incomplete", function(d) { return !d.complete; }).
+      classed("node_required", function(d) { return d.required; }).
       classed("node_selected",function(d) { return d.selected; });
       thisNode.selectAll('text.node_label').text(function(d,i){
         return d.label || "";

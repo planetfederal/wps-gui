@@ -433,9 +433,6 @@ a.brand span {
 .node_selected {
    stroke: rgb(0, 175, 143);
 }
-.node_invalid {
-  stroke-color: red;
-}
 .node_output {
   fill: rgb(0, 255, 0);
 }
@@ -493,7 +490,7 @@ a.brand span {
    user-select: none;
 
 }
-.node_invalid {
+.node_required.node_invalid {
    stroke: #ff0000;
 }
 .node_highlighted {
