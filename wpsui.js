@@ -98,11 +98,6 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<div class="form-row" id="' + name + '-field">';
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     }
-    if (node.dirty === false) {
-      node.value = '';
-      node.valid = false;
-    }
-
     html += saveButton;
 
   } else if (node._info.complexData) {
