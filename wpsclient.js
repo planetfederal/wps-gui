@@ -95,7 +95,7 @@ wps.process.prototype.configure = function(options) {
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
         if (inputs[input.identifier.value] !== undefined) {
-          if (toString.call(inputs[input.identifier.value]) === "[object Array]") {
+          if (!input.boundingBoxData && toString.call(inputs[input.identifier.value]) === "[object Array]") {
             for (var j=0, jj=inputs[input.identifier.value].length; j<jj; ++j) {
               this.setInputData(input, inputs[input.identifier.value][j]);
             }
@@ -361,16 +361,31 @@ wps.process.prototype.setInputData = function(input, data) {
         }
       });
     } else {
-      this.info.value.dataInputs.input.push({
-        identifier: {
-          value: input.identifier.value
-        },
-        data: {
-          literalData: {
-            value: data
+      if (input.boundingBoxData) {
+        this.info.value.dataInputs.input.push({
+          identifier: {
+            value: input.identifier.value
+          },
+          data: {
+            boundingBoxData: {
+              crs: "EPSG:4326",
+              lowerCorner: [data[0], data[1]],
+              upperCorner: [data[2], data[3]]
+            }
           }
-        }
-      });
+        });
+      } else {
+        this.info.value.dataInputs.input.push({
+          identifier: {
+            value: input.identifier.value
+          },
+          data: {
+            literalData: {
+              value: data
+            }
+          }
+        });
+      }
     }
   }
 };

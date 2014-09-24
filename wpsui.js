@@ -62,8 +62,7 @@ wps.editor.prototype.showEditForm = function(node) {
 
   // begin form
   var html = '<form id="dialog-form" class="form-horizontal">';
-  var hasMap = false, i, ii;
-  this.needsMap = false;
+  var hasMap = false, bboxTool = false, i, ii;
   // simple input
   var name = node._info.identifier.value;
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
@@ -174,10 +173,14 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     if (rasterLayer !== true) {
       hasMap = true;
-      this.needsMap = true;
       id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
     }
+  } else if (node._info.boundingBoxData) {
+    bboxTool = true;
+    hasMap = true;
+    id = "input-map-" + node._parent;
+    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
   }
   html += '</div></div>'; // end map-pane, tab-content
   html += '</form>';
@@ -248,6 +251,29 @@ wps.editor.prototype.showEditForm = function(node) {
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
+      this.ui_.inputMaps[mapId].dragBox = new ol.interaction.DragBox({
+        condition: ol.events.condition.shiftKeyOnly,
+        style: new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: [0, 0, 255, 1]
+          })
+        })
+      });
+      this.ui_.inputMaps[mapId].map.addInteraction(this.ui_.inputMaps[mapId].dragBox);
+      var me = this;
+      this.ui_.inputMaps[mapId].dragBox.on('boxend', function(e) {
+        me.ui_.inputMaps[mapId].source.clear();
+        var f = new ol.Feature();
+        f.set('node', node.id);
+        var geom = me.ui_.inputMaps[mapId].dragBox.getGeometry();
+        f.setGeometry(geom);
+        me.ui_.inputMaps[mapId].source.addFeatures([f]);
+        var extent = geom.getExtent();
+        // TODO don't hardcode
+        var transformFn = ol.proj.getTransform('EPSG:3857', 'EPSG:4326');
+        me.editingNode_.value = ol.extent.applyTransform(extent, transformFn);
+        me.ui_.afterSetValue(me.editingNode_);
+      });
       map = this.ui_.inputMaps[mapId].map;
       window.setTimeout(function() {
         map.updateSize();
@@ -259,6 +285,8 @@ wps.editor.prototype.showEditForm = function(node) {
         map.updateSize();
       }, 0);
     }
+    this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
+    this.ui_.inputMaps[mapId].draw.setActive(!bboxTool);
   }
 };
 
@@ -803,6 +831,7 @@ wps.ui.prototype.deleteSelection = function() {
         this.inputMaps[node.id].map.setTarget(null);
         delete this.inputMaps[node.id].vector;
         delete this.inputMaps[node.id].source;
+        delete this.inputMaps[node.id].dragBox;
         delete this.inputMaps[node.id].draw;
         delete this.inputMaps[node.id].map;
       }
@@ -1349,7 +1378,9 @@ wps.ui.nodeMouseUp = function(ui, d) {
 wps.ui.prototype.updateSelection = function() {
   if (this.mousedownNode) {
     if (this.inputMaps[this.mousedownNode._parent]) {
-      this.inputMaps[this.mousedownNode._parent].vector.changed();
+      if (this.inputMaps[this.mousedownNode._parent].vector) {
+        this.inputMaps[this.mousedownNode._parent].vector.changed();
+      }
     }
   }
   // TODO?
