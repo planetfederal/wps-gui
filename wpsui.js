@@ -43,7 +43,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     if (dataType === 'xs:double') {
       return (!isNaN(parseFloat(value)));
     } else if (dataType === 'xs:int') {
-      return Math.floor(value) == value;
+      return value.length > 0 && (Math.floor(value) == value);
     } else if (dataType === 'xs:boolean') {
       return (value === "true" || value === "false");
     } else {
@@ -51,6 +51,8 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     }
   } else if (info.literalData.anyValue) {
     return value.length > 0;
+  } else if (info.literalData.allowedValues) {
+    return value !== null;
   }
   return true;
 };
