@@ -49,6 +49,8 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     } else {
       return true;
     }
+  } else if (info.literalData.anyValue) {
+    return value.length > 0;
   }
   return true;
 };
@@ -548,6 +550,7 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   if (!node.valid) {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-remove"></span> Invalid input</span>');
+    $("#" + name + "-field").removeClass("has-success");
     $("#" + name + "-field").addClass("has-error");
     // find parent node and mark it as not complete
     for (i=0, ii=this.nodes.length; i<ii; ++i) {
@@ -563,6 +566,7 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   } else {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
+    $("#" + name + "-field").removeClass("has-error");
     $("#" + name + "-field").addClass("has-success");
     this.editor_.setValue(false, id);
   }
