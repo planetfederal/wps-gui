@@ -10,7 +10,7 @@ wps.editor = function(ui) {
 wps.editor.DRAW = "_DRAW_";
 wps.editor.PREFIX = "node-input-";
 
-wps.editor.prototype.setValue = function(geom, id) {
+wps.editor.prototype.setValue = function(geom, id, val) {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
   var processId = me.editingNode_._parent;
@@ -32,27 +32,38 @@ wps.editor.prototype.setValue = function(geom, id) {
     if (value !== wps.editor.DRAW) {
       me.editingNode_.value = value;
     }
+  } else if (me.editingNode_._info.boundingBoxData) {
+    me.editingNode_.value = val;
   }
   ui.locked_ = false;
   ui.afterSetValue(me.editingNode_);
 };
 
 wps.editor.prototype.validateNodeProperty = function(info, value) {
-  if (info.literalData.dataType) {
-    var dataType = info.literalData.dataType.value;
-    if (dataType === 'xs:double') {
-      return (!isNaN(parseFloat(value)));
-    } else if (dataType === 'xs:int') {
-      return value.length > 0 && (Math.floor(value) == value);
-    } else if (dataType === 'xs:boolean') {
-      return (value === "true" || value === "false");
-    } else {
-      return true;
+  if (info.literalData) {
+    if (info.literalData.dataType) {
+      var dataType = info.literalData.dataType.value;
+      if (dataType === 'xs:double') {
+        return (!isNaN(parseFloat(value)));
+      } else if (dataType === 'xs:int') {
+        return value.length > 0 && (Math.floor(value) == value);
+      } else if (dataType === 'xs:boolean') {
+        return (value === "true" || value === "false");
+      } else {
+        return true;
+      }
+    } else if (info.literalData.anyValue) {
+      return value.length > 0;
+    } else if (info.literalData.allowedValues) {
+      return value !== null;
     }
-  } else if (info.literalData.anyValue) {
-    return value.length > 0;
-  } else if (info.literalData.allowedValues) {
-    return value !== null;
+  } else if (info.boundingBoxData) {
+    var valid = false;
+    valid = value.length === 4 && !isNaN(parseFloat(value[0])) &&
+      !isNaN(parseFloat(value[1])) && !isNaN(parseFloat(value[2])) &&
+      !isNaN(parseFloat(value[3])) && parseFloat(value[0]) < parseFloat(value[2]) &&
+      parseFloat(value[1]) < parseFloat(value[3]);
+    return valid;
   }
   return true;
 };
@@ -175,14 +186,36 @@ wps.editor.prototype.showEditForm = function(node) {
       id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
     }
+    html += '</div></div>'; // end map-pane, tab-content
   } else if (node._info.boundingBoxData) {
+
     bboxTool = true;
     hasMap = true;
     id = "input-map-" + node._parent;
+
+    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
+    html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
+    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+    html += '</div>';
+    html += '<div class="form-row" id="' + name + '-field">';
+    html += '<label for="' + name + '-field-minx' + '">min x</label>';
+    html += '<input type="text" id="' + name + '-field-minx' +'" class="form-control input-sm">';
+    html += '<label for="' + name + '-field-miny' + '">min y</label>';
+    html += '<input type="text" id="' + name + '-field-miny' +'" class="form-control input-sm">';
+    html += '<label for="' + name + '-field-maxx' + '">max x</label>';
+    html += '<input type="text" id="' + name + '-field-maxx' +'" class="form-control input-sm">';
+    html += '<label for="' + name + '-field-maxy' + '">max y</label>';
+    html += '<input type="text" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
+    html += '</div>';
+    html += saveButton;
+
+    html += '</div><div class="tab-pane active" id="map-input">';
+    html += '<div class="form-row"><label for="' + id + '">' + name + '</label></div>';
     html += '<p class="form-row"><p><small>Use the SHIFT key to draw a box.</small></p>';
     html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
+    html += '</div></div>';
+
   }
-  html += '</div></div>'; // end map-pane, tab-content
   html += '</form>';
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
@@ -543,8 +576,20 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     }
   }
   var valid = node.valid;
+  var value;
   var nodeEl = $('#' + id);
-  node.valid = node._info.complexData !== undefined || this.editor_.validateNodeProperty(node._info, nodeEl.val());
+  // TODO not sure if this is the best place to do this
+  if (node._info.boundingBoxData) {
+    value = [
+      $('#' + name + '-field-minx').val(),
+      $('#' + name + '-field-miny').val(),
+      $('#' + name + '-field-maxx').val(),
+      $('#' + name + '-field-maxy').val()
+    ];    
+  } else {
+    value = nodeEl.val();
+  }
+  node.valid = node._info.complexData !== undefined || this.editor_.validateNodeProperty(node._info, value);
   if (valid !== node.valid) {
     node.dirty = true;
     this.redraw();
@@ -570,7 +615,7 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
     $("#" + name + "-field").removeClass("has-error");
     $("#" + name + "-field").addClass("has-success");
-    this.editor_.setValue(false, id);
+    this.editor_.setValue(false, id, value);
   }
 
   // Finally add listeners in case field changes
