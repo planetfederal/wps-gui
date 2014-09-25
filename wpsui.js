@@ -118,28 +118,6 @@ wps.editor.prototype.showEditForm = function(node) {
   } else if (node._info.complexData) {
     // create input fields for geoms
 
-    // Tabs for WKT/GML text vs. map
-    html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
-    html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
-    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
-    // Optional: add more inputs if process allows
-    if (node._info.maxOccurs > node._info.minOccurs) {
-      html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
-    }
-    html += '</div>';
-
-    value = (value === undefined) ? '' : value;
-
-    html += '<div class="form-row" id="' + name + '-field">';
-    html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
-    html += saveButton;
-    // end tab-pane, begin map-pane
-    html += '</div><div class="tab-pane active" id="map-input">';
-    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
-    if (node._info.maxOccurs > node._info.minOccurs) {
-      html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
-    }
-    html += '</div>';
     // check for text/xml; subtype=wfs-collection/1.0 or text/xml; subtype=wfs-collection/1.1
     var vectorLayer = false, rasterLayer = false;
     for (i=0, ii=node._info.complexData.supported.format.length; i<ii; ++i) {
@@ -151,10 +129,38 @@ wps.editor.prototype.showEditForm = function(node) {
         rasterLayer = true;
       }
     }
+
+    // Tabs for WKT/GML text vs. map
+    if (rasterLayer === false) {
+      html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
+      html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
+    }
+    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+    if (rasterLayer === false) {
+      // Optional: add more inputs if process allows
+      if (node._info.maxOccurs > node._info.minOccurs) {
+        html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
+      }
+    }
+    html += '</div>';
+
+    value = (value === undefined) ? '' : value;
+    if (rasterLayer === false) {
+      html += '<div class="form-row" id="' + name + '-field">';
+      html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
+      html += saveButton;
+      // end tab-pane, begin map-pane
+      html += '</div><div class="tab-pane active" id="map-input">';
+      html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+      if (node._info.maxOccurs > node._info.minOccurs) {
+        html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
+      }
+      html += '</div>';
+    }
     var prefix;
     if (rasterLayer === true) {
-      html += '<p class="form-row"><p><small>Draw or Select from existing:</small></p>';
-      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
+      html += '<p class="form-row"><p><small>Select from existing:</small></p>';
+      html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       prefix = 'raster|';
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
         var coverage = this.ui_.coverages[i].name;
@@ -162,6 +168,7 @@ wps.editor.prototype.showEditForm = function(node) {
         html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
       }
       html += "</select>";
+      html += saveButton;
     }
     else if (vectorLayer === true) {
       html += '<p><small>Draw or Select from existing:</small></p>';
