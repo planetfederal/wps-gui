@@ -3,6 +3,18 @@ if (!window.wps) {
 }
 var wps = window.wps;
 
+wps.hiddenForm = function(url, fields) {
+  var htmlEncode = function(value) {
+    return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  };
+  $('body').append('<iframe cls="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
+  $('body').append('<form cls="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
+  $.each(fields,function(i,values){
+    $('#hiddenform-form').append('<input type="text" cls="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
+  });
+  $('form#hiddenform-form').submit();
+};
+
 wps.process = function(options) {
   this.client = null;
   this.server = null;
@@ -135,76 +147,99 @@ wps.process.prototype.execute = function(options) {
         }
         // all chained processes are added as references now, so
         // let's proceed.
-        var xmlhttp = new XMLHttpRequest();
-        xmlhttp.open('POST', me.client.servers[me.server].url, true);
-        xmlhttp.setRequestHeader('Content-type', 'application/xml');
-        xmlhttp.onload = function() {
 
-          // check for exceptions
-          if (this.responseText.indexOf('ExceptionText') !== -1) {
-            var exception = '';
-            var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
-            if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
-              for (var e=0, ee=info['status'].processFailed.exceptionReport.exception.length; e<ee; ++e) {
-                exception += info['status'].processFailed.exceptionReport.exception[e].exceptionText.join('<br/>');
-              }
-            }
-            if (options.failure) {
-              options.failure.call(options.scope, exception);
-              return;
-            }
-          }
-          var output = me.description.processOutputs.output[outputIndex]; 
-          var result;
-          if (output.literalOutput) {
-            if (output.literalOutput.dataType === "boolean") {
-              result = (this.responseText.trim().toLowerCase() === 'true');
-            } else if (output.literalOutput.dataType === "double") {
-              result = parseFloat(this.responseText);
-            } else {
-              result = this.responseText;
-            }
-          } else if (output.boundingBoxOutput) {
-            var box = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
-            var feature = new ol.Feature();
-            var geom = new ol.geom.Polygon([
-              [
-                box.lowerCorner,
-                [box.lowerCorner[0], box.upperCorner[1]],
-                box.upperCorner,
-                [box.upperCorner[0], box.lowerCorner[1]],
-                box.lowerCorner
-              ]
-            ]);
-            feature.setGeometry(geom);
-            result = [feature];
-          } else if (output.complexOutput) {
-            if (output.complexOutput._default.format.mimeType === 'text/xml') {
-              result = this.responseText;
-            } else {
-              var mimeType = me.findMimeType(output.complexOutput.supported.format);
-              //TODO For now we assume a spatial output if complexOutput
-              for (var i=0, ii=me.formats.length; i<ii; ++i) {
-                if (me.formats[i].mimeType === mimeType) {
-                  try {
-                    result = me.formats[i].format.readFeatures(this.responseText);
-                  } catch(e) {
-                    if (window.console) {
-                      window.console.error(e);
-                    }
-                  }
+        var desc = me.description;
+        var hasTiffOutput = false;
+        if (desc.processOutputs) {
+          for (var i=0, ii=desc.processOutputs.output.length; i<ii; ++i) {
+            var output = desc.processOutputs.output[i];
+            if (output.complexOutput && output.complexOutput.supported && output.complexOutput.supported.format) {
+              for (var j=0, jj=output.complexOutput.supported.format.length; j<jj; ++j) {
+                if (output.complexOutput.supported.format[j].mimeType === 'image/tiff') {
+                  hasTiffOutput = true;
                   break;
                 }
               }
             }
           }
-          if (options.success) {
-            var outputs = {};
-            outputs[options.output || 'result'] = result;
-            options.success.call(options.scope, outputs);
-          }
-        };
-        xmlhttp.send(me.client.marshaller.marshalString(me.info));
+        }
+
+        var body = me.client.marshaller.marshalString(me.info);
+        if (hasTiffOutput) {
+          new wps.hiddenForm(me.client.servers[me.server].url,
+              [['body', body]]);
+        } else {
+          var xmlhttp = new XMLHttpRequest();
+          xmlhttp.open('POST', me.client.servers[me.server].url, true);
+          xmlhttp.setRequestHeader('Content-type', 'application/xml');
+          xmlhttp.onload = function() {
+
+            // check for exceptions
+            if (this.responseText.indexOf('ExceptionText') !== -1) {
+              var exception = '';
+              var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
+              if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
+                for (var e=0, ee=info['status'].processFailed.exceptionReport.exception.length; e<ee; ++e) {
+                  exception += info['status'].processFailed.exceptionReport.exception[e].exceptionText.join('<br/>');
+                }
+              }
+              if (options.failure) {
+                options.failure.call(options.scope, exception);
+                return;
+              }
+            }
+            var output = me.description.processOutputs.output[outputIndex]; 
+            var result;
+            if (output.literalOutput) {
+              if (output.literalOutput.dataType === "boolean") {
+                result = (this.responseText.trim().toLowerCase() === 'true');
+              } else if (output.literalOutput.dataType === "double") {
+                result = parseFloat(this.responseText);
+              } else {
+                result = this.responseText;
+              }
+            } else if (output.boundingBoxOutput) {
+              var box = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
+              var feature = new ol.Feature();
+              var geom = new ol.geom.Polygon([
+                [
+                  box.lowerCorner,
+                  [box.lowerCorner[0], box.upperCorner[1]],
+                  box.upperCorner,
+                  [box.upperCorner[0], box.lowerCorner[1]],
+                  box.lowerCorner
+                ]
+              ]);
+              feature.setGeometry(geom);
+              result = [feature];
+            } else if (output.complexOutput) {
+              if (output.complexOutput._default.format.mimeType === 'text/xml') {
+                result = this.responseText;
+              } else {
+                var mimeType = me.findMimeType(output.complexOutput.supported.format);
+                //TODO For now we assume a spatial output if complexOutput
+                for (var i=0, ii=me.formats.length; i<ii; ++i) {
+                  if (me.formats[i].mimeType === mimeType) {
+                    try {
+                      result = me.formats[i].format.readFeatures(this.responseText);
+                    } catch(e) {
+                      if (window.console) {
+                        window.console.error(e);
+                      }
+                    }
+                    break;
+                  }
+                }
+              }
+            }
+            if (options.success) {
+              var outputs = {};
+              outputs[options.output || 'result'] = result;
+              options.success.call(options.scope, outputs);
+            }
+          };
+          xmlhttp.send(body);
+        }
       })();
     },
     scope: this
