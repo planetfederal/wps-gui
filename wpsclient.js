@@ -7,10 +7,10 @@ wps.hiddenForm = function(url, fields) {
   var htmlEncode = function(value) {
     return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   };
-  $('body').append('<iframe cls="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
-  $('body').append('<form cls="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
+  $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
+  $('body').append('<form classs="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
   $.each(fields,function(i,values){
-    $('#hiddenform-form').append('<input type="text" cls="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
+    $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
   });
   $('form#hiddenform-form').submit();
 };

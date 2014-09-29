@@ -936,3 +936,6 @@ i.spinner {
 .wpsbuilder {
     margin-right: 20px;
 }
+.x-hidden {
+    display: none;
+}
