@@ -3,11 +3,18 @@ if (!window.wps) {
 }
 var wps = window.wps;
 
-wps.hiddenForm = function(url, fields) {
+wps.hiddenForm = function(unmarshaller, options, url, fields) {
   var htmlEncode = function(value) {
     return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   };
   $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
+  $('#hiddenform-iframe').on('load', function(evt) {
+    var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
+    var exception = wps.client.getExceptionText(info);
+    if (options.failure) {
+      options.failure.call(options.scope, exception);
+    }
+  });
   $('body').append('<form classs="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
   $.each(fields,function(i,values){
     $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
@@ -166,7 +173,7 @@ wps.process.prototype.execute = function(options) {
 
         var body = me.client.marshaller.marshalString(me.info);
         if (hasTiffOutput) {
-          new wps.hiddenForm(me.client.servers[me.server].url,
+          new wps.hiddenForm(me.client.unmarshaller, options, me.client.servers[me.server].url,
               [['body', body]]);
         } else {
           var xmlhttp = new XMLHttpRequest();
@@ -176,13 +183,8 @@ wps.process.prototype.execute = function(options) {
 
             // check for exceptions
             if (this.responseText.indexOf('ExceptionText') !== -1) {
-              var exception = '';
               var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
-              if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
-                for (var e=0, ee=info['status'].processFailed.exceptionReport.exception.length; e<ee; ++e) {
-                  exception += info['status'].processFailed.exceptionReport.exception[e].exceptionText.join('<br/>');
-                }
-              }
+              var exception = wps.client.getExceptionText(info);
               if (options.failure) {
                 options.failure.call(options.scope, exception);
                 return;
@@ -543,6 +545,16 @@ wps.client = function(options) {
       processDescription: {}
     } : options.servers[s];
   }
+};
+
+wps.client.getExceptionText = function(info) {
+  var exception = '';
+  if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
+    for (var i=0, ii=info['status'].processFailed.exceptionReport.exception.length; i<ii; ++i) {
+      exception += info['status'].processFailed.exceptionReport.exception[i].exceptionText.join('<br/>');
+    }
+  }
+  return exception;
 };
 
 wps.client.prototype.execute = function(options) {
