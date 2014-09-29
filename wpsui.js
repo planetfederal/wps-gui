@@ -1079,11 +1079,12 @@ wps.ui.prototype.createDropTarget = function() {
         // TODO maybe cache per process type?
         me.processes[nn.id] = process;
         var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
+        var startY = mousePos[1];
         for (i=0, ii=nn.inputs; i<ii; ++i) {
           for (var j=0, jj=Math.max(info.dataInputs.input[i].minOccurs, 1); j<jj; ++j) {
             var inputConfig = {
               x: mousePos[0]-200,
-              y: mousePos[1]-deltaY,
+              y: startY-deltaY,
               w: this.nodeWidth,
               inputs: 1,
               outputs: 1,
@@ -1095,6 +1096,10 @@ wps.ui.prototype.createDropTarget = function() {
               complete: false,
               label: info.dataInputs.input[i].title.value
             };
+            if (inputConfig.y < 0) {
+              startY += (0-inputConfig.y);
+              inputConfig.y = 100;
+            }
             var input = new wps.ui.node(inputConfig);
             deltaY -= delta;
             me.nodes.push(input);
