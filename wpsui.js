@@ -862,7 +862,11 @@ wps.ui.prototype.execute = function(ui) {
                   source.getExtent(), map.getSize());
               }
             } else {
-              $('#tab-results').html(String(output.result));
+              if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
+                $('#tab-results').append(document.createTextNode(output.result));
+              } else {
+                $('#tab-results').html(String(output.result));
+              }
               ui.activateTab('tab-results');
             }
           }

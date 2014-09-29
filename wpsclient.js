@@ -226,8 +226,9 @@ wps.process.prototype.execute = function(options) {
                       result = me.formats[i].format.readFeatures(this.responseText);
                     } catch(e) {
                       if (window.console) {
-                        window.console.error(e);
+                        window.console.debug(e);
                       }
+                      result = this.responseText;
                     }
                     break;
                   }
