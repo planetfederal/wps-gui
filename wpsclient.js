@@ -7,6 +7,9 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
   var htmlEncode = function(value) {
     return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   };
+  if ($('#hiddenform-iframe').length) {
+    $('#hiddenform-iframe').remove();
+  }
   $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
   $('#hiddenform-iframe').on('load', function(evt) {
     var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
@@ -15,6 +18,9 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
       options.failure.call(options.scope, exception);
     }
   });
+  if ($('#hiddenform-form').length) {
+    $('#hiddenform-form').remove();
+  }
   $('body').append('<form classs="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
   $.each(fields,function(i,values){
     $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
