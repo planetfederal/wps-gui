@@ -1429,7 +1429,7 @@ wps.ui.prototype.clearSelection = function() {
 
 wps.ui.nodeMouseUp = function(ui, d) {
   var me = ui;
-  if (me.mousedownNode == d) {
+  if (me.mouseMode !== 3 && me.mousedownNode == d) {
     me.editor_.showEditForm(d);
     me.mouseMode = 5; // EDITING
     me.clickElapsed = 0;
