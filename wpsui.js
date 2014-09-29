@@ -35,7 +35,6 @@ wps.editor.prototype.setValue = function(geom, id, val) {
   } else if (me.editingNode_._info.boundingBoxData) {
     me.editingNode_.value = val;
   }
-  ui.locked_ = false;
   ui.afterSetValue(me.editingNode_);
 };
 
@@ -72,7 +71,6 @@ wps.editor.prototype.showEditForm = function(node) {
   if (node['type'] !== 'input') {
     return;
   }
-  this.ui_.locked_ = true;
   this.editingNode_ = node;
 
   // begin form
@@ -387,7 +385,7 @@ wps.ui = function(options) {
   });
   $('#btn-run-process').click($.proxy(this.execute, null, this));
   d3.select(window).on("keydown",function() {
-    if (me.locked_ !== true && d3.event.target == document.body) {
+    if (d3.event.target == document.body) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
         try {
           me.deleteSelection();
