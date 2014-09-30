@@ -523,12 +523,27 @@ wps.ui.load = function(ui, evt, nodes) {
   }
 };
 
+wps.ui.prototype.findNodeById = function(id) {
+  var node = null;
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+   var n = this.nodes[i];
+   if (n.id === id) {
+     node = n;
+     break;
+   }
+  }
+  return node;
+};
+
 wps.ui.prototype.recurse = function(node) {
   var values = [], i, ii;
   for (i=0, ii=this.nodes.length; i<ii; ++i) {
     var n = this.nodes[i];
     if (n.value === wps.SUBPROCESS + node.id) {
-      values.push(n);
+      var value = this.findNodeById(n._parent);
+      if (value !== null) { 
+        values.push(value);
+      }
       n.complete = node.complete;
       n.dirty = true;
       this.parentComplete(n);
