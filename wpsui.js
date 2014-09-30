@@ -523,16 +523,29 @@ wps.ui.load = function(ui, evt, nodes) {
   }
 };
 
-wps.ui.prototype.afterSetValue = function(node) {
+wps.ui.prototype.recurse = function(node) {
+  var values = [], i, ii;
+  for (i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if (n.value === wps.SUBPROCESS + node.id) {
+      values.push(n);
+      n.complete = node.complete;
+      n.dirty = true;
+      this.parentComplete(n);
+    }
+  }
+  for (i=0, ii=values.length; i<ii; ++i) {
+    this.recurse(values[i]);
+  }
+};
+
+wps.ui.prototype.parentComplete = function(node) {
   var processId = node._parent;
-  node.dirty = true;
-  node.complete = true;
-  // check if the process is complete as well
   var process = this.processes[processId], parentNode;
   var values = {};
   for (var i=0, ii=this.nodes.length; i<ii; ++i) {
     var n = this.nodes[i];
-    if (n.type === "input" && n.value !== undefined) {
+    if (n.type === "input" && n.value !== undefined && n._parent === processId) {
       values[n._info.identifier.value] = n.value;
     }
     if (n.id === processId) {
@@ -542,6 +555,31 @@ wps.ui.prototype.afterSetValue = function(node) {
   var old = parentNode.complete;
   parentNode.complete = process.isComplete(values);
   parentNode.dirty = (old !== parentNode.complete);
+  return parentNode;
+};
+
+wps.ui.prototype.afterSetValue = function(node) {
+  var processId = node._parent;
+  node.dirty = true;
+  var i, ii, n;
+  if (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1) {
+    var id = node.value.substring(node.value.indexOf(wps.SUBPROCESS)+8);
+    for (i=0, ii=this.nodes.length; i<ii; ++i) {
+      n = this.nodes[i];
+      if (n.id === id) {
+        node.complete = n.complete;
+      }
+    }
+  } else {
+    node.complete = true;
+  }
+  // check if the process is complete as well
+  if (node.complete) {
+    var parentNode = this.parentComplete(node);
+    if (parentNode.dirty) {
+      this.recurse(parentNode);
+    }
+  }
   this.redraw();
 };
 
