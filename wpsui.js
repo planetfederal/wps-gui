@@ -1099,8 +1099,8 @@ wps.ui.prototype.createDropTarget = function() {
               label: info.dataInputs.input[i].title.value
             };
             if (inputConfig.y < 0) {
-              startY += (0-inputConfig.y);
-              inputConfig.y = 100;
+              startY = 100 + deltaY;
+              inputConfig.y = startY-deltaY;
             }
             var input = new wps.ui.node(inputConfig);
             deltaY -= delta;
