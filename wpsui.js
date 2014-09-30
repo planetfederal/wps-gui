@@ -115,7 +115,9 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     }
     html += saveButton;
-
+    if (node._info.maxOccurs > node._info.minOccurs) {
+      html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
+    }
   } else if (node._info.complexData) {
     // create input fields for geoms
 
@@ -1226,7 +1228,7 @@ wps.ui.prototype.createExtraInputNode = function() {
     type: 'input',
     _info: selected_node._info,
     complete: false,
-    label: "geom"
+    label: selected_node._info.identifier.value
   };
   var input = new wps.ui.node(inputConfig);
   this.nodes.push(input);
