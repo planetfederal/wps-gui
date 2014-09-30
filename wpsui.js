@@ -46,7 +46,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     if (info.literalData.dataType) {
       var dataType = info.literalData.dataType.value;
       if (dataType === 'xs:double') {
-        return (!isNaN(parseFloat(value)));
+        return (value.match(/^-?\d*(\.\d+)?$/));
       } else if (dataType === 'xs:int') {
         return value.length > 0 && (Math.floor(value) == value);
       } else if (dataType === 'xs:boolean') {
