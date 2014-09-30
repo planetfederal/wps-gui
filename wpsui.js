@@ -744,7 +744,7 @@ wps.ui.prototype.execute = function(ui) {
       for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
         var n = ui.nodes[i];
         if (n.type === 'input' && n._parent === processId) {
-          if (n._info.minOccurs > 1) {
+          if (n._info.maxOccurs > 1) {
             if (values[n._info.identifier.value] === undefined) {
               values[n._info.identifier.value] = [];
             }
