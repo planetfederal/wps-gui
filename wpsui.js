@@ -849,6 +849,35 @@ wps.ui.prototype.execute = function(ui) {
           return subInputs;
         };
 
+        var processValue = function() {
+
+        };
+
+        var handleLocal = function(ui, value, srsName) {
+          if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
+            return new wps.process.localWFS({
+              srsName: srsName,
+              typeName: value.substring(value.indexOf(wps.VECTORLAYER)+7)
+            });
+          } else if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
+            var coverage = value.substring(value.indexOf(wps.RASTERLAYER)+7);
+            for (var i=0, ii=ui.coverages.length; i<ii; ++i) {
+              if (ui.coverages[i].name === coverage) {
+                lowerCorner = ui.coverages[i].lowerCorner;
+                upperCorner = ui.coverages[i].upperCorner;
+                break;
+              }
+            }
+            return new wps.process.localWCS({
+              lowerCorner: lowerCorner,
+              upperCorner: upperCorner,
+              identifier: coverage
+            });
+          } else {
+            return value;
+          }
+        };
+
         for (var key in values) {
           // vector or subprocess
           if ((typeof values[key] === 'string') && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
@@ -859,28 +888,14 @@ wps.ui.prototype.execute = function(ui) {
                 inputs: subInputs
               });
               inputs[key] = ui.processes[subId].output();
-            } else if (values[key].indexOf(wps.VECTORLAYER) !== -1) {
-              inputs[key] = new wps.process.localWFS({
-                srsName: srsName,
-                typeName: values[key].substring(values[key].indexOf(wps.VECTORLAYER)+7)
-              });
             } else {
-              coverage = values[key].substring(values[key].indexOf(wps.RASTERLAYER)+7);
-              for (c=0, cc=ui.coverages.length; c<cc; ++c) {
-                if (ui.coverages[c].name === coverage) {
-                  lowerCorner = ui.coverages[c].lowerCorner;
-                  upperCorner = ui.coverages[c].upperCorner;
-                  break;
-                }
-              }
-              inputs[key] = new wps.process.localWCS({
-                lowerCorner: lowerCorner,
-                upperCorner: upperCorner,
-                identifier: coverage
-              });
+              inputs[key] = handleLocal(ui, values[key], srsName);
             }
           } else {
             if (toString.call(values[key]) === "[object Array]") {
+              for (i=0, ii=values[key].length; i<ii; ++i) {
+                values[key][i] = handleLocal(ui, values[key][i], srsName);
+              }
               inputs[key] = values[key];
             } else {
               if (values[key] !== undefined) {
