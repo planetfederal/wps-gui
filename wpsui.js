@@ -172,6 +172,9 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
       html += saveButton;
+      if (node._info.maxOccurs > node._info.minOccurs) {
+        html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
+      }
     }
     else if (vectorLayer === true) {
       html += '<p><small>Draw or Select from existing:</small></p>';
