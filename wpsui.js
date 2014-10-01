@@ -815,38 +815,46 @@ wps.ui.prototype.execute = function(ui) {
         var features = [];
         var inputs = {};
         var coverage, c, cc, lowerCorner, upperCorner;
+
+        var handleSubProcess = function(ui, subId) {
+          var subInputs = {};
+          for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
+            var node = ui.nodes[i];
+            if (node.type === "input" && node._parent === subId) {
+              var name = node._info.identifier.value;
+              if ((typeof node.value === 'string') && node.value.indexOf(wps.VECTORLAYER) !== -1) {
+                subInputs[name] = new wps.process.localWFS({
+                  srsName: srsName,
+                  typeName: node.value.substring(node.value.indexOf(wps.VECTORLAYER)+7)
+                });
+              } else if ((typeof node.value === 'string') && node.value.indexOf(wps.RASTERLAYER) !== -1) {
+                var coverage = node.value.substring(node.value.indexOf(wps.RASTERLAYER)+7);
+                for (var c=0, cc=ui.coverages.length; c<cc; ++c) {
+                  if (ui.coverages[c].name === coverage) {
+                    lowerCorner = ui.coverages[c].lowerCorner;
+                    upperCorner = ui.coverages[c].upperCorner;
+                    break;
+                  }
+                }
+                subInputs[name] = new wps.process.localWCS({
+                  lowerCorner: lowerCorner,
+                  upperCorner: upperCorner,
+                  identifier: coverage
+                });
+              } else { 
+                subInputs[name] = node.value;
+              }
+            }
+          }
+          return subInputs;
+        };
+
         for (var key in values) {
           // vector or subprocess
           if ((typeof values[key] === 'string') && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
             if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
               var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
-              var subInputs = {};
-              for (var j=0, jj=ui.nodes.length; j<jj; ++j) {
-                if (ui.nodes[j].type === "input" && ui.nodes[j]._parent === subId) {
-                  if ((typeof ui.nodes[j].value === 'string') && ui.nodes[j].value.indexOf(wps.VECTORLAYER) !== -1) {
-                    subInputs[ui.nodes[j]._info.identifier.value] = new wps.process.localWFS({
-                      srsName: srsName,
-                      typeName: ui.nodes[j].value.substring(ui.nodes[j].value.indexOf(wps.VECTORLAYER)+7)
-                    });
-                  } else if ((typeof ui.nodes[j].value === 'string') && ui.nodes[j].value.indexOf(wps.RASTERLAYER) !== -1) {
-                    coverage = ui.nodes[j].value.substring(ui.nodes[j].value.indexOf(wps.RASTERLAYER)+7);
-                    for (c=0, cc=ui.coverages.length; c<cc; ++c) {
-                      if (ui.coverages[c].name === coverage) {
-                        lowerCorner = ui.coverages[c].lowerCorner;
-                        upperCorner = ui.coverages[c].upperCorner;
-                        break;
-                      }
-                    }
-                    subInputs[ui.nodes[j]._info.identifier.value] = new wps.process.localWCS({
-                      lowerCorner: lowerCorner,
-                      upperCorner: upperCorner,
-                      identifier: coverage
-                    });
-                  } else {
-                    subInputs[ui.nodes[j]._info.identifier.value] = ui.nodes[j].value;
-                  }
-                }
-              }
+              var subInputs = handleSubProcess(ui, subId);
               ui.processes[subId].configure({
                 inputs: subInputs
               });
