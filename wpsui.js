@@ -849,10 +849,6 @@ wps.ui.prototype.execute = function(ui) {
           return subInputs;
         };
 
-        var processValue = function() {
-
-        };
-
         var handleLocal = function(ui, value, srsName) {
           if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
             return new wps.process.localWFS({
