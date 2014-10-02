@@ -23,7 +23,7 @@
     "ol.layer.Vector",
     "ol.layer.Vector#changed",
     "ol.layer.Tile",
-    "ol.source.OSM",
+    "ol.source.TileWMS",
     "ol.interaction.Draw",
     "ol.interaction.Draw#setActive",
     "ol.interaction.Draw#on",

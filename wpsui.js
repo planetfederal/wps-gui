@@ -292,13 +292,22 @@ wps.editor.prototype.showEditForm = function(node) {
         target: 'input-map-' + mapId,
         layers: [
           new ol.layer.Tile({
-            source: new ol.source.OSM()
+            source: new ol.source.TileWMS({
+              url: "http://maps.opengeo.org/geowebcache/service/wms",
+              params: {
+                'VERSION': '1.1.1',
+                'LAYERS': 'openstreetmap',
+                'FORMAT': 'image/png'
+              }
+            })
           }),
           this.ui_.inputMaps[mapId].vector
         ],
         view: new ol.View({
+          projection: 'EPSG:4326',
           center: [0, 0],
-          zoom: 1
+          zoom: 1,
+          minZoom: 1
         })
       });
       if (node.value && node.value.indexOf('|') === -1) {
@@ -320,10 +329,7 @@ wps.editor.prototype.showEditForm = function(node) {
         var geom = me.ui_.inputMaps[mapId].dragBox.getGeometry();
         f.setGeometry(geom);
         me.ui_.inputMaps[mapId].source.addFeatures([f]);
-        var extent = geom.getExtent();
-        // TODO don't hardcode
-        var transformFn = ol.proj.getTransform('EPSG:3857', 'EPSG:4326');
-        me.editingNode_.value = ol.extent.applyTransform(extent, transformFn);
+        me.editingNode_.value = geom.getExtent();
         me.ui_.afterSetValue(me.editingNode_);
       });
       map = this.ui_.inputMaps[mapId].map;
@@ -865,10 +871,7 @@ wps.ui.prototype.execute = function(ui) {
         }
       }
       if (values && process.isComplete(values)) {
-        var srsName = 'EPSG:3857';
-        if (process.identifier.indexOf('ras:') === 0) {
-          srsName = 'EPSG:4326';
-        }
+        var srsName = 'EPSG:4326';
         var features = [];
         var inputs = {};
         var coverage, c, cc, lowerCorner, upperCorner;
@@ -974,13 +977,22 @@ wps.ui.prototype.execute = function(ui) {
                 target: 'map',
                 layers: [
                   new ol.layer.Tile({
-                    source: new ol.source.OSM()
+                    source: new ol.source.TileWMS({
+                      url: "http://maps.opengeo.org/geowebcache/service/wms",
+                      params: {
+                        'VERSION': '1.1.1',
+                        'LAYERS': 'openstreetmap',
+                        'FORMAT': 'image/png'
+                      }
+                    })
                   }),
                   vector
                 ],
                 view: new ol.View({
+                  projection: 'EPSG:4326',
                   center: [0, 0],
-                  zoom: 1
+                  zoom: 1,
+                  minZoom: 1
                 })
               });
               source.addFeatures(output.result);
