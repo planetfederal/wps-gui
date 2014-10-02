@@ -115,7 +115,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<input type="text" id="' + id + '" value="' + value + '" class="form-control input-sm"></div>';
     }
     html += saveButton;
-    if (node._info.maxOccurs > node._info.minOccurs) {
+    if (node._info.maxOccurs > 1 && node._info.maxOccurs > node._info.minOccurs) {
       html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
     }
   } else if (node._info.complexData) {
@@ -141,7 +141,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
     if (rasterLayer === false) {
       // Optional: add more inputs if process allows
-      if (node._info.maxOccurs > node._info.minOccurs) {
+      if (node._info.maxOccurs > 1 && node._info.maxOccurs > node._info.minOccurs) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
       }
     }
@@ -155,7 +155,7 @@ wps.editor.prototype.showEditForm = function(node) {
       // end tab-pane, begin map-pane
       html += '</div><div class="tab-pane active" id="map-input">';
       html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
-      if (node._info.maxOccurs > node._info.minOccurs) {
+      if (node._info.maxOccurs > 1  && node._info.maxOccurs > node._info.minOccurs) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
       }
       html += '</div>';
@@ -172,7 +172,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
       html += saveButton;
-      if (node._info.maxOccurs > node._info.minOccurs) {
+      if (node._info.maxOccurs > 1  && node._info.maxOccurs > node._info.minOccurs) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
       }
     }
