@@ -77,7 +77,7 @@ wps.editor.prototype.showEditForm = function(node) {
   this.editingNode_ = node;
 
   // begin form
-  var html = '<form id="dialog-form" class="form-horizontal">';
+  var html = '<form class="form-horizontal">';
   var hasMap = false, bboxTool = false, i, ii;
   // simple input
   var name = node._info.identifier.value;
