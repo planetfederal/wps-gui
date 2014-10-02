@@ -350,6 +350,17 @@ wps.editor.prototype.showEditForm = function(node) {
         }
       }
     };
+    var drawStart = function(evt) {
+      var selection = d3.selectAll(".node_selected");
+      if (selection[0].length > 0) {
+        var node = selection.datum();
+        this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
+          if (f.get('node') === node.id) {
+            this.ui_.inputMaps[mapId].source.removeFeature(f);
+          }
+        }, this);
+      }
+    };
     var addInteraction = function(geomType) {
       if (me.ui_.inputMaps[mapId].draw) {
         me.ui_.inputMaps[mapId].map.removeInteraction(me.ui_.inputMaps[mapId].draw);
@@ -359,6 +370,7 @@ wps.editor.prototype.showEditForm = function(node) {
         type: geomType
       });
       me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
+      me.ui_.inputMaps[mapId].draw.on('drawstart', drawStart, me);
       me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
     };
     $('#draw-polygon').click(function() {

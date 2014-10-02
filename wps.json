@@ -18,6 +18,8 @@
     "ol.source.Vector#addFeatures",
     "ol.source.Vector#on",
     "ol.source.Vector#getFeatures",
+    "ol.source.Vector#forEachFeature",
+    "ol.source.Vector#removeFeature",
     "ol.layer.Vector",
     "ol.layer.Vector#changed",
     "ol.layer.Tile",
