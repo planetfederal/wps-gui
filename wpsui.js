@@ -200,6 +200,16 @@ wps.editor.prototype.showEditForm = function(node) {
       hasMap = true;
       id = "input-map-" + node._parent;
       html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
+      html += '<div class="btn-group">';
+      html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
+      html += 'Edit <span class="caret"></span>';
+      html += '</button>';
+      html += '<ul class="dropdown-menu" role="menu">';
+      html += '<li><a id="draw-polygon" href="#">Polygon</a></li>';
+      html += '<li><a id="draw-line" href="#">LineString</a></li>';
+      html += '<li><a id="draw-point" href="#">Point</a></li>';
+      html += '</ul>';
+      html += '</div>';
     }
     html += '</div></div>'; // end map-pane, tab-content
   } else if (node._info.boundingBoxData) {
@@ -278,12 +288,7 @@ wps.editor.prototype.showEditForm = function(node) {
           zoom: 1
         })
       });
-      this.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
-        source: this.ui_.inputMaps[mapId].source,
-        type: 'Polygon'
-      });
-      this.ui_.inputMaps[mapId].map.addInteraction(this.ui_.inputMaps[mapId].draw);
-      this.ui_.inputMaps[mapId].draw.on('drawend', function(evt) {
+      var drawEnd = function(evt) {
         var selection = d3.selectAll(".node_selected");
         if (selection[0].length > 0) {
           var node = selection.datum();
@@ -295,7 +300,30 @@ wps.editor.prototype.showEditForm = function(node) {
             this.setValue(true);
           }
         }
-      }, this);
+      };
+      var me = this;
+      var addInteraction = function(geomType) {
+        if (me.ui_.inputMaps[mapId].draw) {
+          me.ui_.inputMaps[mapId].map.removeInteraction(me.ui_.inputMaps[mapId].draw);
+        }
+        me.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
+          source: me.ui_.inputMaps[mapId].source,
+          type: geomType
+        });
+        me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
+        me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
+      };
+
+      $('#draw-polygon').click(function() {
+        addInteraction('Polygon');
+      });
+      $('#draw-line').click(function() {
+        addInteraction('LineString');
+      });
+      $('#draw-point').click(function() {
+        addInteraction('Point');
+      });
+
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
@@ -308,7 +336,6 @@ wps.editor.prototype.showEditForm = function(node) {
         })
       });
       this.ui_.inputMaps[mapId].map.addInteraction(this.ui_.inputMaps[mapId].dragBox);
-      var me = this;
       this.ui_.inputMaps[mapId].dragBox.on('boxend', function(e) {
         me.ui_.inputMaps[mapId].source.clear();
         var f = new ol.Feature();
@@ -334,7 +361,9 @@ wps.editor.prototype.showEditForm = function(node) {
       }, 0);
     }
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
-    this.ui_.inputMaps[mapId].draw.setActive(!bboxTool);
+    if (this.ui_.inputMaps[mapId].draw) {
+      this.ui_.inputMaps[mapId].draw.setActive(!bboxTool);
+    }
   }
 };
 

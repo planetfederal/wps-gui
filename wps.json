@@ -10,6 +10,7 @@
     "ol.Map#getSize",
     "ol.Map#updateSize",
     "ol.Map#addInteraction",
+    "ol.Map#removeInteraction",
     "ol.Map#set",
     "ol.events.condition.shiftKeyOnly",
     "ol.source.Vector",
