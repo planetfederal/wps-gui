@@ -147,7 +147,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     html += '</div>';
 
-    value = (value === undefined) ? '' : value;
+    value = (node.value === undefined) ? '' : node.value;
     if (rasterLayer === false) {
       html += '<div class="form-row" id="' + name + '-field">';
       html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
