@@ -244,6 +244,7 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '</form>';
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
+  var me = this;
   if (hasMap === true) {
     var map;
     var mapId = node._parent;
@@ -257,6 +258,12 @@ wps.editor.prototype.showEditForm = function(node) {
           if (feature.get('node') === node.id) {
             return [
               new ol.style.Style({
+                image: new ol.style.Circle({
+                  radius: 5,
+                  fill: new ol.style.Fill({
+                    color: 'orange'
+                  })
+                }),
                 stroke: new ol.style.Stroke({
                   color: 'orange',
                   width: 1
@@ -266,6 +273,12 @@ wps.editor.prototype.showEditForm = function(node) {
           } else {
             return [
               new ol.style.Style({
+                image: new ol.style.Circle({
+                  radius: 5,
+                  fill: new ol.style.Fill({
+                    color: 'gray'
+                  })
+                }),
                 stroke: new ol.style.Stroke({
                   color: 'gray',
                   width: 1
@@ -288,42 +301,6 @@ wps.editor.prototype.showEditForm = function(node) {
           zoom: 1
         })
       });
-      var drawEnd = function(evt) {
-        var selection = d3.selectAll(".node_selected");
-        if (selection[0].length > 0) {
-          var node = selection.datum();
-          evt.feature.set('node', node.id);
-          // TODO should we consider adding to any existing features here?
-          node.value = new ol.format.WKT().writeFeatures([evt.feature]);
-          node.valid = evt.feature;
-          if (node.valid) {
-            this.setValue(true);
-          }
-        }
-      };
-      var me = this;
-      var addInteraction = function(geomType) {
-        if (me.ui_.inputMaps[mapId].draw) {
-          me.ui_.inputMaps[mapId].map.removeInteraction(me.ui_.inputMaps[mapId].draw);
-        }
-        me.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
-          source: me.ui_.inputMaps[mapId].source,
-          type: geomType
-        });
-        me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
-        me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
-      };
-
-      $('#draw-polygon').click(function() {
-        addInteraction('Polygon');
-      });
-      $('#draw-line').click(function() {
-        addInteraction('LineString');
-      });
-      $('#draw-point').click(function() {
-        addInteraction('Point');
-      });
-
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
@@ -360,6 +337,39 @@ wps.editor.prototype.showEditForm = function(node) {
         map.updateSize();
       }, 0);
     }
+    var drawEnd = function(evt) {
+      var selection = d3.selectAll(".node_selected");
+      if (selection[0].length > 0) {
+        var node = selection.datum();
+        evt.feature.set('node', node.id);
+        // TODO should we consider adding to any existing features here?
+        node.value = new ol.format.WKT().writeFeatures([evt.feature]);
+        node.valid = evt.feature;
+        if (node.valid) {
+          this.setValue(true);
+        }
+      }
+    };
+    var addInteraction = function(geomType) {
+      if (me.ui_.inputMaps[mapId].draw) {
+        me.ui_.inputMaps[mapId].map.removeInteraction(me.ui_.inputMaps[mapId].draw);
+      }
+      me.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
+        source: me.ui_.inputMaps[mapId].source,
+        type: geomType
+      });
+      me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
+      me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
+    };
+    $('#draw-polygon').click(function() {
+      addInteraction('Polygon');
+    });
+    $('#draw-line').click(function() {
+      addInteraction('LineString');
+    });
+    $('#draw-point').click(function() {
+      addInteraction('Point');
+    });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
     if (this.ui_.inputMaps[mapId].draw) {
       this.ui_.inputMaps[mapId].draw.setActive(!bboxTool);
