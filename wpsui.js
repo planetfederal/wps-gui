@@ -479,6 +479,7 @@ wps.ui.node = function(options) {
   this.required = options.required;
   // is the node complete or not
   this.complete = options.complete;
+  this.value = options.value;
 };
 
 wps.ui.node.prototype.getState = function() {
