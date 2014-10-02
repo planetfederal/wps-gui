@@ -1174,7 +1174,7 @@ wps.ui.prototype.createDropTarget = function() {
               dirty: true,
               type: 'input',
               _info: info.dataInputs.input[i],
-              required: !(info.dataInputs.input[i].minOccurs === 0 && info.dataInputs.input[i].maxOccurs >= 1),
+              required: (info.dataInputs.input[i].minOccurs > 0),
               complete: false,
               label: info.dataInputs.input[i].title.value
             };
