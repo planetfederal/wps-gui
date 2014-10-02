@@ -14,6 +14,11 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
   $('#hiddenform-iframe').on('load', function(evt) {
     var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
     var exception = wps.client.getExceptionText(info);
+    if (options.success) {
+      var outputs = {};
+      outputs[options.output || 'result'] = '';
+      options.success.call(options.scope, outputs);
+    }
     if (options.failure) {
       options.failure.call(options.scope, exception);
     }
