@@ -347,6 +347,16 @@ wps.editor.prototype.showEditForm = function(node) {
       var selection = d3.selectAll(".node_selected");
       if (selection[0].length > 0) {
         var node = selection.datum();
+
+        var remove;
+        this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
+          if (f.get('node') === node.id) {
+            remove = f;
+          }
+        });
+        if (remove !== undefined) {
+          this.ui_.inputMaps[mapId].source.removeFeature(remove);
+        }
         evt.feature.set('node', node.id);
         // TODO should we consider adding to any existing features here?
         node.value = new ol.format.WKT().writeFeatures([evt.feature]);
@@ -376,7 +386,9 @@ wps.editor.prototype.showEditForm = function(node) {
         type: geomType
       });
       me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
-      me.ui_.inputMaps[mapId].draw.on('drawstart', drawStart, me);
+      if (geomType !== 'Point') {
+        me.ui_.inputMaps[mapId].draw.on('drawstart', drawStart, me);
+      }
       me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
     };
     $('#draw-polygon').click(function() {
