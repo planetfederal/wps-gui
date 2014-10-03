@@ -31,6 +31,11 @@ wps.editor.prototype.setValue = function(geom, id, val) {
         value = formField.val() === "true";
     } else {
       value = formField.val();
+      if (id.indexOf('-txt') !== -1) {
+        if (value.indexOf('>') !== -1) {
+          value = jQuery.parseXML(value);
+        }
+      }
     }
     if (value !== wps.editor.DRAW) {
       me.editingNode_.value = value;
@@ -961,6 +966,8 @@ wps.ui.prototype.execute = function(ui) {
               for (i=0, ii=values[key].length; i<ii; ++i) {
                 values[key][i] = handleLocal(ui, values[key][i], srsName);
               }
+              inputs[key] = values[key];
+            } else if ($.isXMLDoc(values[key])) {
               inputs[key] = values[key];
             } else {
               if (values[key] !== undefined) {

@@ -380,24 +380,29 @@ wps.process.prototype.setInputData = function(input, data) {
       }];
       var format = this.findMimeType(complexData.supported.format, formats);
       var content;
-      for (var i=0, ii=this.formats.length; i<ii; ++i) {
-        if (this.formats[i].mimeType === format) {
-          if (typeof(data) === "string") {
-            if (format === "application/wkt") {
-              content = data;
-            } else {
-              // TODO reuse format
-              content = this.formats[i].format.writeFeatures(new ol.format.WKT().readFeatures(data));
-              if (format === 'application/json') {
-                content = JSON.stringify(content);
+      if ($.isXMLDoc(data)) {
+        content = data.childNodes[0];
+        format = 'application/gml-3.1.1';
+      } else {
+        for (var i=0, ii=this.formats.length; i<ii; ++i) {
+          if (this.formats[i].mimeType === format) {
+            if (typeof(data) === "string") {
+              if (format === "application/wkt") {
+                content = data;
+              } else {
+                // TODO reuse format
+                content = this.formats[i].format.writeFeatures(new ol.format.WKT().readFeatures(data));
+                if (format === 'application/json') {
+                  content = JSON.stringify(content);
+                }
               }
+            } else {
+              content = this.formats[i].format.writeFeatures(this.toFeatures(data));
             }
-          } else {
-            content = this.formats[i].format.writeFeatures(this.toFeatures(data));
-          }
-          break;
-        } 
-      } 
+            break;
+          } 
+        }
+      }
       this.info.value.dataInputs.input.push({
         identifier: {
           value: input.identifier.value
