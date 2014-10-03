@@ -155,6 +155,9 @@ wps.editor.prototype.showEditForm = function(node) {
     value = (node.value === undefined) ? '' : node.value;
     if (rasterLayer === false) {
       html += '<div class="form-row" id="' + name + '-field">';
+      if ($.isXMLDoc(value)) {
+        value = wps.htmlEncode((new XMLSerializer()).serializeToString(value));
+      }
       html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
       // update the id with '-txt'
       saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-txt' + '\')">Save</button></div>';

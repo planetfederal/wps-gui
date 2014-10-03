@@ -3,10 +3,11 @@ if (!window.wps) {
 }
 var wps = window.wps;
 
+wps.htmlEncode = function(value) {
+  return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+};
+
 wps.hiddenForm = function(unmarshaller, options, url, fields) {
-  var htmlEncode = function(value) {
-    return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-  };
   if ($('#hiddenform-iframe').length) {
     $('#hiddenform-iframe').remove();
   }
@@ -28,7 +29,7 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
   }
   $('body').append('<form classs="x-hidden" action="'+url+'" method="POST" target="iframe" encType="multipart/form-data" id="hiddenform-form"></form>');
   $.each(fields,function(i,values){
-    $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+htmlEncode(values[1])+'" />');
+    $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+wps.htmlEncode(values[1])+'" />');
   });
   $('form#hiddenform-form').submit();
 };
