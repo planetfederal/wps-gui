@@ -178,18 +178,15 @@ wps.editor.prototype.showEditForm = function(node) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
       }
     }
-    else if (vectorLayer === true) {
+    else if (vectorLayer === true && this.ui_.featureTypes) {
       html += '<p><small>Draw or Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
-      prefix = wps.SUBPROCESS;
-      if (vectorLayer === true) {
-        prefix = wps.VECTORLAYER;
-        for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
-          var featureType = this.ui_.featureTypes[i];
-          selected = (node.value === prefix + featureType) ? 'selected' : '';
-          html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
-        }
+      prefix = wps.VECTORLAYER;
+      for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
+        var featureType = this.ui_.featureTypes[i];
+        selected = (node.value === prefix + featureType) ? 'selected' : '';
+        html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
       }
       html += "</select>";
       // update the id with '-map'
