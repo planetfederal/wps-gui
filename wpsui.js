@@ -1010,9 +1010,9 @@ wps.ui.prototype.execute = function(ui) {
               if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
                 var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
                 var subInputs = ui.handleSubProcess(subId);
+                inputs[key] = ui.processes[subId].output();
                 // only recurse if subInputs has subprocesses
                 if (hasSubProcess(subInputs)) {
-                  inputs[key] = ui.processes[subId].output();
                   recurse(inputs[key], ui, subInputs);
                 }
               } else {
