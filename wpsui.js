@@ -229,13 +229,20 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '</div>';
     html += '<div class="form-row" id="' + name + '-field">';
     html += '<label for="' + name + '-field-minx' + '">min x</label>';
-    html += '<input type="text" id="' + name + '-field-minx' +'" class="form-control input-sm">';
+    var minx = '', miny = '', maxx = '', maxy = '';
+    if (node.value) {
+      minx = node.value[0];
+      miny = node.value[1];
+      maxx = node.value[2];
+      maxy = node.value[3];
+    }
+    html += '<input type="text" value="' + minx + '" id="' + name + '-field-minx' +'" class="form-control input-sm">';
     html += '<label for="' + name + '-field-miny' + '">min y</label>';
-    html += '<input type="text" id="' + name + '-field-miny' +'" class="form-control input-sm">';
+    html += '<input type="text" value="' + miny + '" id="' + name + '-field-miny' +'" class="form-control input-sm">';
     html += '<label for="' + name + '-field-maxx' + '">max x</label>';
-    html += '<input type="text" id="' + name + '-field-maxx' +'" class="form-control input-sm">';
+    html += '<input type="text" value="' + maxx +  '" id="' + name + '-field-maxx' +'" class="form-control input-sm">';
     html += '<label for="' + name + '-field-maxy' + '">max y</label>';
-    html += '<input type="text" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
+    html += '<input type="text" value="' + maxy + '" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
     html += '</div>';
     html += saveButton;
 
