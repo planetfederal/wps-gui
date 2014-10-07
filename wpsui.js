@@ -862,6 +862,112 @@ wps.ui.prototype.initializeTabs = function() {
   ul.find("li.red-ui-tab a").on("click", onTabClick);
 };
 
+// get the input values for a process
+wps.ui.prototype.getInputs = function(processId) {
+  var values = {};
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if (n.type === 'input' && n._parent === processId) {
+      if (n._info.maxOccurs > 1) {
+        if (values[n._info.identifier.value] === undefined) {
+          values[n._info.identifier.value] = [];
+        }
+        values[n._info.identifier.value].push(n.value);
+      } else {
+        values[n._info.identifier.value] = n.value;
+      }
+    }
+  }
+  return values;
+};
+
+// get a list of processes that this process depends on
+wps.ui.prototype.getDependsOnAlgorithms = function(processId, deps) {
+  if (!deps) {
+    deps = [];
+  }
+  var values = this.getInputs(processId);
+  for (var key in values) {
+    if (typeof values[key] === 'string' && values[key].indexOf(wps.SUBPROCESS) !== -1) {
+      var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
+      deps.push(subId);
+      this.getDependsOnAlgorithms(subId, deps);
+    }
+  }
+  return deps;
+};
+
+wps.ui.prototype.handleLocal = function(value) {
+  if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
+    return new wps.process.localWFS({
+      srsName: 'EPSG:4326',
+      typeName: value.substring(value.indexOf(wps.VECTORLAYER)+7)
+    });
+  } else if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
+    var coverage = value.substring(value.indexOf(wps.RASTERLAYER)+7);
+    for (var i=0, ii=this.coverages.length; i<ii; ++i) {
+      if (this.coverages[i].name === coverage) {
+        lowerCorner = this.coverages[i].lowerCorner;
+        upperCorner = this.coverages[i].upperCorner;
+        break;
+      }
+    }
+    return new wps.process.localWCS({
+      lowerCorner: lowerCorner,
+      upperCorner: upperCorner,
+      identifier: coverage
+    });
+  } else {
+    return value;
+  }
+};
+
+wps.ui.prototype.handleSubProcess = function(subId) {
+  var subInputs = {};
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var node = this.nodes[i];
+    if (node.type === "input" && node._parent === subId) {
+      var name = node._info.identifier.value;
+      subInputs[name] = this.handleLocal(node.value);
+    }
+  }
+  return subInputs;
+};
+
+// brute force
+wps.ui.prototype.processAlgorithm = function(processId) {
+  var executed = [];
+  var toExecute = this.getDependsOnAlgorithms(processId);
+  while (executed.length < toExecute.length) {
+    for (var i=0, ii=toExecute.length; i<ii; ++i) {
+      if (executed.indexOf(toExecute[i]) === -1) {
+        var canExecute = true;
+        var required = this.getDependsOnAlgorithms(toExecute[i]);
+        for (var j=0, jj=required.length; j<jj; ++j) {
+          var requiredAlg = required[j];
+          if (requiredAlg !== toExecute[i] && executed.indexOf(requiredAlg) === -1) {
+            canExecute = false;
+            break;
+          }
+        }
+        if (canExecute) {
+          var values = this.handleSubProcess(toExecute[i]);
+          for (var key in values) {
+            if (typeof values[key] === "string" && values[key].indexOf(wps.SUBPROCESS) !== -1) {
+              // replace value with a chainlink
+              values[key] = this.processes[values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8)].output();
+            }
+          }
+          this.processes[toExecute[i]].configure({
+            inputs: values
+          });
+          executed.push(toExecute[i]);
+        }
+      }
+    }
+  }
+};
+
 wps.ui.prototype.execute = function(ui) {
   var hasSelected = false;
   var selection = d3.selectAll(".node_selected");
@@ -873,112 +979,57 @@ wps.ui.prototype.execute = function(ui) {
     if (node.type === 'process') {
       hasSelected = true;
       var processId = node.id, process = ui.processes[processId];
-      var values = {};
-      for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
-        var n = ui.nodes[i];
-        if (n.type === 'input' && n._parent === processId) {
-          if (n._info.maxOccurs > 1) {
-            if (values[n._info.identifier.value] === undefined) {
-              values[n._info.identifier.value] = [];
-            }
-            values[n._info.identifier.value].push(n.value);
-          } else {
-            values[n._info.identifier.value] = n.value;
-          }
-        }
-      }
+      var values = ui.getInputs(processId);
       if (values && process.isComplete(values)) {
-        var srsName = 'EPSG:4326';
-        var features = [];
         var inputs = {};
-        var coverage, c, cc, lowerCorner, upperCorner;
 
-        var handleSubProcess = function(ui, subId) {
-          var subInputs = {};
-          for (var i=0, ii=ui.nodes.length; i<ii; ++i) {
-            var node = ui.nodes[i];
-            if (node.type === "input" && node._parent === subId) {
-              var name = node._info.identifier.value;
-              if ((typeof node.value === 'string') && node.value.indexOf(wps.VECTORLAYER) !== -1) {
-                subInputs[name] = new wps.process.localWFS({
-                  srsName: srsName,
-                  typeName: node.value.substring(node.value.indexOf(wps.VECTORLAYER)+7)
-                });
-              } else if ((typeof node.value === 'string') && node.value.indexOf(wps.RASTERLAYER) !== -1) {
-                var coverage = node.value.substring(node.value.indexOf(wps.RASTERLAYER)+7);
-                for (var c=0, cc=ui.coverages.length; c<cc; ++c) {
-                  if (ui.coverages[c].name === coverage) {
-                    lowerCorner = ui.coverages[c].lowerCorner;
-                    upperCorner = ui.coverages[c].upperCorner;
-                    break;
-                  }
+        var hasSubProcess = function(values) {
+          var result = false;
+          for (var key in values) {
+            if (typeof values[key] === 'string' && values[key].indexOf(wps.SUBPROCESS) !== -1) {
+              result = true;
+              break;
+            }
+          }
+          return result;
+        };
+
+        // make sure we configure all subprocesses
+        ui.processAlgorithm(processId);
+
+        var recurse = function(inputs, ui, values) {
+          for (var key in values) {
+            if (typeof values[key] === 'string' && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
+              if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
+                var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
+                var subInputs = ui.handleSubProcess(subId);
+                // only recurse if subInputs has subprocesses
+                if (hasSubProcess(subInputs)) {
+                  inputs[key] = ui.processes[subId].output();
+                  recurse(inputs[key], ui, subInputs);
                 }
-                subInputs[name] = new wps.process.localWCS({
-                  lowerCorner: lowerCorner,
-                  upperCorner: upperCorner,
-                  identifier: coverage
-                });
+              } else {
+                inputs[key] = ui.handleLocal(values[key]);
+              }
+            } else {
+              if (toString.call(values[key]) === "[object Array]") { 
+                for (i=0, ii=values[key].length; i<ii; ++i) { 
+                  values[key][i] = ui.handleLocal(values[key][i]);
+                } 
+                inputs[key] = values[key];
+              } else if ($.isXMLDoc(values[key])) { 
+                inputs[key] = values[key];
               } else { 
-                subInputs[name] = node.value;
+                if (values[key] !== undefined) {
+                  inputs[key] = '' + values[key];
+                }
               }
             }
-          }
-          return subInputs;
-        };
-
-        var handleLocal = function(ui, value, srsName) {
-          if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
-            return new wps.process.localWFS({
-              srsName: srsName,
-              typeName: value.substring(value.indexOf(wps.VECTORLAYER)+7)
-            });
-          } else if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
-            var coverage = value.substring(value.indexOf(wps.RASTERLAYER)+7);
-            for (var i=0, ii=ui.coverages.length; i<ii; ++i) {
-              if (ui.coverages[i].name === coverage) {
-                lowerCorner = ui.coverages[i].lowerCorner;
-                upperCorner = ui.coverages[i].upperCorner;
-                break;
-              }
-            }
-            return new wps.process.localWCS({
-              lowerCorner: lowerCorner,
-              upperCorner: upperCorner,
-              identifier: coverage
-            });
-          } else {
-            return value;
           }
         };
 
-        for (var key in values) {
-          // vector or subprocess
-          if ((typeof values[key] === 'string') && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
-            if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
-              var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
-              var subInputs = handleSubProcess(ui, subId);
-              ui.processes[subId].configure({
-                inputs: subInputs
-              });
-              inputs[key] = ui.processes[subId].output();
-            } else {
-              inputs[key] = handleLocal(ui, values[key], srsName);
-            }
-          } else {
-            if (toString.call(values[key]) === "[object Array]") {
-              for (i=0, ii=values[key].length; i<ii; ++i) {
-                values[key][i] = handleLocal(ui, values[key][i], srsName);
-              }
-              inputs[key] = values[key];
-            } else if ($.isXMLDoc(values[key])) {
-              inputs[key] = values[key];
-            } else {
-              if (values[key] !== undefined) {
-                inputs[key] = '' + values[key];
-              }
-            }
-          }
-        }
+        recurse(inputs, ui, values);
+
         process.execute({
           inputs: inputs,
           failure: function(exception) {

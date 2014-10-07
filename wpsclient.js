@@ -182,7 +182,6 @@ wps.process.prototype.execute = function(options) {
             }
           }
         }
-
         var body = me.client.marshaller.marshalString(me.info);
         if (hasTiffOutput) {
           new wps.hiddenForm(me.client.unmarshaller, options, me.client.servers[me.server].url,
