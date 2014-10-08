@@ -1084,7 +1084,7 @@ wps.ui.prototype.execute = function(ui) {
               }
             } else {
               if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
-                $('#tab-results').append(document.createTextNode(output.result));
+                $('#tab-results').html(document.createTextNode(output.result));
               } else {
                 $('#tab-results').html(String(output.result));
               }
