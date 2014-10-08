@@ -190,7 +190,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }
     }
     else if (vectorLayer === true && this.ui_.featureTypes) {
-      html += '<p><small>Draw or Select from existing:</small></p>';
+      html += '<p class="form-row"><small>Draw or Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
@@ -230,6 +230,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
     html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
     html += '</div>';
+    html += '<p class="form-row"><small>Provide bounding box in <b>EPSG:4326</b></small></p>';
     html += '<div class="form-row" id="' + name + '-field">';
     html += '<label for="' + name + '-field-minx' + '">min x</label>';
     var minx = '', miny = '', maxx = '', maxy = '';
