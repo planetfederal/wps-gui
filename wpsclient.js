@@ -11,7 +11,7 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
   if ($('#hiddenform-iframe').length) {
     $('#hiddenform-iframe').remove();
   }
-  $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe');
+  $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe>');
   $('#hiddenform-iframe').on('load', function(evt) {
     var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
     var exception = wps.client.getExceptionText(info);
