@@ -1,6 +1,6 @@
 // OpenLayers 3. See http://openlayers.org/
 // License: https://raw.githubusercontent.com/openlayers/ol3/master/LICENSE.md
-// Version: v3.0.0-54-gb431487
+// Version: v3.0.0-196-g1f09863
 
 var CLOSURE_NO_DEPS = true;
 // Copyright 2006 The Closure Library Authors. All Rights Reserved.
@@ -244,11 +244,8 @@ goog.define('goog.STRICT_MODE_COMPATIBLE', false);
  */
 goog.provide = function(name) {
   if (!COMPILED) {
-    // Ensure that the same namespace isn't provided twice. This is intended
-    // to teach new developers that 'goog.provide' is effectively a variable
-    // declaration. And when JSCompiler transforms goog.provide into a real
-    // variable declaration, the compiled JS should work the same as the raw
-    // JS--even when the raw JS uses goog.provide incorrectly.
+    // Ensure that the same namespace isn't provided twice.
+    // A goog.module/goog.provide maps a goog.require to a specific file
     if (goog.isProvided_(name)) {
       throw Error('Namespace "' + name + '" already declared.');
     }
@@ -264,6 +261,119 @@ goog.provide = function(name) {
   }
 
   goog.exportPath_(name);
+};
+
+
+/**
+ * goog.module serves two purposes:
+ * - marks a file that must be loaded as a module
+ * - reserves a namespace (it can not also be goog.provided)
+ * and has three requirements:
+ * - goog.module may not be used in the same file as goog.provide.
+ * - goog.module must be the first statement in the file.
+ * - only one goog.module is allowed per file.
+ * When a goog.module annotated file is loaded, it is loaded enclosed in
+ * a strict function closure. This means that:
+ * - any variable declared in a goog.module file are private to the file,
+ * not global. Although the compiler is expected to inline the module.
+ * - The code must obey all the rules of "strict" JavaScript.
+ * - the file will be marked as "use strict"
+ *
+ * NOTE: unlike goog.provide, goog.module does not declare any symbols by
+ * itself.
+ *
+ * @param {string} name Namespace provided by this file in the form
+ *     "goog.package.part", is expected but not required.
+ */
+goog.module = function(name) {
+  if (!goog.isString(name) || !name) {
+    throw Error('Invalid module identifier');
+  }
+  if (!goog.isInModuleLoader_()) {
+    throw Error('Module ' + name + ' has been loaded incorrectly.');
+  }
+  if (goog.moduleLoaderState_.moduleName) {
+    throw Error('goog.module may only be called once per module.');
+  }
+
+  // Store the module name for the loader.
+  goog.moduleLoaderState_.moduleName = name;
+  if (!COMPILED) {
+    // Ensure that the same namespace isn't provided twice.
+    // A goog.module/goog.provide maps a goog.require to a specific file
+    if (goog.isProvided_(name)) {
+      throw Error('Namespace "' + name + '" already declared.');
+    }
+    delete goog.implicitNamespaces_[name];
+  }
+};
+
+
+/**
+ * @param {string} name The module identifier.
+ * @return {?} The module exports for an already loaded module or null.
+ *
+ * Note: This is not an alternative to goog.require, it does not
+ * indicate a hard dependency, instead it is used to indicate
+ * an optional dependency or to access the exports of a module
+ * that has already been loaded.
+ */
+goog.module.get = function(name) {
+  return goog.module.getInternal_(name);
+};
+
+
+/**
+ * @param {string} name The module identifier.
+ * @return {?} The module exports for an already loaded module or null.
+ * @private
+ */
+goog.module.getInternal_ = function(name) {
+  if (!COMPILED) {
+    if (goog.isProvided_(name)) {
+      // goog.require only return a value with-in goog.module files.
+      return name in goog.loadedModules_ ?
+          goog.loadedModules_[name] :
+          goog.getObjectByName(name);
+    } else {
+      return null;
+    }
+  }
+};
+
+
+/**
+ * @private {{
+ *     moduleName:(string|undefined),
+ *     declareTestMethods:boolean}|null}}
+ */
+goog.moduleLoaderState_ = null;
+
+
+/**
+ * @private
+ * @return {boolean} Whether a goog.module is currently being initialized.
+ */
+goog.isInModuleLoader_ = function() {
+  return goog.moduleLoaderState_ != null;
+};
+
+
+/**
+ * Indicate that a module's exports that are known test methods should
+ * be copied to the global object.  This makes the test methods visible to
+ * test runners that inspect the global object.
+ *
+ * TODO(johnlenz): Make the test framework aware of goog.module so
+ * that this isn't necessary. Alternately combine this with goog.setTestOnly
+ * to minimize boiler plate.
+ */
+goog.module.declareTestMethods = function() {
+  if (!goog.isInModuleLoader_()) {
+    throw new Error('goog.module.declareTestMethods must be called from ' +
+        'within a goog.module');
+  }
+  goog.moduleLoaderState_.declareTestMethods = true;
 };
 
 
@@ -316,8 +426,9 @@ if (!COMPILED) {
    * @private
    */
   goog.isProvided_ = function(name) {
-    return !goog.implicitNamespaces_[name] &&
-        goog.isDefAndNotNull(goog.getObjectByName(name));
+    return (name in goog.loadedModules_) ||
+        (!goog.implicitNamespaces_[name] &&
+            goog.isDefAndNotNull(goog.getObjectByName(name)));
   };
 
   /**
@@ -325,10 +436,15 @@ if (!COMPILED) {
    * goog.provide('goog.events.Event') implicitly declares that 'goog' and
    * 'goog.events' must be namespaces.
    *
-   * @type {Object}
+   * @type {Object.<string, (boolean|undefined)>}
    * @private
    */
-  goog.implicitNamespaces_ = {};
+  goog.implicitNamespaces_ = {'goog.module': true};
+
+  // NOTE: We add goog.module as an implicit namespace as goog.module is defined
+  // here and because the existing module package has not been moved yet out of
+  // the goog.module namespace. This satisifies both the debug loader and
+  // ahead-of-time dependency management.
 }
 
 
@@ -380,18 +496,17 @@ goog.globalize = function(obj, opt_global) {
  *                         this file provides.
  * @param {Array} requires An array of strings with the names of the objects
  *                         this file requires.
+ * @param {boolean=} opt_isModule Whether this dependency must be loaded as
+ *     a module as declared by goog.module.
  */
-goog.addDependency = function(relPath, provides, requires) {
+goog.addDependency = function(relPath, provides, requires, opt_isModule) {
   if (goog.DEPENDENCIES_ENABLED) {
     var provide, require;
     var path = relPath.replace(/\\/g, '/');
     var deps = goog.dependencies_;
     for (var i = 0; provide = provides[i]; i++) {
       deps.nameToPath[provide] = path;
-      if (!(path in deps.pathToNames)) {
-        deps.pathToNames[path] = {};
-      }
-      deps.pathToNames[path][provide] = true;
+      deps.pathIsModule[path] = !!opt_isModule;
     }
     for (var j = 0; require = requires[j]; j++) {
       if (!(path in deps.requires)) {
@@ -437,24 +552,36 @@ goog.define('goog.ENABLE_DEBUG_LOADER', true);
 
 
 /**
+ * @param {string} msg
+ * @private
+ */
+goog.logToConsole_ = function(msg) {
+  if (goog.global.console) {
+    goog.global.console['error'](msg);
+  }
+};
+
+
+/**
  * Implements a system for the dynamic resolution of dependencies that works in
  * parallel with the BUILD system. Note that all calls to goog.require will be
  * stripped by the JSCompiler when the --closure_pass option is used.
  * @see goog.provide
  * @param {string} name Namespace to include (as was given in goog.provide()) in
  *     the form "goog.package.part".
+ * @return {?} If called within a goog.module file, the associated namespace or
+ *     module otherwise null.
  */
 goog.require = function(name) {
 
   // If the object already exists we do not need do do anything.
-  // TODO(arv): If we start to support require based on file name this has to
-  //            change.
-  // TODO(arv): If we allow goog.foo.* this has to change.
-  // TODO(arv): If we implement dynamic load after page load we should probably
-  //            not remove this code for the compiled output.
   if (!COMPILED) {
     if (goog.isProvided_(name)) {
-      return;
+      if (goog.isInModuleLoader_()) {
+        return goog.module.getInternal_(name);
+      } else {
+        return null;
+      }
     }
 
     if (goog.ENABLE_DEBUG_LOADER) {
@@ -462,18 +589,14 @@ goog.require = function(name) {
       if (path) {
         goog.included_[path] = true;
         goog.writeScripts_();
-        return;
+        return null;
       }
     }
 
     var errorMessage = 'goog.require could not find: ' + name;
-    if (goog.global.console) {
-      goog.global.console['error'](errorMessage);
-    }
+    goog.logToConsole_(errorMessage);
 
-
-      throw Error(errorMessage);
-
+    throw Error(errorMessage);
   }
 };
 
@@ -582,6 +705,31 @@ goog.instantiatedSingletons_ = [];
 
 
 /**
+ * @define {boolean} Whether to load goog.modules using {@code eval} when using
+ * the debug loader.  This provides a better debugging experience as the
+ * source is unmodified and can be edited using Chrome Workspaces or
+ * similiar.  However in some environments the use of {@code eval} is banned
+ * so we provide an alternative.
+ */
+goog.define('goog.LOAD_MODULE_USING_EVAL', true);
+
+
+/**
+ * @define {boolean} Whether the exports of goog.modules should be sealed when
+ * possible.
+ */
+goog.define('goog.SEAL_MODULE_EXPORTS', goog.DEBUG);
+
+
+/**
+ * The registry of initialized modules:
+ * the module identifier to module exports map.
+ * @private @const {Object.<string, ?>}
+ */
+goog.loadedModules_ = {};
+
+
+/**
  * True if goog.dependencies_ is available.
  * @const {boolean}
  */
@@ -605,8 +753,8 @@ if (goog.DEPENDENCIES_ENABLED) {
    * @type {Object}
    */
   goog.dependencies_ = {
-    pathToNames: {}, // 1 to many
-    nameToPath: {}, // 1 to 1
+    pathIsModule: {}, // 1 to 1
+    nameToPath: {}, // many to 1
     requires: {}, // 1 to many
     // Used when resolving dependencies to prevent us from visiting file twice.
     visited: {},
@@ -657,14 +805,180 @@ if (goog.DEPENDENCIES_ENABLED) {
    * Imports a script if, and only if, that script hasn't already been imported.
    * (Must be called at execution time)
    * @param {string} src Script source.
+   * @param {string=} opt_sourceText The optionally source text to evaluate
    * @private
    */
-  goog.importScript_ = function(src) {
+  goog.importScript_ = function(src, opt_sourceText) {
     var importScript = goog.global.CLOSURE_IMPORT_SCRIPT ||
         goog.writeScriptTag_;
-    if (!goog.dependencies_.written[src] && importScript(src)) {
+    if (importScript(src, opt_sourceText)) {
       goog.dependencies_.written[src] = true;
     }
+  };
+
+
+  /** @const @private {boolean} */
+  goog.IS_OLD_IE_ = goog.global.document &&
+      goog.global.document.all && !goog.global.atob;
+
+
+  /**
+   * Given a URL initiate retrieval and execution of the module.
+   * @param {string} src Script source URL.
+   * @private
+   */
+  goog.importModule_ = function(src) {
+    // In an attempt to keep browsers from timing out loading scripts using
+    // synchronous XHRs, put each load in its own script block.
+    var bootstrap = 'goog.retrieveAndExecModule_("' + src + '");';
+
+    if (goog.importScript_('', bootstrap)) {
+      goog.dependencies_.written[src] = true;
+    }
+  };
+
+
+  /** @private {Array.<string>} */
+  goog.queuedModules_ = [];
+
+
+  /**
+   * Retrieve and execute a module.
+   * @param {string} src Script source URL.
+   * @private
+   */
+  goog.retrieveAndExecModule_ = function(src) {
+    var importScript = goog.global.CLOSURE_IMPORT_SCRIPT ||
+        goog.writeScriptTag_;
+
+    var scriptText = null;
+
+    var xhr = new goog.global['XMLHttpRequest']();
+
+    /** @this {Object} */
+    xhr.onload = function() {
+      scriptText = this.responseText;
+    };
+    xhr.open('get', src, false);
+    xhr.send();
+
+    scriptText = xhr.responseText;
+
+    if (scriptText != null) {
+      var execModuleScript = goog.wrapModule_(src, scriptText);
+      var isOldIE = goog.IS_OLD_IE_;
+      if (isOldIE) {
+        goog.queuedModules_.push(execModuleScript);
+      } else {
+        importScript(src, execModuleScript);
+      }
+      goog.dependencies_.written[src] = true;
+    } else {
+      throw new Error('load of ' + src + 'failed');
+    }
+  };
+
+
+  /**
+   * Return an appropriate module text. Suitable to insert into
+   * a script tag (that is unescaped).
+   * @param {string} srcUrl
+   * @param {string} scriptText
+   * @return {string}
+   * @private
+   */
+  goog.wrapModule_ = function(srcUrl, scriptText) {
+    if (!goog.LOAD_MODULE_USING_EVAL || !goog.isDef(goog.global.JSON)) {
+      return '' +
+          'goog.loadModule(function(exports) {' +
+          '"use strict";' +
+          scriptText +
+          '\n' + // terminate any trailing single line comment.
+          ';return exports' +
+          '});' +
+          '\n//# sourceURL=' + srcUrl + '\n';
+    } else {
+      return '' +
+          'goog.loadModule(' +
+          goog.global.JSON.stringify(
+              scriptText + '\n//# sourceURL=' + srcUrl + '\n') +
+          ');';
+    }
+  };
+
+
+  /**
+   * Load any deferred goog.module loads.
+   * @private
+   */
+  goog.loadQueuedModules_ = function() {
+    var count = goog.queuedModules_.length;
+    if (count > 0) {
+      var queue = goog.queuedModules_;
+      goog.queuedModules_ = [];
+      for (var i = 0; i < count; i++) {
+        var entry = queue[i];
+        goog.globalEval(entry);
+      }
+    }
+  };
+
+
+  /**
+   * @param {function(?):?|string} moduleDef The module definition.
+   */
+  goog.loadModule = function(moduleDef) {
+    // NOTE: we allow function definitions to be either in the from
+    // of a string to eval (which keeps the original source intact) or
+    // in a eval forbidden environment (CSP) we allow a function definition
+    // which in its body must call {@code goog.module}, and return the exports
+    // of the module.
+    try {
+      goog.moduleLoaderState_ = {
+          moduleName: undefined, declareTestMethods: false};
+      var exports;
+      if (goog.isFunction(moduleDef)) {
+        exports = moduleDef.call(goog.global, {});
+      } else if (goog.isString(moduleDef)) {
+        exports = goog.loadModuleFromSource_.call(goog.global, moduleDef);
+      } else {
+        throw Error('Invalid module definition');
+      }
+
+      if (goog.SEAL_MODULE_EXPORTS && Object.seal) {
+        Object.seal(exports);
+      }
+      var moduleName = goog.moduleLoaderState_.moduleName;
+      if (!goog.isString(moduleName) || !moduleName) {
+        throw Error('Invalid module name \"' + moduleName + '\"');
+      }
+
+      goog.loadedModules_[moduleName] = exports;
+      if (goog.moduleLoaderState_.declareTestMethods) {
+        for (var entry in exports) {
+          if (entry.indexOf('test', 0) === 0 ||
+              entry == 'tearDown' ||
+              entry == 'setup') {
+            goog.global[entry] = exports[entry];
+          }
+        }
+      }
+    } finally {
+      goog.moduleLoaderState_ = null;
+    }
+  };
+
+
+  /**
+   * @private @const {function(string):?}
+   */
+  goog.loadModuleFromSource_ = function() {
+    // NOTE: we avoid declaring parameters or local variables here to avoid
+    // masking globals or leaking values into the module definition.
+    'use strict';
+    var exports = {};
+    eval(arguments[0]);
+    return exports;
   };
 
 
@@ -672,11 +986,12 @@ if (goog.DEPENDENCIES_ENABLED) {
    * The default implementation of the import function. Writes a script tag to
    * import the script.
    *
-   * @param {string} src The script source.
+   * @param {string} src The script url.
+   * @param {string=} opt_sourceText The optionally source text to evaluate
    * @return {boolean} True if the script was imported, false otherwise.
    * @private
    */
-  goog.writeScriptTag_ = function(src) {
+  goog.writeScriptTag_ = function(src, opt_sourceText) {
     if (goog.inHtmlDocument_()) {
       var doc = goog.global.document;
 
@@ -696,14 +1011,53 @@ if (goog.DEPENDENCIES_ENABLED) {
         }
       }
 
-      doc.write(
-          '<script type="text/javascript" src="' + src + '"></' + 'script>');
+      var isOldIE = goog.IS_OLD_IE_;
+
+      if (opt_sourceText === undefined) {
+        if (!isOldIE) {
+          doc.write(
+              '<script type="text/javascript" src="' +
+                  src + '"></' + 'script>');
+        } else {
+          var state = " onreadystatechange='goog.onScriptLoad_(this, " +
+              ++goog.lastNonModuleScriptIndex_ + ")' ";
+          doc.write(
+              '<script type="text/javascript" src="' +
+                  src + '"' + state + '></' + 'script>');
+        }
+      } else {
+        doc.write(
+            '<script type="text/javascript">' +
+            opt_sourceText +
+            '</' + 'script>');
+      }
       return true;
     } else {
       return false;
     }
   };
 
+
+  /** @private {number} */
+  goog.lastNonModuleScriptIndex_ = 0;
+
+
+  /**
+   * A readystatechange handler for legacy IE
+   * @param {HTMLScriptElement} script
+   * @param {number} scriptIndex
+   * @return {boolean}
+   * @private
+   */
+  goog.onScriptLoad_ = function(script, scriptIndex) {
+    // for now load the modules when we reach the last script,
+    // later allow more inter-mingling.
+    if (script.readyState == 'complete' &&
+        goog.lastNonModuleScriptIndex_ == scriptIndex) {
+      goog.loadQueuedModules_();
+    }
+    return true;
+  };
 
   /**
    * Resolves dependencies based on the dependencies added using addDependency
@@ -759,13 +1113,36 @@ if (goog.DEPENDENCIES_ENABLED) {
       }
     }
 
+    // record that we are going to load all these scripts.
     for (var i = 0; i < scripts.length; i++) {
-      if (scripts[i]) {
-        goog.importScript_(goog.basePath + scripts[i]);
+      var path = scripts[i];
+      goog.dependencies_.written[path] = true;
+    }
+
+    // If a module is loaded synchronously then we need to
+    // clear the current inModuleLoader value, and restore it when we are
+    // done loading the current "requires".
+    var moduleState = goog.moduleLoaderState_;
+    goog.moduleLoaderState_ = null;
+
+    var loadingModule = false;
+    for (var i = 0; i < scripts.length; i++) {
+      var path = scripts[i];
+      if (path) {
+        if (!deps.pathIsModule[path]) {
+          goog.importScript_(goog.basePath + path);
+        } else {
+          loadingModule = true;
+          goog.importModule_(goog.basePath + path);
+        }
       } else {
+        goog.moduleLoaderState_ = moduleState;
         throw Error('Undefined script input');
       }
     }
+
+    // restore the current "module loading state"
+    goog.moduleLoaderState_ = moduleState;
   };
 
 
@@ -1799,6 +2176,7 @@ goog.defineClass.createSealingConstructor_ = function(ctr, superClass) {
       // Don't seal an instance of a subclass when it calls the constructor of
       // its super class as there is most likely still setup to do.
       var instance = ctr.apply(this, arguments) || this;
+      instance[goog.UID_PROPERTY_] = instance[goog.UID_PROPERTY_];
       if (this.constructor === wrappedCtr) {
         Object.seal(instance);
       }
@@ -2973,24 +3351,6 @@ goog.string.escapeChar = function(c) {
 
 
 /**
- * Takes a string and creates a map (Object) in which the keys are the
- * characters in the string. The value for the key is set to true. You can
- * then use goog.object.map or goog.array.map to change the values.
- * @param {string} s The string to build the map from.
- * @return {!Object} The map of characters used.
- */
-// TODO(arv): It seems like we should have a generic goog.array.toMap. But do
-//            we want a dependency on goog.array in goog.string?
-goog.string.toMap = function(s) {
-  var rv = {};
-  for (var i = 0; i < s.length; i++) {
-    rv[s.charAt(i)] = true;
-  }
-  return rv;
-};
-
-
-/**
  * Determines whether a string contains a substring.
  * @param {string} str The string to search.
  * @param {string} subString The substring to search for.
@@ -3480,7 +3840,6 @@ goog.string.splitLimit = function(str, separator, limit) {
 
   return returnVal;
 };
-
 
 // Copyright 2008 The Closure Library Authors. All Rights Reserved.
 //
@@ -4574,6 +4933,31 @@ goog.array.removeIf = function(arr, f, opt_obj) {
 
 
 /**
+ * Removes all values that satisfy the given condition.
+ * @param {Array.<T>|goog.array.ArrayLike} arr Array or array
+ *     like object over which to iterate.
+ * @param {?function(this:S, T, number, ?) : boolean} f The function to call
+ *     for every element. This function
+ *     takes 3 arguments (the element, the index and the array) and should
+ *     return a boolean.
+ * @param {S=} opt_obj An optional "this" context for the function.
+ * @return {number} The number of items removed
+ * @template T,S
+ */
+goog.array.removeAllIf = function(arr, f, opt_obj) {
+  var removedCount = 0;
+  goog.array.forEachRight(arr, function(val, index) {
+    if (f.call(opt_obj, val, index, arr)) {
+      if (goog.array.removeAt(arr, index)) {
+        removedCount++;
+      }
+    }
+  });
+  return removedCount;
+};
+
+
+/**
  * Returns a new array that is the result of joining the arguments.  If arrays
  * are passed then their items are added, however, if non-arrays are passed they
  * will be added to the return array as is.
@@ -4980,6 +5364,34 @@ goog.array.stableSort = function(arr, opt_compareFn) {
 
 
 /**
+ * Sort the specified array into ascending order based on item keys
+ * returned by the specified key function.
+ * If no opt_compareFn is specified, the keys are compared in ascending order
+ * using <code>goog.array.defaultCompare</code>.
+ *
+ * Runtime: O(S(f(n)), where S is runtime of <code>goog.array.sort</code>
+ * and f(n) is runtime of the key function.
+ *
+ * @param {Array.<T>} arr The array to be sorted.
+ * @param {function(T): K} keyFn Function taking array element and returning
+ *     a key used for sorting this element.
+ * @param {?function(K, K): number=} opt_compareFn Optional comparison function
+ *     by which the keys are to be ordered. Should take 2 arguments to compare,
+ *     and return a negative number, zero, or a positive number depending on
+ *     whether the first argument is less than, equal to, or greater than the
+ *     second.
+ * @template T
+ * @template K
+ */
+goog.array.sortByKey = function(arr, keyFn, opt_compareFn) {
+  var keyCompareFn = opt_compareFn || goog.array.defaultCompare;
+  goog.array.sort(arr, function(a, b) {
+    return keyCompareFn(keyFn(a), keyFn(b));
+  });
+};
+
+
+/**
  * Sorts an array of objects by the specified object key and compare
  * function. If no compare function is provided, the key values are
  * compared in ascending order using <code>goog.array.defaultCompare</code>.
@@ -4991,10 +5403,9 @@ goog.array.stableSort = function(arr, opt_compareFn) {
  *     values.
  */
 goog.array.sortObjectsByKey = function(arr, key, opt_compareFn) {
-  var compare = opt_compareFn || goog.array.defaultCompare;
-  goog.array.sort(arr, function(a, b) {
-    return compare(a[key], b[key]);
-  });
+  goog.array.sortByKey(arr,
+      function(obj) { return obj[key]; },
+      opt_compareFn);
 };
 
 
@@ -5553,6 +5964,667 @@ goog.labs.userAgent.util.extractVersionTuples = function(userAgent) {
 };
 
 
+// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview Utilities for manipulating objects/maps/hashes.
+ */
+
+goog.provide('goog.object');
+
+goog.require('goog.array');
+
+
+/**
+ * Calls a function for each element in an object/map/hash.
+ *
+ * @param {Object.<K,V>} obj The object over which to iterate.
+ * @param {function(this:T,V,?,Object.<K,V>):?} f The function to call
+ *     for every element. This function takes 3 arguments (the element, the
+ *     index and the object) and the return value is ignored.
+ * @param {T=} opt_obj This is used as the 'this' object within f.
+ * @template T,K,V
+ */
+goog.object.forEach = function(obj, f, opt_obj) {
+  for (var key in obj) {
+    f.call(opt_obj, obj[key], key, obj);
+  }
+};
+
+
+/**
+ * Calls a function for each element in an object/map/hash. If that call returns
+ * true, adds the element to a new object.
+ *
+ * @param {Object.<K,V>} obj The object over which to iterate.
+ * @param {function(this:T,V,?,Object.<K,V>):boolean} f The function to call
+ *     for every element. This
+ *     function takes 3 arguments (the element, the index and the object)
+ *     and should return a boolean. If the return value is true the
+ *     element is added to the result object. If it is false the
+ *     element is not included.
+ * @param {T=} opt_obj This is used as the 'this' object within f.
+ * @return {!Object.<K,V>} a new object in which only elements that passed the
+ *     test are present.
+ * @template T,K,V
+ */
+goog.object.filter = function(obj, f, opt_obj) {
+  var res = {};
+  for (var key in obj) {
+    if (f.call(opt_obj, obj[key], key, obj)) {
+      res[key] = obj[key];
+    }
+  }
+  return res;
+};
+
+
+/**
+ * For every element in an object/map/hash calls a function and inserts the
+ * result into a new object.
+ *
+ * @param {Object.<K,V>} obj The object over which to iterate.
+ * @param {function(this:T,V,?,Object.<K,V>):R} f The function to call
+ *     for every element. This function
+ *     takes 3 arguments (the element, the index and the object)
+ *     and should return something. The result will be inserted
+ *     into a new object.
+ * @param {T=} opt_obj This is used as the 'this' object within f.
+ * @return {!Object.<K,R>} a new object with the results from f.
+ * @template T,K,V,R
+ */
+goog.object.map = function(obj, f, opt_obj) {
+  var res = {};
+  for (var key in obj) {
+    res[key] = f.call(opt_obj, obj[key], key, obj);
+  }
+  return res;
+};
+
+
+/**
+ * Calls a function for each element in an object/map/hash. If any
+ * call returns true, returns true (without checking the rest). If
+ * all calls return false, returns false.
+ *
+ * @param {Object.<K,V>} obj The object to check.
+ * @param {function(this:T,V,?,Object.<K,V>):boolean} f The function to
+ *     call for every element. This function
+ *     takes 3 arguments (the element, the index and the object) and should
+ *     return a boolean.
+ * @param {T=} opt_obj This is used as the 'this' object within f.
+ * @return {boolean} true if any element passes the test.
+ * @template T,K,V
+ */
+goog.object.some = function(obj, f, opt_obj) {
+  for (var key in obj) {
+    if (f.call(opt_obj, obj[key], key, obj)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+
+/**
+ * Calls a function for each element in an object/map/hash. If
+ * all calls return true, returns true. If any call returns false, returns
+ * false at this point and does not continue to check the remaining elements.
+ *
+ * @param {Object.<K,V>} obj The object to check.
+ * @param {?function(this:T,V,?,Object.<K,V>):boolean} f The function to
+ *     call for every element. This function
+ *     takes 3 arguments (the element, the index and the object) and should
+ *     return a boolean.
+ * @param {T=} opt_obj This is used as the 'this' object within f.
+ * @return {boolean} false if any element fails the test.
+ * @template T,K,V
+ */
+goog.object.every = function(obj, f, opt_obj) {
+  for (var key in obj) {
+    if (!f.call(opt_obj, obj[key], key, obj)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+
+/**
+ * Returns the number of key-value pairs in the object map.
+ *
+ * @param {Object} obj The object for which to get the number of key-value
+ *     pairs.
+ * @return {number} The number of key-value pairs in the object map.
+ */
+goog.object.getCount = function(obj) {
+  // JS1.5 has __count__ but it has been deprecated so it raises a warning...
+  // in other words do not use. Also __count__ only includes the fields on the
+  // actual object and not in the prototype chain.
+  var rv = 0;
+  for (var key in obj) {
+    rv++;
+  }
+  return rv;
+};
+
+
+/**
+ * Returns one key from the object map, if any exists.
+ * For map literals the returned key will be the first one in most of the
+ * browsers (a know exception is Konqueror).
+ *
+ * @param {Object} obj The object to pick a key from.
+ * @return {string|undefined} The key or undefined if the object is empty.
+ */
+goog.object.getAnyKey = function(obj) {
+  for (var key in obj) {
+    return key;
+  }
+};
+
+
+/**
+ * Returns one value from the object map, if any exists.
+ * For map literals the returned value will be the first one in most of the
+ * browsers (a know exception is Konqueror).
+ *
+ * @param {Object.<K,V>} obj The object to pick a value from.
+ * @return {V|undefined} The value or undefined if the object is empty.
+ * @template K,V
+ */
+goog.object.getAnyValue = function(obj) {
+  for (var key in obj) {
+    return obj[key];
+  }
+};
+
+
+/**
+ * Whether the object/hash/map contains the given object as a value.
+ * An alias for goog.object.containsValue(obj, val).
+ *
+ * @param {Object.<K,V>} obj The object in which to look for val.
+ * @param {V} val The object for which to check.
+ * @return {boolean} true if val is present.
+ * @template K,V
+ */
+goog.object.contains = function(obj, val) {
+  return goog.object.containsValue(obj, val);
+};
+
+
+/**
+ * Returns the values of the object/map/hash.
+ *
+ * @param {Object.<K,V>} obj The object from which to get the values.
+ * @return {!Array.<V>} The values in the object/map/hash.
+ * @template K,V
+ */
+goog.object.getValues = function(obj) {
+  var res = [];
+  var i = 0;
+  for (var key in obj) {
+    res[i++] = obj[key];
+  }
+  return res;
+};
+
+
+/**
+ * Returns the keys of the object/map/hash.
+ *
+ * @param {Object} obj The object from which to get the keys.
+ * @return {!Array.<string>} Array of property keys.
+ */
+goog.object.getKeys = function(obj) {
+  var res = [];
+  var i = 0;
+  for (var key in obj) {
+    res[i++] = key;
+  }
+  return res;
+};
+
+
+/**
+ * Get a value from an object multiple levels deep.  This is useful for
+ * pulling values from deeply nested objects, such as JSON responses.
+ * Example usage: getValueByKeys(jsonObj, 'foo', 'entries', 3)
+ *
+ * @param {!Object} obj An object to get the value from.  Can be array-like.
+ * @param {...(string|number|!Array.<number|string>)} var_args A number of keys
+ *     (as strings, or numbers, for array-like objects).  Can also be
+ *     specified as a single array of keys.
+ * @return {*} The resulting value.  If, at any point, the value for a key
+ *     is undefined, returns undefined.
+ */
+goog.object.getValueByKeys = function(obj, var_args) {
+  var isArrayLike = goog.isArrayLike(var_args);
+  var keys = isArrayLike ? var_args : arguments;
+
+  // Start with the 2nd parameter for the variable parameters syntax.
+  for (var i = isArrayLike ? 0 : 1; i < keys.length; i++) {
+    obj = obj[keys[i]];
+    if (!goog.isDef(obj)) {
+      break;
+    }
+  }
+
+  return obj;
+};
+
+
+/**
+ * Whether the object/map/hash contains the given key.
+ *
+ * @param {Object} obj The object in which to look for key.
+ * @param {*} key The key for which to check.
+ * @return {boolean} true If the map contains the key.
+ */
+goog.object.containsKey = function(obj, key) {
+  return key in obj;
+};
+
+
+/**
+ * Whether the object/map/hash contains the given value. This is O(n).
+ *
+ * @param {Object.<K,V>} obj The object in which to look for val.
+ * @param {V} val The value for which to check.
+ * @return {boolean} true If the map contains the value.
+ * @template K,V
+ */
+goog.object.containsValue = function(obj, val) {
+  for (var key in obj) {
+    if (obj[key] == val) {
+      return true;
+    }
+  }
+  return false;
+};
+
+
+/**
+ * Searches an object for an element that satisfies the given condition and
+ * returns its key.
+ * @param {Object.<K,V>} obj The object to search in.
+ * @param {function(this:T,V,string,Object.<K,V>):boolean} f The
+ *      function to call for every element. Takes 3 arguments (the value,
+ *     the key and the object) and should return a boolean.
+ * @param {T=} opt_this An optional "this" context for the function.
+ * @return {string|undefined} The key of an element for which the function
+ *     returns true or undefined if no such element is found.
+ * @template T,K,V
+ */
+goog.object.findKey = function(obj, f, opt_this) {
+  for (var key in obj) {
+    if (f.call(opt_this, obj[key], key, obj)) {
+      return key;
+    }
+  }
+  return undefined;
+};
+
+
+/**
+ * Searches an object for an element that satisfies the given condition and
+ * returns its value.
+ * @param {Object.<K,V>} obj The object to search in.
+ * @param {function(this:T,V,string,Object.<K,V>):boolean} f The function
+ *     to call for every element. Takes 3 arguments (the value, the key
+ *     and the object) and should return a boolean.
+ * @param {T=} opt_this An optional "this" context for the function.
+ * @return {V} The value of an element for which the function returns true or
+ *     undefined if no such element is found.
+ * @template T,K,V
+ */
+goog.object.findValue = function(obj, f, opt_this) {
+  var key = goog.object.findKey(obj, f, opt_this);
+  return key && obj[key];
+};
+
+
+/**
+ * Whether the object/map/hash is empty.
+ *
+ * @param {Object} obj The object to test.
+ * @return {boolean} true if obj is empty.
+ */
+goog.object.isEmpty = function(obj) {
+  for (var key in obj) {
+    return false;
+  }
+  return true;
+};
+
+
+/**
+ * Removes all key value pairs from the object/map/hash.
+ *
+ * @param {Object} obj The object to clear.
+ */
+goog.object.clear = function(obj) {
+  for (var i in obj) {
+    delete obj[i];
+  }
+};
+
+
+/**
+ * Removes a key-value pair based on the key.
+ *
+ * @param {Object} obj The object from which to remove the key.
+ * @param {*} key The key to remove.
+ * @return {boolean} Whether an element was removed.
+ */
+goog.object.remove = function(obj, key) {
+  var rv;
+  if ((rv = key in obj)) {
+    delete obj[key];
+  }
+  return rv;
+};
+
+
+/**
+ * Adds a key-value pair to the object. Throws an exception if the key is
+ * already in use. Use set if you want to change an existing pair.
+ *
+ * @param {Object.<K,V>} obj The object to which to add the key-value pair.
+ * @param {string} key The key to add.
+ * @param {V} val The value to add.
+ * @template K,V
+ */
+goog.object.add = function(obj, key, val) {
+  if (key in obj) {
+    throw Error('The object already contains the key "' + key + '"');
+  }
+  goog.object.set(obj, key, val);
+};
+
+
+/**
+ * Returns the value for the given key.
+ *
+ * @param {Object.<K,V>} obj The object from which to get the value.
+ * @param {string} key The key for which to get the value.
+ * @param {R=} opt_val The value to return if no item is found for the given
+ *     key (default is undefined).
+ * @return {V|R|undefined} The value for the given key.
+ * @template K,V,R
+ */
+goog.object.get = function(obj, key, opt_val) {
+  if (key in obj) {
+    return obj[key];
+  }
+  return opt_val;
+};
+
+
+/**
+ * Adds a key-value pair to the object/map/hash.
+ *
+ * @param {Object.<K,V>} obj The object to which to add the key-value pair.
+ * @param {string} key The key to add.
+ * @param {V} value The value to add.
+ * @template K,V
+ */
+goog.object.set = function(obj, key, value) {
+  obj[key] = value;
+};
+
+
+/**
+ * Adds a key-value pair to the object/map/hash if it doesn't exist yet.
+ *
+ * @param {Object.<K,V>} obj The object to which to add the key-value pair.
+ * @param {string} key The key to add.
+ * @param {V} value The value to add if the key wasn't present.
+ * @return {V} The value of the entry at the end of the function.
+ * @template K,V
+ */
+goog.object.setIfUndefined = function(obj, key, value) {
+  return key in obj ? obj[key] : (obj[key] = value);
+};
+
+
+/**
+ * Compares two objects for equality using === on the values.
+ *
+ * @param {!Object.<K,V>} a
+ * @param {!Object.<K,V>} b
+ * @return {boolean}
+ * @template K,V
+ */
+goog.object.equals = function(a, b) {
+  if (!goog.array.equals(goog.object.getKeys(a), goog.object.getKeys(b))) {
+    return false;
+  }
+  for (var k in a) {
+    if (a[k] !== b[k]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+
+/**
+ * Does a flat clone of the object.
+ *
+ * @param {Object.<K,V>} obj Object to clone.
+ * @return {!Object.<K,V>} Clone of the input object.
+ * @template K,V
+ */
+goog.object.clone = function(obj) {
+  // We cannot use the prototype trick because a lot of methods depend on where
+  // the actual key is set.
+
+  var res = {};
+  for (var key in obj) {
+    res[key] = obj[key];
+  }
+  return res;
+  // We could also use goog.mixin but I wanted this to be independent from that.
+};
+
+
+/**
+ * Clones a value. The input may be an Object, Array, or basic type. Objects and
+ * arrays will be cloned recursively.
+ *
+ * WARNINGS:
+ * <code>goog.object.unsafeClone</code> does not detect reference loops. Objects
+ * that refer to themselves will cause infinite recursion.
+ *
+ * <code>goog.object.unsafeClone</code> is unaware of unique identifiers, and
+ * copies UIDs created by <code>getUid</code> into cloned results.
+ *
+ * @param {*} obj The value to clone.
+ * @return {*} A clone of the input value.
+ */
+goog.object.unsafeClone = function(obj) {
+  var type = goog.typeOf(obj);
+  if (type == 'object' || type == 'array') {
+    if (obj.clone) {
+      return obj.clone();
+    }
+    var clone = type == 'array' ? [] : {};
+    for (var key in obj) {
+      clone[key] = goog.object.unsafeClone(obj[key]);
+    }
+    return clone;
+  }
+
+  return obj;
+};
+
+
+/**
+ * Returns a new object in which all the keys and values are interchanged
+ * (keys become values and values become keys). If multiple keys map to the
+ * same value, the chosen transposed value is implementation-dependent.
+ *
+ * @param {Object} obj The object to transpose.
+ * @return {!Object} The transposed object.
+ */
+goog.object.transpose = function(obj) {
+  var transposed = {};
+  for (var key in obj) {
+    transposed[obj[key]] = key;
+  }
+  return transposed;
+};
+
+
+/**
+ * The names of the fields that are defined on Object.prototype.
+ * @type {Array.<string>}
+ * @private
+ */
+goog.object.PROTOTYPE_FIELDS_ = [
+  'constructor',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+  'toString',
+  'valueOf'
+];
+
+
+/**
+ * Extends an object with another object.
+ * This operates 'in-place'; it does not create a new Object.
+ *
+ * Example:
+ * var o = {};
+ * goog.object.extend(o, {a: 0, b: 1});
+ * o; // {a: 0, b: 1}
+ * goog.object.extend(o, {b: 2, c: 3});
+ * o; // {a: 0, b: 2, c: 3}
+ *
+ * @param {Object} target The object to modify. Existing properties will be
+ *     overwritten if they are also present in one of the objects in
+ *     {@code var_args}.
+ * @param {...Object} var_args The objects from which values will be copied.
+ */
+goog.object.extend = function(target, var_args) {
+  var key, source;
+  for (var i = 1; i < arguments.length; i++) {
+    source = arguments[i];
+    for (key in source) {
+      target[key] = source[key];
+    }
+
+    // For IE the for-in-loop does not contain any properties that are not
+    // enumerable on the prototype object (for example isPrototypeOf from
+    // Object.prototype) and it will also not include 'replace' on objects that
+    // extend String and change 'replace' (not that it is common for anyone to
+    // extend anything except Object).
+
+    for (var j = 0; j < goog.object.PROTOTYPE_FIELDS_.length; j++) {
+      key = goog.object.PROTOTYPE_FIELDS_[j];
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        target[key] = source[key];
+      }
+    }
+  }
+};
+
+
+/**
+ * Creates a new object built from the key-value pairs provided as arguments.
+ * @param {...*} var_args If only one argument is provided and it is an array
+ *     then this is used as the arguments,  otherwise even arguments are used as
+ *     the property names and odd arguments are used as the property values.
+ * @return {!Object} The new object.
+ * @throws {Error} If there are uneven number of arguments or there is only one
+ *     non array argument.
+ */
+goog.object.create = function(var_args) {
+  var argLength = arguments.length;
+  if (argLength == 1 && goog.isArray(arguments[0])) {
+    return goog.object.create.apply(null, arguments[0]);
+  }
+
+  if (argLength % 2) {
+    throw Error('Uneven number of arguments');
+  }
+
+  var rv = {};
+  for (var i = 0; i < argLength; i += 2) {
+    rv[arguments[i]] = arguments[i + 1];
+  }
+  return rv;
+};
+
+
+/**
+ * Creates a new object where the property names come from the arguments but
+ * the value is always set to true
+ * @param {...*} var_args If only one argument is provided and it is an array
+ *     then this is used as the arguments,  otherwise the arguments are used
+ *     as the property names.
+ * @return {!Object} The new object.
+ */
+goog.object.createSet = function(var_args) {
+  var argLength = arguments.length;
+  if (argLength == 1 && goog.isArray(arguments[0])) {
+    return goog.object.createSet.apply(null, arguments[0]);
+  }
+
+  var rv = {};
+  for (var i = 0; i < argLength; i++) {
+    rv[arguments[i]] = true;
+  }
+  return rv;
+};
+
+
+/**
+ * Creates an immutable view of the underlying object, if the browser
+ * supports immutable objects.
+ *
+ * In default mode, writes to this view will fail silently. In strict mode,
+ * they will throw an error.
+ *
+ * @param {!Object.<K,V>} obj An object.
+ * @return {!Object.<K,V>} An immutable view of that object, or the
+ *     original object if this browser does not support immutables.
+ * @template K,V
+ */
+goog.object.createImmutableView = function(obj) {
+  var result = obj;
+  if (Object.isFrozen && !Object.isFrozen(obj)) {
+    result = Object.create(obj);
+    Object.freeze(result);
+  }
+  return result;
+};
+
+
+/**
+ * @param {!Object} obj An object.
+ * @return {boolean} Whether this is an immutable view of the object.
+ */
+goog.object.isImmutableView = function(obj) {
+  return !!Object.isFrozen && Object.isFrozen(obj);
+};
+
 // Copyright 2013 The Closure Library Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -5579,8 +6651,8 @@ goog.labs.userAgent.util.extractVersionTuples = function(userAgent) {
 goog.provide('goog.labs.userAgent.browser');
 
 goog.require('goog.array');
-goog.require('goog.asserts');
 goog.require('goog.labs.userAgent.util');
+goog.require('goog.object');
 goog.require('goog.string');
 
 
@@ -5640,9 +6712,11 @@ goog.labs.userAgent.browser.matchChrome_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchAndroidBrowser_ = function() {
-  return goog.labs.userAgent.util.matchUserAgent('Android') &&
-      !goog.labs.userAgent.util.matchUserAgent('Chrome') &&
-      !goog.labs.userAgent.util.matchUserAgent('CriOS');
+  // Android can appear in the user agent string for Chrome on Android.
+  // This is not the Android standalone browser if it does.
+  return !goog.labs.userAgent.browser.isChrome() &&
+      goog.labs.userAgent.util.matchUserAgent('Android');
+
 };
 
 
@@ -5713,13 +6787,44 @@ goog.labs.userAgent.browser.getVersion = function() {
     return goog.labs.userAgent.browser.getIEVersion_(userAgentString);
   }
 
-  if (goog.labs.userAgent.browser.isOpera()) {
-    return goog.labs.userAgent.browser.getOperaVersion_(userAgentString);
+  var versionTuples = goog.labs.userAgent.util.extractVersionTuples(
+      userAgentString);
+
+  // Construct a map for easy lookup.
+  var versionMap = {};
+  goog.array.forEach(versionTuples, function(tuple) {
+    // Note that the tuple is of length three, but we only care about the
+    // first two.
+    var key = tuple[0];
+    var value = tuple[1];
+    versionMap[key] = value;
+  });
+
+  var versionMapHasKey = goog.partial(goog.object.containsKey, versionMap);
+
+  // Gives the value with the first key it finds, otherwise empty string.
+  function lookUpValueWithKeys(keys) {
+    var key = goog.array.find(keys, versionMapHasKey);
+    return versionMap[key] || '';
   }
 
-  var versionTuples =
-      goog.labs.userAgent.util.extractVersionTuples(userAgentString);
-  return goog.labs.userAgent.browser.getVersionFromTuples_(versionTuples);
+  // Check Opera before Chrome since Opera 15+ has "Chrome" in the string.
+  // See
+  // http://my.opera.com/ODIN/blog/2013/07/15/opera-user-agent-strings-opera-15-and-beyond
+  if (goog.labs.userAgent.browser.isOpera()) {
+    // Opera 10 has Version/10.0 but Opera/9.8, so look for "Version" first.
+    // Opera uses 'OPR' for more recent UAs.
+    return lookUpValueWithKeys(['Version', 'Opera', 'OPR']);
+  }
+
+  if (goog.labs.userAgent.browser.isChrome()) {
+    return lookUpValueWithKeys(['Chrome', 'CriOS']);
+  }
+
+  // Usually products browser versions are in the third tuple after "Mozilla"
+  // and the engine.
+  var tuple = versionTuples[2];
+  return tuple && tuple[1] || '';
 };
 
 
@@ -5787,42 +6892,6 @@ goog.labs.userAgent.browser.getIEVersion_ = function(userAgent) {
     }
   }
   return version;
-};
-
-
-/**
- * Determines Opera version. More information:
- * http://my.opera.com/ODIN/blog/2013/07/15/opera-user-agent-strings-opera-15-and-beyond
- *
- * @param {string} userAgent The User-Agent.
- * @return {string}
- * @private
- */
-goog.labs.userAgent.browser.getOperaVersion_ = function(userAgent) {
-  var versionTuples =
-      goog.labs.userAgent.util.extractVersionTuples(userAgent);
-  var lastTuple = goog.array.peek(versionTuples);
-  if (lastTuple[0] == 'OPR' && lastTuple[1]) {
-    return lastTuple[1];
-  }
-
-  return goog.labs.userAgent.browser.getVersionFromTuples_(versionTuples);
-};
-
-
-/**
- * Nearly all User-Agents start with Mozilla/N.0. This looks at the second tuple
- * for the actual browser version number.
- * @param {!Array.<!Array.<string>>} versionTuples
- * @return {string} The version or empty string if it cannot be determined.
- * @private
- */
-goog.labs.userAgent.browser.getVersionFromTuples_ = function(versionTuples) {
-  // versionTuples[2] (The first X/Y tuple after the parenthesis) contains the
-  // browser version number.
-  goog.asserts.assert(versionTuples.length > 2,
-      'Couldn\'t extract version tuple from user agent string');
-  return versionTuples[2] && versionTuples[2][1] ? versionTuples[2][1] : '';
 };
 
 // Copyright 2013 The Closure Library Authors. All Rights Reserved.
@@ -6585,7 +7654,7 @@ ol.DRAGZOOM_ANIMATION_DURATION = 200;
 
 
 /**
- * @define {number} Hysterisis pixels.
+ * @define {number} Hysteresis pixels.
  */
 ol.DRAG_BOX_HYSTERESIS_PIXELS = 8;
 
@@ -6658,6 +7727,8 @@ ol.ENABLE_WEBGL = true;
 
 /**
  * @define {boolean} Support legacy IE (7-8).  Default is `false`.
+ *     If set to `true`, `goog.array.ASSUME_NATIVE_FUNCTIONS` must be set
+ *     to `false` because legacy IE do not support ECMAScript 5 array functions.
  */
 ol.LEGACY_IE_SUPPORT = false;
 
@@ -7896,6 +8967,9 @@ goog.Disposable = function() {
     }
     goog.Disposable.instances_[goog.getUid(this)] = this;
   }
+  // Support sealing
+  this.disposed_ = this.disposed_;
+  this.onDisposeCallbacks_ = this.onDisposeCallbacks_;
 };
 
 
@@ -7991,7 +9065,7 @@ goog.Disposable.prototype.onDisposeCallbacks_;
 /**
  * If monitoring the goog.Disposable instances is enabled, stores the creation
  * stack trace of the Disposable instance.
- * @type {string}
+ * @const {string}
  */
 goog.Disposable.prototype.creationStack;
 
@@ -8417,6 +9491,7 @@ goog.events.EventType = {
   MOUSEMOVE: 'mousemove',
   MOUSEENTER: 'mouseenter',
   MOUSELEAVE: 'mouseleave',
+  MOUSEWHEEL: goog.userAgent.GECKO ? 'DOMMouseScroll' : 'mousewheel',
   // Select start is non-standard.
   // See http://msdn.microsoft.com/en-us/library/ie/ms536969(v=vs.85).aspx.
   SELECTSTART: 'selectstart', // IE, Safari, Chrome
@@ -9523,644 +10598,6 @@ goog.events.Listener.prototype.markAsRemoved = function() {
   this.handler = null;
 };
 
-// Copyright 2006 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * @fileoverview Utilities for manipulating objects/maps/hashes.
- */
-
-goog.provide('goog.object');
-
-
-/**
- * Calls a function for each element in an object/map/hash.
- *
- * @param {Object.<K,V>} obj The object over which to iterate.
- * @param {function(this:T,V,?,Object.<K,V>):?} f The function to call
- *     for every element. This function takes 3 arguments (the element, the
- *     index and the object) and the return value is ignored.
- * @param {T=} opt_obj This is used as the 'this' object within f.
- * @template T,K,V
- */
-goog.object.forEach = function(obj, f, opt_obj) {
-  for (var key in obj) {
-    f.call(opt_obj, obj[key], key, obj);
-  }
-};
-
-
-/**
- * Calls a function for each element in an object/map/hash. If that call returns
- * true, adds the element to a new object.
- *
- * @param {Object.<K,V>} obj The object over which to iterate.
- * @param {function(this:T,V,?,Object.<K,V>):boolean} f The function to call
- *     for every element. This
- *     function takes 3 arguments (the element, the index and the object)
- *     and should return a boolean. If the return value is true the
- *     element is added to the result object. If it is false the
- *     element is not included.
- * @param {T=} opt_obj This is used as the 'this' object within f.
- * @return {!Object.<K,V>} a new object in which only elements that passed the
- *     test are present.
- * @template T,K,V
- */
-goog.object.filter = function(obj, f, opt_obj) {
-  var res = {};
-  for (var key in obj) {
-    if (f.call(opt_obj, obj[key], key, obj)) {
-      res[key] = obj[key];
-    }
-  }
-  return res;
-};
-
-
-/**
- * For every element in an object/map/hash calls a function and inserts the
- * result into a new object.
- *
- * @param {Object.<K,V>} obj The object over which to iterate.
- * @param {function(this:T,V,?,Object.<K,V>):R} f The function to call
- *     for every element. This function
- *     takes 3 arguments (the element, the index and the object)
- *     and should return something. The result will be inserted
- *     into a new object.
- * @param {T=} opt_obj This is used as the 'this' object within f.
- * @return {!Object.<K,R>} a new object with the results from f.
- * @template T,K,V,R
- */
-goog.object.map = function(obj, f, opt_obj) {
-  var res = {};
-  for (var key in obj) {
-    res[key] = f.call(opt_obj, obj[key], key, obj);
-  }
-  return res;
-};
-
-
-/**
- * Calls a function for each element in an object/map/hash. If any
- * call returns true, returns true (without checking the rest). If
- * all calls return false, returns false.
- *
- * @param {Object.<K,V>} obj The object to check.
- * @param {function(this:T,V,?,Object.<K,V>):boolean} f The function to
- *     call for every element. This function
- *     takes 3 arguments (the element, the index and the object) and should
- *     return a boolean.
- * @param {T=} opt_obj This is used as the 'this' object within f.
- * @return {boolean} true if any element passes the test.
- * @template T,K,V
- */
-goog.object.some = function(obj, f, opt_obj) {
-  for (var key in obj) {
-    if (f.call(opt_obj, obj[key], key, obj)) {
-      return true;
-    }
-  }
-  return false;
-};
-
-
-/**
- * Calls a function for each element in an object/map/hash. If
- * all calls return true, returns true. If any call returns false, returns
- * false at this point and does not continue to check the remaining elements.
- *
- * @param {Object.<K,V>} obj The object to check.
- * @param {?function(this:T,V,?,Object.<K,V>):boolean} f The function to
- *     call for every element. This function
- *     takes 3 arguments (the element, the index and the object) and should
- *     return a boolean.
- * @param {T=} opt_obj This is used as the 'this' object within f.
- * @return {boolean} false if any element fails the test.
- * @template T,K,V
- */
-goog.object.every = function(obj, f, opt_obj) {
-  for (var key in obj) {
-    if (!f.call(opt_obj, obj[key], key, obj)) {
-      return false;
-    }
-  }
-  return true;
-};
-
-
-/**
- * Returns the number of key-value pairs in the object map.
- *
- * @param {Object} obj The object for which to get the number of key-value
- *     pairs.
- * @return {number} The number of key-value pairs in the object map.
- */
-goog.object.getCount = function(obj) {
-  // JS1.5 has __count__ but it has been deprecated so it raises a warning...
-  // in other words do not use. Also __count__ only includes the fields on the
-  // actual object and not in the prototype chain.
-  var rv = 0;
-  for (var key in obj) {
-    rv++;
-  }
-  return rv;
-};
-
-
-/**
- * Returns one key from the object map, if any exists.
- * For map literals the returned key will be the first one in most of the
- * browsers (a know exception is Konqueror).
- *
- * @param {Object} obj The object to pick a key from.
- * @return {string|undefined} The key or undefined if the object is empty.
- */
-goog.object.getAnyKey = function(obj) {
-  for (var key in obj) {
-    return key;
-  }
-};
-
-
-/**
- * Returns one value from the object map, if any exists.
- * For map literals the returned value will be the first one in most of the
- * browsers (a know exception is Konqueror).
- *
- * @param {Object.<K,V>} obj The object to pick a value from.
- * @return {V|undefined} The value or undefined if the object is empty.
- * @template K,V
- */
-goog.object.getAnyValue = function(obj) {
-  for (var key in obj) {
-    return obj[key];
-  }
-};
-
-
-/**
- * Whether the object/hash/map contains the given object as a value.
- * An alias for goog.object.containsValue(obj, val).
- *
- * @param {Object.<K,V>} obj The object in which to look for val.
- * @param {V} val The object for which to check.
- * @return {boolean} true if val is present.
- * @template K,V
- */
-goog.object.contains = function(obj, val) {
-  return goog.object.containsValue(obj, val);
-};
-
-
-/**
- * Returns the values of the object/map/hash.
- *
- * @param {Object.<K,V>} obj The object from which to get the values.
- * @return {!Array.<V>} The values in the object/map/hash.
- * @template K,V
- */
-goog.object.getValues = function(obj) {
-  var res = [];
-  var i = 0;
-  for (var key in obj) {
-    res[i++] = obj[key];
-  }
-  return res;
-};
-
-
-/**
- * Returns the keys of the object/map/hash.
- *
- * @param {Object} obj The object from which to get the keys.
- * @return {!Array.<string>} Array of property keys.
- */
-goog.object.getKeys = function(obj) {
-  var res = [];
-  var i = 0;
-  for (var key in obj) {
-    res[i++] = key;
-  }
-  return res;
-};
-
-
-/**
- * Get a value from an object multiple levels deep.  This is useful for
- * pulling values from deeply nested objects, such as JSON responses.
- * Example usage: getValueByKeys(jsonObj, 'foo', 'entries', 3)
- *
- * @param {!Object} obj An object to get the value from.  Can be array-like.
- * @param {...(string|number|!Array.<number|string>)} var_args A number of keys
- *     (as strings, or numbers, for array-like objects).  Can also be
- *     specified as a single array of keys.
- * @return {*} The resulting value.  If, at any point, the value for a key
- *     is undefined, returns undefined.
- */
-goog.object.getValueByKeys = function(obj, var_args) {
-  var isArrayLike = goog.isArrayLike(var_args);
-  var keys = isArrayLike ? var_args : arguments;
-
-  // Start with the 2nd parameter for the variable parameters syntax.
-  for (var i = isArrayLike ? 0 : 1; i < keys.length; i++) {
-    obj = obj[keys[i]];
-    if (!goog.isDef(obj)) {
-      break;
-    }
-  }
-
-  return obj;
-};
-
-
-/**
- * Whether the object/map/hash contains the given key.
- *
- * @param {Object} obj The object in which to look for key.
- * @param {*} key The key for which to check.
- * @return {boolean} true If the map contains the key.
- */
-goog.object.containsKey = function(obj, key) {
-  return key in obj;
-};
-
-
-/**
- * Whether the object/map/hash contains the given value. This is O(n).
- *
- * @param {Object.<K,V>} obj The object in which to look for val.
- * @param {V} val The value for which to check.
- * @return {boolean} true If the map contains the value.
- * @template K,V
- */
-goog.object.containsValue = function(obj, val) {
-  for (var key in obj) {
-    if (obj[key] == val) {
-      return true;
-    }
-  }
-  return false;
-};
-
-
-/**
- * Searches an object for an element that satisfies the given condition and
- * returns its key.
- * @param {Object.<K,V>} obj The object to search in.
- * @param {function(this:T,V,string,Object.<K,V>):boolean} f The
- *      function to call for every element. Takes 3 arguments (the value,
- *     the key and the object) and should return a boolean.
- * @param {T=} opt_this An optional "this" context for the function.
- * @return {string|undefined} The key of an element for which the function
- *     returns true or undefined if no such element is found.
- * @template T,K,V
- */
-goog.object.findKey = function(obj, f, opt_this) {
-  for (var key in obj) {
-    if (f.call(opt_this, obj[key], key, obj)) {
-      return key;
-    }
-  }
-  return undefined;
-};
-
-
-/**
- * Searches an object for an element that satisfies the given condition and
- * returns its value.
- * @param {Object.<K,V>} obj The object to search in.
- * @param {function(this:T,V,string,Object.<K,V>):boolean} f The function
- *     to call for every element. Takes 3 arguments (the value, the key
- *     and the object) and should return a boolean.
- * @param {T=} opt_this An optional "this" context for the function.
- * @return {V} The value of an element for which the function returns true or
- *     undefined if no such element is found.
- * @template T,K,V
- */
-goog.object.findValue = function(obj, f, opt_this) {
-  var key = goog.object.findKey(obj, f, opt_this);
-  return key && obj[key];
-};
-
-
-/**
- * Whether the object/map/hash is empty.
- *
- * @param {Object} obj The object to test.
- * @return {boolean} true if obj is empty.
- */
-goog.object.isEmpty = function(obj) {
-  for (var key in obj) {
-    return false;
-  }
-  return true;
-};
-
-
-/**
- * Removes all key value pairs from the object/map/hash.
- *
- * @param {Object} obj The object to clear.
- */
-goog.object.clear = function(obj) {
-  for (var i in obj) {
-    delete obj[i];
-  }
-};
-
-
-/**
- * Removes a key-value pair based on the key.
- *
- * @param {Object} obj The object from which to remove the key.
- * @param {*} key The key to remove.
- * @return {boolean} Whether an element was removed.
- */
-goog.object.remove = function(obj, key) {
-  var rv;
-  if ((rv = key in obj)) {
-    delete obj[key];
-  }
-  return rv;
-};
-
-
-/**
- * Adds a key-value pair to the object. Throws an exception if the key is
- * already in use. Use set if you want to change an existing pair.
- *
- * @param {Object.<K,V>} obj The object to which to add the key-value pair.
- * @param {string} key The key to add.
- * @param {V} val The value to add.
- * @template K,V
- */
-goog.object.add = function(obj, key, val) {
-  if (key in obj) {
-    throw Error('The object already contains the key "' + key + '"');
-  }
-  goog.object.set(obj, key, val);
-};
-
-
-/**
- * Returns the value for the given key.
- *
- * @param {Object.<K,V>} obj The object from which to get the value.
- * @param {string} key The key for which to get the value.
- * @param {R=} opt_val The value to return if no item is found for the given
- *     key (default is undefined).
- * @return {V|R|undefined} The value for the given key.
- * @template K,V,R
- */
-goog.object.get = function(obj, key, opt_val) {
-  if (key in obj) {
-    return obj[key];
-  }
-  return opt_val;
-};
-
-
-/**
- * Adds a key-value pair to the object/map/hash.
- *
- * @param {Object.<K,V>} obj The object to which to add the key-value pair.
- * @param {string} key The key to add.
- * @param {V} value The value to add.
- * @template K,V
- */
-goog.object.set = function(obj, key, value) {
-  obj[key] = value;
-};
-
-
-/**
- * Adds a key-value pair to the object/map/hash if it doesn't exist yet.
- *
- * @param {Object.<K,V>} obj The object to which to add the key-value pair.
- * @param {string} key The key to add.
- * @param {V} value The value to add if the key wasn't present.
- * @return {V} The value of the entry at the end of the function.
- * @template K,V
- */
-goog.object.setIfUndefined = function(obj, key, value) {
-  return key in obj ? obj[key] : (obj[key] = value);
-};
-
-
-/**
- * Does a flat clone of the object.
- *
- * @param {Object.<K,V>} obj Object to clone.
- * @return {!Object.<K,V>} Clone of the input object.
- * @template K,V
- */
-goog.object.clone = function(obj) {
-  // We cannot use the prototype trick because a lot of methods depend on where
-  // the actual key is set.
-
-  var res = {};
-  for (var key in obj) {
-    res[key] = obj[key];
-  }
-  return res;
-  // We could also use goog.mixin but I wanted this to be independent from that.
-};
-
-
-/**
- * Clones a value. The input may be an Object, Array, or basic type. Objects and
- * arrays will be cloned recursively.
- *
- * WARNINGS:
- * <code>goog.object.unsafeClone</code> does not detect reference loops. Objects
- * that refer to themselves will cause infinite recursion.
- *
- * <code>goog.object.unsafeClone</code> is unaware of unique identifiers, and
- * copies UIDs created by <code>getUid</code> into cloned results.
- *
- * @param {*} obj The value to clone.
- * @return {*} A clone of the input value.
- */
-goog.object.unsafeClone = function(obj) {
-  var type = goog.typeOf(obj);
-  if (type == 'object' || type == 'array') {
-    if (obj.clone) {
-      return obj.clone();
-    }
-    var clone = type == 'array' ? [] : {};
-    for (var key in obj) {
-      clone[key] = goog.object.unsafeClone(obj[key]);
-    }
-    return clone;
-  }
-
-  return obj;
-};
-
-
-/**
- * Returns a new object in which all the keys and values are interchanged
- * (keys become values and values become keys). If multiple keys map to the
- * same value, the chosen transposed value is implementation-dependent.
- *
- * @param {Object} obj The object to transpose.
- * @return {!Object} The transposed object.
- */
-goog.object.transpose = function(obj) {
-  var transposed = {};
-  for (var key in obj) {
-    transposed[obj[key]] = key;
-  }
-  return transposed;
-};
-
-
-/**
- * The names of the fields that are defined on Object.prototype.
- * @type {Array.<string>}
- * @private
- */
-goog.object.PROTOTYPE_FIELDS_ = [
-  'constructor',
-  'hasOwnProperty',
-  'isPrototypeOf',
-  'propertyIsEnumerable',
-  'toLocaleString',
-  'toString',
-  'valueOf'
-];
-
-
-/**
- * Extends an object with another object.
- * This operates 'in-place'; it does not create a new Object.
- *
- * Example:
- * var o = {};
- * goog.object.extend(o, {a: 0, b: 1});
- * o; // {a: 0, b: 1}
- * goog.object.extend(o, {b: 2, c: 3});
- * o; // {a: 0, b: 2, c: 3}
- *
- * @param {Object} target The object to modify. Existing properties will be
- *     overwritten if they are also present in one of the objects in
- *     {@code var_args}.
- * @param {...Object} var_args The objects from which values will be copied.
- */
-goog.object.extend = function(target, var_args) {
-  var key, source;
-  for (var i = 1; i < arguments.length; i++) {
-    source = arguments[i];
-    for (key in source) {
-      target[key] = source[key];
-    }
-
-    // For IE the for-in-loop does not contain any properties that are not
-    // enumerable on the prototype object (for example isPrototypeOf from
-    // Object.prototype) and it will also not include 'replace' on objects that
-    // extend String and change 'replace' (not that it is common for anyone to
-    // extend anything except Object).
-
-    for (var j = 0; j < goog.object.PROTOTYPE_FIELDS_.length; j++) {
-      key = goog.object.PROTOTYPE_FIELDS_[j];
-      if (Object.prototype.hasOwnProperty.call(source, key)) {
-        target[key] = source[key];
-      }
-    }
-  }
-};
-
-
-/**
- * Creates a new object built from the key-value pairs provided as arguments.
- * @param {...*} var_args If only one argument is provided and it is an array
- *     then this is used as the arguments,  otherwise even arguments are used as
- *     the property names and odd arguments are used as the property values.
- * @return {!Object} The new object.
- * @throws {Error} If there are uneven number of arguments or there is only one
- *     non array argument.
- */
-goog.object.create = function(var_args) {
-  var argLength = arguments.length;
-  if (argLength == 1 && goog.isArray(arguments[0])) {
-    return goog.object.create.apply(null, arguments[0]);
-  }
-
-  if (argLength % 2) {
-    throw Error('Uneven number of arguments');
-  }
-
-  var rv = {};
-  for (var i = 0; i < argLength; i += 2) {
-    rv[arguments[i]] = arguments[i + 1];
-  }
-  return rv;
-};
-
-
-/**
- * Creates a new object where the property names come from the arguments but
- * the value is always set to true
- * @param {...*} var_args If only one argument is provided and it is an array
- *     then this is used as the arguments,  otherwise the arguments are used
- *     as the property names.
- * @return {!Object} The new object.
- */
-goog.object.createSet = function(var_args) {
-  var argLength = arguments.length;
-  if (argLength == 1 && goog.isArray(arguments[0])) {
-    return goog.object.createSet.apply(null, arguments[0]);
-  }
-
-  var rv = {};
-  for (var i = 0; i < argLength; i++) {
-    rv[arguments[i]] = true;
-  }
-  return rv;
-};
-
-
-/**
- * Creates an immutable view of the underlying object, if the browser
- * supports immutable objects.
- *
- * In default mode, writes to this view will fail silently. In strict mode,
- * they will throw an error.
- *
- * @param {!Object.<K,V>} obj An object.
- * @return {!Object.<K,V>} An immutable view of that object, or the
- *     original object if this browser does not support immutables.
- * @template K,V
- */
-goog.object.createImmutableView = function(obj) {
-  var result = obj;
-  if (Object.isFrozen && !Object.isFrozen(obj)) {
-    result = Object.create(obj);
-    Object.freeze(result);
-  }
-  return result;
-};
-
-
-/**
- * @param {!Object} obj An object.
- * @return {boolean} Whether this is an immutable view of the object.
- */
-goog.object.isImmutableView = function(obj) {
-  return !!Object.isFrozen && Object.isFrozen(obj);
-};
-
 // Copyright 2013 The Closure Library Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -10553,8 +10990,7 @@ goog.events.ListenableType;
 /**
  * Property name on a native event target for the listener map
  * associated with the event target.
- * @const
- * @private
+ * @private @const {string}
  */
 goog.events.LISTENER_MAP_PROP_ = 'closure_lm_' + ((Math.random() * 1e6) | 0);
 
@@ -11422,8 +11858,7 @@ goog.events.getListenerMap_ = function(src) {
 /**
  * Expando property for listener function wrapper for Object with
  * handleEvent.
- * @const
- * @private
+ * @private @const {string}
  */
 goog.events.LISTENER_WRAPPER_PROP_ = '__closure_events_fn_' +
     ((Math.random() * 1e9) >>> 0);
@@ -11761,17 +12196,17 @@ goog.define('goog.functions.CACHE_RETURN_VALUE', true);
  * @template T
  */
 goog.functions.cacheReturnValue = function(fn) {
-  var called = false;
+  var fn2 = fn; // prevents a type error later when we set it to undefined
   var value;
 
   return function() {
     if (!goog.functions.CACHE_RETURN_VALUE) {
-      return fn();
+      return fn2();
     }
 
-    if (!called) {
-      value = fn();
-      called = true;
+    if (fn2) {
+      value = fn2();
+      fn2 = undefined; // free memory
     }
 
     return value;
@@ -12522,7 +12957,7 @@ ol.Object.capitalize = function(str) {
 ol.Object.getChangeEventType = function(key) {
   return ol.Object.changeEventTypeCache_.hasOwnProperty(key) ?
       ol.Object.changeEventTypeCache_[key] :
-      (ol.Object.changeEventTypeCache_[key] = 'change:' + key.toLowerCase());
+      (ol.Object.changeEventTypeCache_[key] = 'change:' + key);
 };
 
 
@@ -16496,8 +16931,7 @@ ol.extent.closestSquaredDistanceXY = function(extent, x, y) {
  * @api stable
  */
 ol.extent.containsCoordinate = function(extent, coordinate) {
-  return extent[0] <= coordinate[0] && coordinate[0] <= extent[2] &&
-      extent[1] <= coordinate[1] && coordinate[1] <= extent[3];
+  return ol.extent.containsXY(extent, coordinate[0], coordinate[1]);
 };
 
 
@@ -16512,6 +16946,20 @@ ol.extent.containsCoordinate = function(extent, coordinate) {
 ol.extent.containsExtent = function(extent1, extent2) {
   return extent1[0] <= extent2[0] && extent2[2] <= extent1[2] &&
       extent1[1] <= extent2[1] && extent2[3] <= extent1[3];
+};
+
+
+/**
+ * Checks if the passed coordinate is contained or on the edge of the extent.
+ *
+ * @param {ol.Extent} extent Extent.
+ * @param {number} x X coordinate.
+ * @param {number} y Y coordinate.
+ * @return {boolean} Contains.
+ * @api stable
+ */
+ol.extent.containsXY = function(extent, x, y) {
+  return extent[0] <= x && x <= extent[2] && extent[1] <= y && y <= extent[3];
 };
 
 
@@ -16764,6 +17212,38 @@ ol.extent.extendXY = function(extent, x, y) {
 
 
 /**
+ * This function calls `callback` for each corner of the extent. If the
+ * callback returns a truthy value the function returns that value
+ * immediately. Otherwise the function returns `false`.
+ * @param {ol.Extent} extent Extent.
+ * @param {function(this:T, ol.Coordinate): S} callback Callback.
+ * @param {T=} opt_this Value to use as `this` when executing `callback`.
+ * @return {S|boolean} Value.
+ * @template S, T
+ */
+ol.extent.forEachCorner = function(extent, callback, opt_this) {
+  var val;
+  val = callback.call(opt_this, ol.extent.getBottomLeft(extent));
+  if (val) {
+    return val;
+  }
+  val = callback.call(opt_this, ol.extent.getBottomRight(extent));
+  if (val) {
+    return val;
+  }
+  val = callback.call(opt_this, ol.extent.getTopRight(extent));
+  if (val) {
+    return val;
+  }
+  val = callback.call(opt_this, ol.extent.getBottomRight(extent));
+  if (val) {
+    return val;
+  }
+  return false;
+};
+
+
+/**
  * @param {ol.Extent} extent Extent.
  * @return {number} Area.
  */
@@ -16900,6 +17380,7 @@ ol.extent.getIntersectionArea = function(extent1, extent2) {
  * @param {ol.Extent} extent2 Extent 2.
  * @param {ol.Extent=} opt_extent Optional extent to populate with intersection.
  * @return {ol.Extent} Intersecting extent.
+ * @api stable
  */
 ol.extent.getIntersection = function(extent1, extent2, opt_extent) {
   var intersection = goog.isDef(opt_extent) ?
@@ -17066,7 +17547,7 @@ ol.extent.scaleFromCenter = function(extent, value) {
  * @param {ol.Coordinate} end Segment end coordinate.
  * @return {boolean} The segment intersects the extent.
  */
-ol.extent.segmentIntersects = function(extent, start, end) {
+ol.extent.intersectsSegment = function(extent, start, end) {
   var intersects = false;
   var startRel = ol.extent.coordinateRelationship(extent, start);
   var endRel = ol.extent.coordinateRelationship(extent, end);
@@ -17396,12 +17877,13 @@ ol.Sphere.prototype.midpoint = function(c1, c2) {
 
 
 /**
- * Returns the coordinate at the given distance and bearing from c.
+ * Returns the coordinate at the given distance and bearing from `c1`.
  *
- * @param {ol.Coordinate} c1 Coordinate.
- * @param {number} distance Distance.
- * @param {number} bearing Bearing.
- * @return {ol.Coordinate} Coordinate.
+ * @param {ol.Coordinate} c1 The origin point (`[lon, lat]` in degrees).
+ * @param {number} distance The great-circle distance between the origin
+ *     point and the target point.
+ * @param {number} bearing The bearing (in radians).
+ * @return {ol.Coordinate} The target point.
  */
 ol.Sphere.prototype.offset = function(c1, distance, bearing) {
   var lat1 = goog.math.toRadians(c1[1]);
@@ -18599,7 +19081,7 @@ ol.View.prototype.fitExtent = function(extent, size) {
  * Take care on the map angle.
  * @param {ol.geom.SimpleGeometry} geometry Geometry.
  * @param {ol.Size} size Box pixel size.
- * @param {olx.View.fitGeometryOptions=} opt_options Options.
+ * @param {olx.view.FitGeometryOptions=} opt_options Options.
  * @api
  */
 ol.View.prototype.fitGeometry = function(geometry, size, opt_options) {
@@ -20362,7 +20844,6 @@ goog.require('goog.asserts');
 goog.require('goog.dom.BrowserFeature');
 goog.require('goog.dom.NodeType');
 goog.require('goog.dom.TagName');
-goog.require('goog.functions');
 goog.require('goog.math.Coordinate');
 goog.require('goog.math.Size');
 goog.require('goog.object');
@@ -20839,11 +21320,9 @@ goog.dom.getDocumentHeight_ = function(win) {
     // But there are patterns.  It just takes a lot of time and persistence
     // to figure out.
 
-    // If the window has no contents, it has no height. (In IE10,
-    // document.body & document.documentElement are null in an empty iFrame.)
     var body = doc.body;
     var docEl = doc.documentElement;
-    if (!body && !docEl) {
+    if (!(docEl && body)) {
       return 0;
     }
 
@@ -22425,24 +22904,20 @@ goog.dom.getActiveElement = function(doc) {
 
 
 /**
- * @private {number} Cached version of the devicePixelRatio.
- */
-goog.dom.devicePixelRatio_;
-
-
-/**
- * Gives the devicePixelRatio, or attempts to determine if not present.
+ * Gives the current devicePixelRatio.
  *
- * By default, this is the same value given by window.devicePixelRatio. If
- * devicePixelRatio is not defined, the ratio is calculated with
+ * By default, this is the value of window.devicePixelRatio (which should be
+ * preferred if present).
+ *
+ * If window.devicePixelRatio is not present, the ratio is calculated with
  * window.matchMedia, if present. Otherwise, gives 1.0.
  *
- * This function is cached so that the pixel ratio is calculated only once
- * and only calculated when first requested.
+ * Some browsers (including Chrome) consider the browser zoom level in the pixel
+ * ratio, so the value may change across multiple calls.
  *
  * @return {number} The number of actual pixels per virtual pixel.
  */
-goog.dom.getPixelRatio = goog.functions.cacheReturnValue(function() {
+goog.dom.getPixelRatio = function() {
   var win = goog.dom.getWindow();
 
   // devicePixelRatio does not work on Mobile firefox.
@@ -22459,7 +22934,7 @@ goog.dom.getPixelRatio = goog.functions.cacheReturnValue(function() {
            goog.dom.matchesPixelRatio_(3) || 1;
   }
   return 1;
-});
+};
 
 
 /**
@@ -23241,3062 +23716,6 @@ goog.dom.DomHelper.prototype.getAncestorByClass =
  */
 goog.dom.DomHelper.prototype.getAncestor = goog.dom.getAncestor;
 
-// Copyright 2012 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * @fileoverview Vendor prefix getters.
- */
-
-goog.provide('goog.dom.vendor');
-
-goog.require('goog.string');
-goog.require('goog.userAgent');
-
-
-/**
- * Returns the JS vendor prefix used in CSS properties. Different vendors
- * use different methods of changing the case of the property names.
- *
- * @return {?string} The JS vendor prefix or null if there is none.
- */
-goog.dom.vendor.getVendorJsPrefix = function() {
-  if (goog.userAgent.WEBKIT) {
-    return 'Webkit';
-  } else if (goog.userAgent.GECKO) {
-    return 'Moz';
-  } else if (goog.userAgent.IE) {
-    return 'ms';
-  } else if (goog.userAgent.OPERA) {
-    return 'O';
-  }
-
-  return null;
-};
-
-
-/**
- * Returns the vendor prefix used in CSS properties.
- *
- * @return {?string} The vendor prefix or null if there is none.
- */
-goog.dom.vendor.getVendorPrefix = function() {
-  if (goog.userAgent.WEBKIT) {
-    return '-webkit';
-  } else if (goog.userAgent.GECKO) {
-    return '-moz';
-  } else if (goog.userAgent.IE) {
-    return '-ms';
-  } else if (goog.userAgent.OPERA) {
-    return '-o';
-  }
-
-  return null;
-};
-
-
-/**
- * @param {string} propertyName A property name.
- * @param {!Object=} opt_object If provided, we verify if the property exists in
- *     the object.
- * @return {?string} A vendor prefixed property name, or null if it does not
- *     exist.
- */
-goog.dom.vendor.getPrefixedPropertyName = function(propertyName, opt_object) {
-  // We first check for a non-prefixed property, if available.
-  if (opt_object && propertyName in opt_object) {
-    return propertyName;
-  }
-  var prefix = goog.dom.vendor.getVendorJsPrefix();
-  if (prefix) {
-    prefix = prefix.toLowerCase();
-    var prefixedPropertyName = prefix + goog.string.toTitleCase(propertyName);
-    return (!goog.isDef(opt_object) || prefixedPropertyName in opt_object) ?
-        prefixedPropertyName : null;
-  }
-  return null;
-};
-
-
-/**
- * @param {string} eventType An event type.
- * @return {string} A lower-cased vendor prefixed event type.
- */
-goog.dom.vendor.getPrefixedEventType = function(eventType) {
-  var prefix = goog.dom.vendor.getVendorJsPrefix() || '';
-  return (prefix + eventType).toLowerCase();
-};
-
-// Copyright 2006 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * @fileoverview A utility class for representing a numeric box.
- */
-
-
-goog.provide('goog.math.Box');
-
-goog.require('goog.math.Coordinate');
-
-
-
-/**
- * Class for representing a box. A box is specified as a top, right, bottom,
- * and left. A box is useful for representing margins and padding.
- *
- * This class assumes 'screen coordinates': larger Y coordinates are further
- * from the top of the screen.
- *
- * @param {number} top Top.
- * @param {number} right Right.
- * @param {number} bottom Bottom.
- * @param {number} left Left.
- * @constructor
- */
-goog.math.Box = function(top, right, bottom, left) {
-  /**
-   * Top
-   * @type {number}
-   */
-  this.top = top;
-
-  /**
-   * Right
-   * @type {number}
-   */
-  this.right = right;
-
-  /**
-   * Bottom
-   * @type {number}
-   */
-  this.bottom = bottom;
-
-  /**
-   * Left
-   * @type {number}
-   */
-  this.left = left;
-};
-
-
-/**
- * Creates a Box by bounding a collection of goog.math.Coordinate objects
- * @param {...goog.math.Coordinate} var_args Coordinates to be included inside
- *     the box.
- * @return {!goog.math.Box} A Box containing all the specified Coordinates.
- */
-goog.math.Box.boundingBox = function(var_args) {
-  var box = new goog.math.Box(arguments[0].y, arguments[0].x,
-                              arguments[0].y, arguments[0].x);
-  for (var i = 1; i < arguments.length; i++) {
-    var coord = arguments[i];
-    box.top = Math.min(box.top, coord.y);
-    box.right = Math.max(box.right, coord.x);
-    box.bottom = Math.max(box.bottom, coord.y);
-    box.left = Math.min(box.left, coord.x);
-  }
-  return box;
-};
-
-
-/**
- * @return {number} width The width of this Box.
- */
-goog.math.Box.prototype.getWidth = function() {
-  return this.right - this.left;
-};
-
-
-/**
- * @return {number} height The height of this Box.
- */
-goog.math.Box.prototype.getHeight = function() {
-  return this.bottom - this.top;
-};
-
-
-/**
- * Creates a copy of the box with the same dimensions.
- * @return {!goog.math.Box} A clone of this Box.
- */
-goog.math.Box.prototype.clone = function() {
-  return new goog.math.Box(this.top, this.right, this.bottom, this.left);
-};
-
-
-if (goog.DEBUG) {
-  /**
-   * Returns a nice string representing the box.
-   * @return {string} In the form (50t, 73r, 24b, 13l).
-   * @override
-   */
-  goog.math.Box.prototype.toString = function() {
-    return '(' + this.top + 't, ' + this.right + 'r, ' + this.bottom + 'b, ' +
-           this.left + 'l)';
-  };
-}
-
-
-/**
- * Returns whether the box contains a coordinate or another box.
- *
- * @param {goog.math.Coordinate|goog.math.Box} other A Coordinate or a Box.
- * @return {boolean} Whether the box contains the coordinate or other box.
- */
-goog.math.Box.prototype.contains = function(other) {
-  return goog.math.Box.contains(this, other);
-};
-
-
-/**
- * Expands box with the given margins.
- *
- * @param {number|goog.math.Box} top Top margin or box with all margins.
- * @param {number=} opt_right Right margin.
- * @param {number=} opt_bottom Bottom margin.
- * @param {number=} opt_left Left margin.
- * @return {!goog.math.Box} A reference to this Box.
- */
-goog.math.Box.prototype.expand = function(top, opt_right, opt_bottom,
-    opt_left) {
-  if (goog.isObject(top)) {
-    this.top -= top.top;
-    this.right += top.right;
-    this.bottom += top.bottom;
-    this.left -= top.left;
-  } else {
-    this.top -= top;
-    this.right += opt_right;
-    this.bottom += opt_bottom;
-    this.left -= opt_left;
-  }
-
-  return this;
-};
-
-
-/**
- * Expand this box to include another box.
- * NOTE(user): This is used in code that needs to be very fast, please don't
- * add functionality to this function at the expense of speed (variable
- * arguments, accepting multiple argument types, etc).
- * @param {goog.math.Box} box The box to include in this one.
- */
-goog.math.Box.prototype.expandToInclude = function(box) {
-  this.left = Math.min(this.left, box.left);
-  this.top = Math.min(this.top, box.top);
-  this.right = Math.max(this.right, box.right);
-  this.bottom = Math.max(this.bottom, box.bottom);
-};
-
-
-/**
- * Compares boxes for equality.
- * @param {goog.math.Box} a A Box.
- * @param {goog.math.Box} b A Box.
- * @return {boolean} True iff the boxes are equal, or if both are null.
- */
-goog.math.Box.equals = function(a, b) {
-  if (a == b) {
-    return true;
-  }
-  if (!a || !b) {
-    return false;
-  }
-  return a.top == b.top && a.right == b.right &&
-         a.bottom == b.bottom && a.left == b.left;
-};
-
-
-/**
- * Returns whether a box contains a coordinate or another box.
- *
- * @param {goog.math.Box} box A Box.
- * @param {goog.math.Coordinate|goog.math.Box} other A Coordinate or a Box.
- * @return {boolean} Whether the box contains the coordinate or other box.
- */
-goog.math.Box.contains = function(box, other) {
-  if (!box || !other) {
-    return false;
-  }
-
-  if (other instanceof goog.math.Box) {
-    return other.left >= box.left && other.right <= box.right &&
-        other.top >= box.top && other.bottom <= box.bottom;
-  }
-
-  // other is a Coordinate.
-  return other.x >= box.left && other.x <= box.right &&
-         other.y >= box.top && other.y <= box.bottom;
-};
-
-
-/**
- * Returns the relative x position of a coordinate compared to a box.  Returns
- * zero if the coordinate is inside the box.
- *
- * @param {goog.math.Box} box A Box.
- * @param {goog.math.Coordinate} coord A Coordinate.
- * @return {number} The x position of {@code coord} relative to the nearest
- *     side of {@code box}, or zero if {@code coord} is inside {@code box}.
- */
-goog.math.Box.relativePositionX = function(box, coord) {
-  if (coord.x < box.left) {
-    return coord.x - box.left;
-  } else if (coord.x > box.right) {
-    return coord.x - box.right;
-  }
-  return 0;
-};
-
-
-/**
- * Returns the relative y position of a coordinate compared to a box.  Returns
- * zero if the coordinate is inside the box.
- *
- * @param {goog.math.Box} box A Box.
- * @param {goog.math.Coordinate} coord A Coordinate.
- * @return {number} The y position of {@code coord} relative to the nearest
- *     side of {@code box}, or zero if {@code coord} is inside {@code box}.
- */
-goog.math.Box.relativePositionY = function(box, coord) {
-  if (coord.y < box.top) {
-    return coord.y - box.top;
-  } else if (coord.y > box.bottom) {
-    return coord.y - box.bottom;
-  }
-  return 0;
-};
-
-
-/**
- * Returns the distance between a coordinate and the nearest corner/side of a
- * box. Returns zero if the coordinate is inside the box.
- *
- * @param {goog.math.Box} box A Box.
- * @param {goog.math.Coordinate} coord A Coordinate.
- * @return {number} The distance between {@code coord} and the nearest
- *     corner/side of {@code box}, or zero if {@code coord} is inside
- *     {@code box}.
- */
-goog.math.Box.distance = function(box, coord) {
-  var x = goog.math.Box.relativePositionX(box, coord);
-  var y = goog.math.Box.relativePositionY(box, coord);
-  return Math.sqrt(x * x + y * y);
-};
-
-
-/**
- * Returns whether two boxes intersect.
- *
- * @param {goog.math.Box} a A Box.
- * @param {goog.math.Box} b A second Box.
- * @return {boolean} Whether the boxes intersect.
- */
-goog.math.Box.intersects = function(a, b) {
-  return (a.left <= b.right && b.left <= a.right &&
-          a.top <= b.bottom && b.top <= a.bottom);
-};
-
-
-/**
- * Returns whether two boxes would intersect with additional padding.
- *
- * @param {goog.math.Box} a A Box.
- * @param {goog.math.Box} b A second Box.
- * @param {number} padding The additional padding.
- * @return {boolean} Whether the boxes intersect.
- */
-goog.math.Box.intersectsWithPadding = function(a, b, padding) {
-  return (a.left <= b.right + padding && b.left <= a.right + padding &&
-          a.top <= b.bottom + padding && b.top <= a.bottom + padding);
-};
-
-
-/**
- * Rounds the fields to the next larger integer values.
- *
- * @return {!goog.math.Box} This box with ceil'd fields.
- */
-goog.math.Box.prototype.ceil = function() {
-  this.top = Math.ceil(this.top);
-  this.right = Math.ceil(this.right);
-  this.bottom = Math.ceil(this.bottom);
-  this.left = Math.ceil(this.left);
-  return this;
-};
-
-
-/**
- * Rounds the fields to the next smaller integer values.
- *
- * @return {!goog.math.Box} This box with floored fields.
- */
-goog.math.Box.prototype.floor = function() {
-  this.top = Math.floor(this.top);
-  this.right = Math.floor(this.right);
-  this.bottom = Math.floor(this.bottom);
-  this.left = Math.floor(this.left);
-  return this;
-};
-
-
-/**
- * Rounds the fields to nearest integer values.
- *
- * @return {!goog.math.Box} This box with rounded fields.
- */
-goog.math.Box.prototype.round = function() {
-  this.top = Math.round(this.top);
-  this.right = Math.round(this.right);
-  this.bottom = Math.round(this.bottom);
-  this.left = Math.round(this.left);
-  return this;
-};
-
-
-/**
- * Translates this box by the given offsets. If a {@code goog.math.Coordinate}
- * is given, then the left and right values are translated by the coordinate's
- * x value and the top and bottom values are translated by the coordinate's y
- * value.  Otherwise, {@code tx} and {@code opt_ty} are used to translate the x
- * and y dimension values.
- *
- * @param {number|goog.math.Coordinate} tx The value to translate the x
- *     dimension values by or the the coordinate to translate this box by.
- * @param {number=} opt_ty The value to translate y dimension values by.
- * @return {!goog.math.Box} This box after translating.
- */
-goog.math.Box.prototype.translate = function(tx, opt_ty) {
-  if (tx instanceof goog.math.Coordinate) {
-    this.left += tx.x;
-    this.right += tx.x;
-    this.top += tx.y;
-    this.bottom += tx.y;
-  } else {
-    this.left += tx;
-    this.right += tx;
-    if (goog.isNumber(opt_ty)) {
-      this.top += opt_ty;
-      this.bottom += opt_ty;
-    }
-  }
-  return this;
-};
-
-
-/**
- * Scales this coordinate by the given scale factors. The x and y dimension
- * values are scaled by {@code sx} and {@code opt_sy} respectively.
- * If {@code opt_sy} is not given, then {@code sx} is used for both x and y.
- *
- * @param {number} sx The scale factor to use for the x dimension.
- * @param {number=} opt_sy The scale factor to use for the y dimension.
- * @return {!goog.math.Box} This box after scaling.
- */
-goog.math.Box.prototype.scale = function(sx, opt_sy) {
-  var sy = goog.isNumber(opt_sy) ? opt_sy : sx;
-  this.left *= sx;
-  this.right *= sx;
-  this.top *= sy;
-  this.bottom *= sy;
-  return this;
-};
-
-// Copyright 2006 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * @fileoverview A utility class for representing rectangles.
- */
-
-goog.provide('goog.math.Rect');
-
-goog.require('goog.math.Box');
-goog.require('goog.math.Coordinate');
-goog.require('goog.math.Size');
-
-
-
-/**
- * Class for representing rectangular regions.
- * @param {number} x Left.
- * @param {number} y Top.
- * @param {number} w Width.
- * @param {number} h Height.
- * @constructor
- */
-goog.math.Rect = function(x, y, w, h) {
-  /** @type {number} */
-  this.left = x;
-
-  /** @type {number} */
-  this.top = y;
-
-  /** @type {number} */
-  this.width = w;
-
-  /** @type {number} */
-  this.height = h;
-};
-
-
-/**
- * @return {!goog.math.Rect} A new copy of this Rectangle.
- */
-goog.math.Rect.prototype.clone = function() {
-  return new goog.math.Rect(this.left, this.top, this.width, this.height);
-};
-
-
-/**
- * Returns a new Box object with the same position and dimensions as this
- * rectangle.
- * @return {!goog.math.Box} A new Box representation of this Rectangle.
- */
-goog.math.Rect.prototype.toBox = function() {
-  var right = this.left + this.width;
-  var bottom = this.top + this.height;
-  return new goog.math.Box(this.top,
-                           right,
-                           bottom,
-                           this.left);
-};
-
-
-/**
- * Creates a new Rect object with the same position and dimensions as a given
- * Box.  Note that this is only the inverse of toBox if left/top are defined.
- * @param {goog.math.Box} box A box.
- * @return {!goog.math.Rect} A new Rect initialized with the box's position
- *     and size.
- */
-goog.math.Rect.createFromBox = function(box) {
-  return new goog.math.Rect(box.left, box.top,
-      box.right - box.left, box.bottom - box.top);
-};
-
-
-if (goog.DEBUG) {
-  /**
-   * Returns a nice string representing size and dimensions of rectangle.
-   * @return {string} In the form (50, 73 - 75w x 25h).
-   * @override
-   */
-  goog.math.Rect.prototype.toString = function() {
-    return '(' + this.left + ', ' + this.top + ' - ' + this.width + 'w x ' +
-           this.height + 'h)';
-  };
-}
-
-
-/**
- * Compares rectangles for equality.
- * @param {goog.math.Rect} a A Rectangle.
- * @param {goog.math.Rect} b A Rectangle.
- * @return {boolean} True iff the rectangles have the same left, top, width,
- *     and height, or if both are null.
- */
-goog.math.Rect.equals = function(a, b) {
-  if (a == b) {
-    return true;
-  }
-  if (!a || !b) {
-    return false;
-  }
-  return a.left == b.left && a.width == b.width &&
-         a.top == b.top && a.height == b.height;
-};
-
-
-/**
- * Computes the intersection of this rectangle and the rectangle parameter.  If
- * there is no intersection, returns false and leaves this rectangle as is.
- * @param {goog.math.Rect} rect A Rectangle.
- * @return {boolean} True iff this rectangle intersects with the parameter.
- */
-goog.math.Rect.prototype.intersection = function(rect) {
-  var x0 = Math.max(this.left, rect.left);
-  var x1 = Math.min(this.left + this.width, rect.left + rect.width);
-
-  if (x0 <= x1) {
-    var y0 = Math.max(this.top, rect.top);
-    var y1 = Math.min(this.top + this.height, rect.top + rect.height);
-
-    if (y0 <= y1) {
-      this.left = x0;
-      this.top = y0;
-      this.width = x1 - x0;
-      this.height = y1 - y0;
-
-      return true;
-    }
-  }
-  return false;
-};
-
-
-/**
- * Returns the intersection of two rectangles. Two rectangles intersect if they
- * touch at all, for example, two zero width and height rectangles would
- * intersect if they had the same top and left.
- * @param {goog.math.Rect} a A Rectangle.
- * @param {goog.math.Rect} b A Rectangle.
- * @return {goog.math.Rect} A new intersection rect (even if width and height
- *     are 0), or null if there is no intersection.
- */
-goog.math.Rect.intersection = function(a, b) {
-  // There is no nice way to do intersection via a clone, because any such
-  // clone might be unnecessary if this function returns null.  So, we duplicate
-  // code from above.
-
-  var x0 = Math.max(a.left, b.left);
-  var x1 = Math.min(a.left + a.width, b.left + b.width);
-
-  if (x0 <= x1) {
-    var y0 = Math.max(a.top, b.top);
-    var y1 = Math.min(a.top + a.height, b.top + b.height);
-
-    if (y0 <= y1) {
-      return new goog.math.Rect(x0, y0, x1 - x0, y1 - y0);
-    }
-  }
-  return null;
-};
-
-
-/**
- * Returns whether two rectangles intersect. Two rectangles intersect if they
- * touch at all, for example, two zero width and height rectangles would
- * intersect if they had the same top and left.
- * @param {goog.math.Rect} a A Rectangle.
- * @param {goog.math.Rect} b A Rectangle.
- * @return {boolean} Whether a and b intersect.
- */
-goog.math.Rect.intersects = function(a, b) {
-  return (a.left <= b.left + b.width && b.left <= a.left + a.width &&
-      a.top <= b.top + b.height && b.top <= a.top + a.height);
-};
-
-
-/**
- * Returns whether a rectangle intersects this rectangle.
- * @param {goog.math.Rect} rect A rectangle.
- * @return {boolean} Whether rect intersects this rectangle.
- */
-goog.math.Rect.prototype.intersects = function(rect) {
-  return goog.math.Rect.intersects(this, rect);
-};
-
-
-/**
- * Computes the difference regions between two rectangles. The return value is
- * an array of 0 to 4 rectangles defining the remaining regions of the first
- * rectangle after the second has been subtracted.
- * @param {goog.math.Rect} a A Rectangle.
- * @param {goog.math.Rect} b A Rectangle.
- * @return {!Array.<!goog.math.Rect>} An array with 0 to 4 rectangles which
- *     together define the difference area of rectangle a minus rectangle b.
- */
-goog.math.Rect.difference = function(a, b) {
-  var intersection = goog.math.Rect.intersection(a, b);
-  if (!intersection || !intersection.height || !intersection.width) {
-    return [a.clone()];
-  }
-
-  var result = [];
-
-  var top = a.top;
-  var height = a.height;
-
-  var ar = a.left + a.width;
-  var ab = a.top + a.height;
-
-  var br = b.left + b.width;
-  var bb = b.top + b.height;
-
-  // Subtract off any area on top where A extends past B
-  if (b.top > a.top) {
-    result.push(new goog.math.Rect(a.left, a.top, a.width, b.top - a.top));
-    top = b.top;
-    // If we're moving the top down, we also need to subtract the height diff.
-    height -= b.top - a.top;
-  }
-  // Subtract off any area on bottom where A extends past B
-  if (bb < ab) {
-    result.push(new goog.math.Rect(a.left, bb, a.width, ab - bb));
-    height = bb - top;
-  }
-  // Subtract any area on left where A extends past B
-  if (b.left > a.left) {
-    result.push(new goog.math.Rect(a.left, top, b.left - a.left, height));
-  }
-  // Subtract any area on right where A extends past B
-  if (br < ar) {
-    result.push(new goog.math.Rect(br, top, ar - br, height));
-  }
-
-  return result;
-};
-
-
-/**
- * Computes the difference regions between this rectangle and {@code rect}. The
- * return value is an array of 0 to 4 rectangles defining the remaining regions
- * of this rectangle after the other has been subtracted.
- * @param {goog.math.Rect} rect A Rectangle.
- * @return {!Array.<!goog.math.Rect>} An array with 0 to 4 rectangles which
- *     together define the difference area of rectangle a minus rectangle b.
- */
-goog.math.Rect.prototype.difference = function(rect) {
-  return goog.math.Rect.difference(this, rect);
-};
-
-
-/**
- * Expand this rectangle to also include the area of the given rectangle.
- * @param {goog.math.Rect} rect The other rectangle.
- */
-goog.math.Rect.prototype.boundingRect = function(rect) {
-  // We compute right and bottom before we change left and top below.
-  var right = Math.max(this.left + this.width, rect.left + rect.width);
-  var bottom = Math.max(this.top + this.height, rect.top + rect.height);
-
-  this.left = Math.min(this.left, rect.left);
-  this.top = Math.min(this.top, rect.top);
-
-  this.width = right - this.left;
-  this.height = bottom - this.top;
-};
-
-
-/**
- * Returns a new rectangle which completely contains both input rectangles.
- * @param {goog.math.Rect} a A rectangle.
- * @param {goog.math.Rect} b A rectangle.
- * @return {goog.math.Rect} A new bounding rect, or null if either rect is
- *     null.
- */
-goog.math.Rect.boundingRect = function(a, b) {
-  if (!a || !b) {
-    return null;
-  }
-
-  var clone = a.clone();
-  clone.boundingRect(b);
-
-  return clone;
-};
-
-
-/**
- * Tests whether this rectangle entirely contains another rectangle or
- * coordinate.
- *
- * @param {goog.math.Rect|goog.math.Coordinate} another The rectangle or
- *     coordinate to test for containment.
- * @return {boolean} Whether this rectangle contains given rectangle or
- *     coordinate.
- */
-goog.math.Rect.prototype.contains = function(another) {
-  if (another instanceof goog.math.Rect) {
-    return this.left <= another.left &&
-           this.left + this.width >= another.left + another.width &&
-           this.top <= another.top &&
-           this.top + this.height >= another.top + another.height;
-  } else { // (another instanceof goog.math.Coordinate)
-    return another.x >= this.left &&
-           another.x <= this.left + this.width &&
-           another.y >= this.top &&
-           another.y <= this.top + this.height;
-  }
-};
-
-
-/**
- * @param {!goog.math.Coordinate} point A coordinate.
- * @return {number} The squared distance between the point and the closest
- *     point inside the rectangle. Returns 0 if the point is inside the
- *     rectangle.
- */
-goog.math.Rect.prototype.squaredDistance = function(point) {
-  var dx = point.x < this.left ?
-      this.left - point.x : Math.max(point.x - (this.left + this.width), 0);
-  var dy = point.y < this.top ?
-      this.top - point.y : Math.max(point.y - (this.top + this.height), 0);
-  return dx * dx + dy * dy;
-};
-
-
-/**
- * @param {!goog.math.Coordinate} point A coordinate.
- * @return {number} The distance between the point and the closest point
- *     inside the rectangle. Returns 0 if the point is inside the rectangle.
- */
-goog.math.Rect.prototype.distance = function(point) {
-  return Math.sqrt(this.squaredDistance(point));
-};
-
-
-/**
- * @return {!goog.math.Size} The size of this rectangle.
- */
-goog.math.Rect.prototype.getSize = function() {
-  return new goog.math.Size(this.width, this.height);
-};
-
-
-/**
- * @return {!goog.math.Coordinate} A new coordinate for the top-left corner of
- *     the rectangle.
- */
-goog.math.Rect.prototype.getTopLeft = function() {
-  return new goog.math.Coordinate(this.left, this.top);
-};
-
-
-/**
- * @return {!goog.math.Coordinate} A new coordinate for the center of the
- *     rectangle.
- */
-goog.math.Rect.prototype.getCenter = function() {
-  return new goog.math.Coordinate(
-      this.left + this.width / 2, this.top + this.height / 2);
-};
-
-
-/**
- * @return {!goog.math.Coordinate} A new coordinate for the bottom-right corner
- *     of the rectangle.
- */
-goog.math.Rect.prototype.getBottomRight = function() {
-  return new goog.math.Coordinate(
-      this.left + this.width, this.top + this.height);
-};
-
-
-/**
- * Rounds the fields to the next larger integer values.
- * @return {!goog.math.Rect} This rectangle with ceil'd fields.
- */
-goog.math.Rect.prototype.ceil = function() {
-  this.left = Math.ceil(this.left);
-  this.top = Math.ceil(this.top);
-  this.width = Math.ceil(this.width);
-  this.height = Math.ceil(this.height);
-  return this;
-};
-
-
-/**
- * Rounds the fields to the next smaller integer values.
- * @return {!goog.math.Rect} This rectangle with floored fields.
- */
-goog.math.Rect.prototype.floor = function() {
-  this.left = Math.floor(this.left);
-  this.top = Math.floor(this.top);
-  this.width = Math.floor(this.width);
-  this.height = Math.floor(this.height);
-  return this;
-};
-
-
-/**
- * Rounds the fields to nearest integer values.
- * @return {!goog.math.Rect} This rectangle with rounded fields.
- */
-goog.math.Rect.prototype.round = function() {
-  this.left = Math.round(this.left);
-  this.top = Math.round(this.top);
-  this.width = Math.round(this.width);
-  this.height = Math.round(this.height);
-  return this;
-};
-
-
-/**
- * Translates this rectangle by the given offsets. If a
- * {@code goog.math.Coordinate} is given, then the left and top values are
- * translated by the coordinate's x and y values. Otherwise, top and left are
- * translated by {@code tx} and {@code opt_ty} respectively.
- * @param {number|goog.math.Coordinate} tx The value to translate left by or the
- *     the coordinate to translate this rect by.
- * @param {number=} opt_ty The value to translate top by.
- * @return {!goog.math.Rect} This rectangle after translating.
- */
-goog.math.Rect.prototype.translate = function(tx, opt_ty) {
-  if (tx instanceof goog.math.Coordinate) {
-    this.left += tx.x;
-    this.top += tx.y;
-  } else {
-    this.left += tx;
-    if (goog.isNumber(opt_ty)) {
-      this.top += opt_ty;
-    }
-  }
-  return this;
-};
-
-
-/**
- * Scales this rectangle by the given scale factors. The left and width values
- * are scaled by {@code sx} and the top and height values are scaled by
- * {@code opt_sy}.  If {@code opt_sy} is not given, then all fields are scaled
- * by {@code sx}.
- * @param {number} sx The scale factor to use for the x dimension.
- * @param {number=} opt_sy The scale factor to use for the y dimension.
- * @return {!goog.math.Rect} This rectangle after scaling.
- */
-goog.math.Rect.prototype.scale = function(sx, opt_sy) {
-  var sy = goog.isNumber(opt_sy) ? opt_sy : sx;
-  this.left *= sx;
-  this.width *= sx;
-  this.top *= sy;
-  this.height *= sy;
-  return this;
-};
-
-// Copyright 2006 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * @fileoverview Utilities for element styles.
- *
- * @see ../demos/inline_block_quirks.html
- * @see ../demos/inline_block_standards.html
- * @see ../demos/style_viewport.html
- */
-
-goog.provide('goog.style');
-
-
-goog.require('goog.array');
-goog.require('goog.asserts');
-goog.require('goog.dom');
-goog.require('goog.dom.NodeType');
-goog.require('goog.dom.vendor');
-goog.require('goog.math.Box');
-goog.require('goog.math.Coordinate');
-goog.require('goog.math.Rect');
-goog.require('goog.math.Size');
-goog.require('goog.object');
-goog.require('goog.string');
-goog.require('goog.userAgent');
-
-
-/**
- * @define {boolean} Whether we know at compile time that
- *     getBoundingClientRect() is present and bug-free on the browser.
- */
-goog.define('goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS', false);
-
-
-/**
- * Sets a style value on an element.
- *
- * This function is not indended to patch issues in the browser's style
- * handling, but to allow easy programmatic access to setting dash-separated
- * style properties.  An example is setting a batch of properties from a data
- * object without overwriting old styles.  When possible, use native APIs:
- * elem.style.propertyKey = 'value' or (if obliterating old styles is fine)
- * elem.style.cssText = 'property1: value1; property2: value2'.
- *
- * @param {Element} element The element to change.
- * @param {string|Object} style If a string, a style name. If an object, a hash
- *     of style names to style values.
- * @param {string|number|boolean=} opt_value If style was a string, then this
- *     should be the value.
- */
-goog.style.setStyle = function(element, style, opt_value) {
-  if (goog.isString(style)) {
-    goog.style.setStyle_(element, opt_value, style);
-  } else {
-    goog.object.forEach(style, goog.partial(goog.style.setStyle_, element));
-  }
-};
-
-
-/**
- * Sets a style value on an element, with parameters swapped to work with
- * {@code goog.object.forEach()}. Prepends a vendor-specific prefix when
- * necessary.
- * @param {Element} element The element to change.
- * @param {string|number|boolean|undefined} value Style value.
- * @param {string} style Style name.
- * @private
- */
-goog.style.setStyle_ = function(element, value, style) {
-  var propertyName = goog.style.getVendorJsStyleName_(element, style);
-
-  if (propertyName) {
-    element.style[propertyName] = value;
-  }
-};
-
-
-/**
- * Returns the style property name in camel-case. If it does not exist and a
- * vendor-specific version of the property does exist, then return the vendor-
- * specific property name instead.
- * @param {Element} element The element to change.
- * @param {string} style Style name.
- * @return {string} Vendor-specific style.
- * @private
- */
-goog.style.getVendorJsStyleName_ = function(element, style) {
-  var camelStyle = goog.string.toCamelCase(style);
-
-  if (element.style[camelStyle] === undefined) {
-    var prefixedStyle = goog.dom.vendor.getVendorJsPrefix() +
-        goog.string.toTitleCase(camelStyle);
-
-    if (element.style[prefixedStyle] !== undefined) {
-      return prefixedStyle;
-    }
-  }
-
-  return camelStyle;
-};
-
-
-/**
- * Returns the style property name in CSS notation. If it does not exist and a
- * vendor-specific version of the property does exist, then return the vendor-
- * specific property name instead.
- * @param {Element} element The element to change.
- * @param {string} style Style name.
- * @return {string} Vendor-specific style.
- * @private
- */
-goog.style.getVendorStyleName_ = function(element, style) {
-  var camelStyle = goog.string.toCamelCase(style);
-
-  if (element.style[camelStyle] === undefined) {
-    var prefixedStyle = goog.dom.vendor.getVendorJsPrefix() +
-        goog.string.toTitleCase(camelStyle);
-
-    if (element.style[prefixedStyle] !== undefined) {
-      return goog.dom.vendor.getVendorPrefix() + '-' + style;
-    }
-  }
-
-  return style;
-};
-
-
-/**
- * Retrieves an explicitly-set style value of a node. This returns '' if there
- * isn't a style attribute on the element or if this style property has not been
- * explicitly set in script.
- *
- * @param {Element} element Element to get style of.
- * @param {string} property Property to get, css-style (if you have a camel-case
- * property, use element.style[style]).
- * @return {string} Style value.
- */
-goog.style.getStyle = function(element, property) {
-  // element.style is '' for well-known properties which are unset.
-  // For for browser specific styles as 'filter' is undefined
-  // so we need to return '' explicitly to make it consistent across
-  // browsers.
-  var styleValue = element.style[goog.string.toCamelCase(property)];
-
-  // Using typeof here because of a bug in Safari 5.1, where this value
-  // was undefined, but === undefined returned false.
-  if (typeof(styleValue) !== 'undefined') {
-    return styleValue;
-  }
-
-  return element.style[goog.style.getVendorJsStyleName_(element, property)] ||
-      '';
-};
-
-
-/**
- * Retrieves a computed style value of a node. It returns empty string if the
- * value cannot be computed (which will be the case in Internet Explorer) or
- * "none" if the property requested is an SVG one and it has not been
- * explicitly set (firefox and webkit).
- *
- * @param {Element} element Element to get style of.
- * @param {string} property Property to get (camel-case).
- * @return {string} Style value.
- */
-goog.style.getComputedStyle = function(element, property) {
-  var doc = goog.dom.getOwnerDocument(element);
-  if (doc.defaultView && doc.defaultView.getComputedStyle) {
-    var styles = doc.defaultView.getComputedStyle(element, null);
-    if (styles) {
-      // element.style[..] is undefined for browser specific styles
-      // as 'filter'.
-      return styles[property] || styles.getPropertyValue(property) || '';
-    }
-  }
-
-  return '';
-};
-
-
-/**
- * Gets the cascaded style value of a node, or null if the value cannot be
- * computed (only Internet Explorer can do this).
- *
- * @param {Element} element Element to get style of.
- * @param {string} style Property to get (camel-case).
- * @return {string} Style value.
- */
-goog.style.getCascadedStyle = function(element, style) {
-  // TODO(nicksantos): This should be documented to return null. #fixTypes
-  return element.currentStyle ? element.currentStyle[style] : null;
-};
-
-
-/**
- * Cross-browser pseudo get computed style. It returns the computed style where
- * available. If not available it tries the cascaded style value (IE
- * currentStyle) and in worst case the inline style value.  It shouldn't be
- * called directly, see http://wiki/Main/ComputedStyleVsCascadedStyle for
- * discussion.
- *
- * @param {Element} element Element to get style of.
- * @param {string} style Property to get (must be camelCase, not css-style.).
- * @return {string} Style value.
- * @private
- */
-goog.style.getStyle_ = function(element, style) {
-  return goog.style.getComputedStyle(element, style) ||
-         goog.style.getCascadedStyle(element, style) ||
-         (element.style && element.style[style]);
-};
-
-
-/**
- * Retrieves the computed value of the box-sizing CSS attribute.
- * Browser support: http://caniuse.com/css3-boxsizing.
- * @param {!Element} element The element whose box-sizing to get.
- * @return {?string} 'content-box', 'border-box' or 'padding-box'. null if
- *     box-sizing is not supported (IE7 and below).
- */
-goog.style.getComputedBoxSizing = function(element) {
-  return goog.style.getStyle_(element, 'boxSizing') ||
-      goog.style.getStyle_(element, 'MozBoxSizing') ||
-      goog.style.getStyle_(element, 'WebkitBoxSizing') || null;
-};
-
-
-/**
- * Retrieves the computed value of the position CSS attribute.
- * @param {Element} element The element to get the position of.
- * @return {string} Position value.
- */
-goog.style.getComputedPosition = function(element) {
-  return goog.style.getStyle_(element, 'position');
-};
-
-
-/**
- * Retrieves the computed background color string for a given element. The
- * string returned is suitable for assigning to another element's
- * background-color, but is not guaranteed to be in any particular string
- * format. Accessing the color in a numeric form may not be possible in all
- * browsers or with all input.
- *
- * If the background color for the element is defined as a hexadecimal value,
- * the resulting string can be parsed by goog.color.parse in all supported
- * browsers.
- *
- * Whether named colors like "red" or "lightblue" get translated into a
- * format which can be parsed is browser dependent. Calling this function on
- * transparent elements will return "transparent" in most browsers or
- * "rgba(0, 0, 0, 0)" in WebKit.
- * @param {Element} element The element to get the background color of.
- * @return {string} The computed string value of the background color.
- */
-goog.style.getBackgroundColor = function(element) {
-  return goog.style.getStyle_(element, 'backgroundColor');
-};
-
-
-/**
- * Retrieves the computed value of the overflow-x CSS attribute.
- * @param {Element} element The element to get the overflow-x of.
- * @return {string} The computed string value of the overflow-x attribute.
- */
-goog.style.getComputedOverflowX = function(element) {
-  return goog.style.getStyle_(element, 'overflowX');
-};
-
-
-/**
- * Retrieves the computed value of the overflow-y CSS attribute.
- * @param {Element} element The element to get the overflow-y of.
- * @return {string} The computed string value of the overflow-y attribute.
- */
-goog.style.getComputedOverflowY = function(element) {
-  return goog.style.getStyle_(element, 'overflowY');
-};
-
-
-/**
- * Retrieves the computed value of the z-index CSS attribute.
- * @param {Element} element The element to get the z-index of.
- * @return {string|number} The computed value of the z-index attribute.
- */
-goog.style.getComputedZIndex = function(element) {
-  return goog.style.getStyle_(element, 'zIndex');
-};
-
-
-/**
- * Retrieves the computed value of the text-align CSS attribute.
- * @param {Element} element The element to get the text-align of.
- * @return {string} The computed string value of the text-align attribute.
- */
-goog.style.getComputedTextAlign = function(element) {
-  return goog.style.getStyle_(element, 'textAlign');
-};
-
-
-/**
- * Retrieves the computed value of the cursor CSS attribute.
- * @param {Element} element The element to get the cursor of.
- * @return {string} The computed string value of the cursor attribute.
- */
-goog.style.getComputedCursor = function(element) {
-  return goog.style.getStyle_(element, 'cursor');
-};
-
-
-/**
- * Retrieves the computed value of the CSS transform attribute.
- * @param {Element} element The element to get the transform of.
- * @return {string} The computed string representation of the transform matrix.
- */
-goog.style.getComputedTransform = function(element) {
-  var property = goog.style.getVendorStyleName_(element, 'transform');
-  return goog.style.getStyle_(element, property) ||
-      goog.style.getStyle_(element, 'transform');
-};
-
-
-/**
- * Sets the top/left values of an element.  If no unit is specified in the
- * argument then it will add px. The second argument is required if the first
- * argument is a string or number and is ignored if the first argument
- * is a coordinate.
- * @param {Element} el Element to move.
- * @param {string|number|goog.math.Coordinate} arg1 Left position or coordinate.
- * @param {string|number=} opt_arg2 Top position.
- */
-goog.style.setPosition = function(el, arg1, opt_arg2) {
-  var x, y;
-  var buggyGeckoSubPixelPos = goog.userAgent.GECKO &&
-      (goog.userAgent.MAC || goog.userAgent.X11) &&
-      goog.userAgent.isVersionOrHigher('1.9');
-
-  if (arg1 instanceof goog.math.Coordinate) {
-    x = arg1.x;
-    y = arg1.y;
-  } else {
-    x = arg1;
-    y = opt_arg2;
-  }
-
-  // Round to the nearest pixel for buggy sub-pixel support.
-  el.style.left = goog.style.getPixelStyleValue_(
-      /** @type {number|string} */ (x), buggyGeckoSubPixelPos);
-  el.style.top = goog.style.getPixelStyleValue_(
-      /** @type {number|string} */ (y), buggyGeckoSubPixelPos);
-};
-
-
-/**
- * Gets the offsetLeft and offsetTop properties of an element and returns them
- * in a Coordinate object
- * @param {Element} element Element.
- * @return {!goog.math.Coordinate} The position.
- */
-goog.style.getPosition = function(element) {
-  return new goog.math.Coordinate(element.offsetLeft, element.offsetTop);
-};
-
-
-/**
- * Returns the viewport element for a particular document
- * @param {Node=} opt_node DOM node (Document is OK) to get the viewport element
- *     of.
- * @return {Element} document.documentElement or document.body.
- */
-goog.style.getClientViewportElement = function(opt_node) {
-  var doc;
-  if (opt_node) {
-    doc = goog.dom.getOwnerDocument(opt_node);
-  } else {
-    doc = goog.dom.getDocument();
-  }
-
-  // In old IE versions the document.body represented the viewport
-  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(9) &&
-      !goog.dom.getDomHelper(doc).isCss1CompatMode()) {
-    return doc.body;
-  }
-  return doc.documentElement;
-};
-
-
-/**
- * Calculates the viewport coordinates relative to the page/document
- * containing the node. The viewport may be the browser viewport for
- * non-iframe document, or the iframe container for iframe'd document.
- * @param {!Document} doc The document to use as the reference point.
- * @return {!goog.math.Coordinate} The page offset of the viewport.
- */
-goog.style.getViewportPageOffset = function(doc) {
-  var body = doc.body;
-  var documentElement = doc.documentElement;
-  var scrollLeft = body.scrollLeft || documentElement.scrollLeft;
-  var scrollTop = body.scrollTop || documentElement.scrollTop;
-  return new goog.math.Coordinate(scrollLeft, scrollTop);
-};
-
-
-/**
- * Gets the client rectangle of the DOM element.
- *
- * getBoundingClientRect is part of a new CSS object model draft (with a
- * long-time presence in IE), replacing the error-prone parent offset
- * computation and the now-deprecated Gecko getBoxObjectFor.
- *
- * This utility patches common browser bugs in getBoundingClientRect. It
- * will fail if getBoundingClientRect is unsupported.
- *
- * If the element is not in the DOM, the result is undefined, and an error may
- * be thrown depending on user agent.
- *
- * @param {!Element} el The element whose bounding rectangle is being queried.
- * @return {Object} A native bounding rectangle with numerical left, top,
- *     right, and bottom.  Reported by Firefox to be of object type ClientRect.
- * @private
- */
-goog.style.getBoundingClientRect_ = function(el) {
-  var rect;
-  try {
-    rect = el.getBoundingClientRect();
-  } catch (e) {
-    // In IE < 9, calling getBoundingClientRect on an orphan element raises an
-    // "Unspecified Error". All other browsers return zeros.
-    return {'left': 0, 'top': 0, 'right': 0, 'bottom': 0};
-  }
-
-  // Patch the result in IE only, so that this function can be inlined if
-  // compiled for non-IE.
-  if (goog.userAgent.IE && el.ownerDocument.body) {
-
-    // In IE, most of the time, 2 extra pixels are added to the top and left
-    // due to the implicit 2-pixel inset border.  In IE6/7 quirks mode and
-    // IE6 standards mode, this border can be overridden by setting the
-    // document element's border to zero -- thus, we cannot rely on the
-    // offset always being 2 pixels.
-
-    // In quirks mode, the offset can be determined by querying the body's
-    // clientLeft/clientTop, but in standards mode, it is found by querying
-    // the document element's clientLeft/clientTop.  Since we already called
-    // getBoundingClientRect we have already forced a reflow, so it is not
-    // too expensive just to query them all.
-
-    // See: http://msdn.microsoft.com/en-us/library/ms536433(VS.85).aspx
-    var doc = el.ownerDocument;
-    rect.left -= doc.documentElement.clientLeft + doc.body.clientLeft;
-    rect.top -= doc.documentElement.clientTop + doc.body.clientTop;
-  }
-  return /** @type {Object} */ (rect);
-};
-
-
-/**
- * Returns the first parent that could affect the position of a given element.
- * @param {Element} element The element to get the offset parent for.
- * @return {Element} The first offset parent or null if one cannot be found.
- */
-goog.style.getOffsetParent = function(element) {
-  // element.offsetParent does the right thing in IE7 and below.  In other
-  // browsers it only includes elements with position absolute, relative or
-  // fixed, not elements with overflow set to auto or scroll.
-  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(8)) {
-    return element.offsetParent;
-  }
-
-  var doc = goog.dom.getOwnerDocument(element);
-  var positionStyle = goog.style.getStyle_(element, 'position');
-  var skipStatic = positionStyle == 'fixed' || positionStyle == 'absolute';
-  for (var parent = element.parentNode; parent && parent != doc;
-       parent = parent.parentNode) {
-    positionStyle =
-        goog.style.getStyle_(/** @type {!Element} */ (parent), 'position');
-    skipStatic = skipStatic && positionStyle == 'static' &&
-                 parent != doc.documentElement && parent != doc.body;
-    if (!skipStatic && (parent.scrollWidth > parent.clientWidth ||
-                        parent.scrollHeight > parent.clientHeight ||
-                        positionStyle == 'fixed' ||
-                        positionStyle == 'absolute' ||
-                        positionStyle == 'relative')) {
-      return /** @type {!Element} */ (parent);
-    }
-  }
-  return null;
-};
-
-
-/**
- * Calculates and returns the visible rectangle for a given element. Returns a
- * box describing the visible portion of the nearest scrollable offset ancestor.
- * Coordinates are given relative to the document.
- *
- * @param {Element} element Element to get the visible rect for.
- * @return {goog.math.Box} Bounding elementBox describing the visible rect or
- *     null if scrollable ancestor isn't inside the visible viewport.
- */
-goog.style.getVisibleRectForElement = function(element) {
-  var visibleRect = new goog.math.Box(0, Infinity, Infinity, 0);
-  var dom = goog.dom.getDomHelper(element);
-  var body = dom.getDocument().body;
-  var documentElement = dom.getDocument().documentElement;
-  var scrollEl = dom.getDocumentScrollElement();
-
-  // Determine the size of the visible rect by climbing the dom accounting for
-  // all scrollable containers.
-  for (var el = element; el = goog.style.getOffsetParent(el); ) {
-    // clientWidth is zero for inline block elements in IE.
-    // on WEBKIT, body element can have clientHeight = 0 and scrollHeight > 0
-    if ((!goog.userAgent.IE || el.clientWidth != 0) &&
-        (!goog.userAgent.WEBKIT || el.clientHeight != 0 || el != body) &&
-        // body may have overflow set on it, yet we still get the entire
-        // viewport. In some browsers, el.offsetParent may be
-        // document.documentElement, so check for that too.
-        (el != body && el != documentElement &&
-            goog.style.getStyle_(el, 'overflow') != 'visible')) {
-      var pos = goog.style.getPageOffset(el);
-      var client = goog.style.getClientLeftTop(el);
-      pos.x += client.x;
-      pos.y += client.y;
-
-      visibleRect.top = Math.max(visibleRect.top, pos.y);
-      visibleRect.right = Math.min(visibleRect.right,
-                                   pos.x + el.clientWidth);
-      visibleRect.bottom = Math.min(visibleRect.bottom,
-                                    pos.y + el.clientHeight);
-      visibleRect.left = Math.max(visibleRect.left, pos.x);
-    }
-  }
-
-  // Clip by window's viewport.
-  var scrollX = scrollEl.scrollLeft, scrollY = scrollEl.scrollTop;
-  visibleRect.left = Math.max(visibleRect.left, scrollX);
-  visibleRect.top = Math.max(visibleRect.top, scrollY);
-  var winSize = dom.getViewportSize();
-  visibleRect.right = Math.min(visibleRect.right, scrollX + winSize.width);
-  visibleRect.bottom = Math.min(visibleRect.bottom, scrollY + winSize.height);
-  return visibleRect.top >= 0 && visibleRect.left >= 0 &&
-         visibleRect.bottom > visibleRect.top &&
-         visibleRect.right > visibleRect.left ?
-         visibleRect : null;
-};
-
-
-/**
- * Calculate the scroll position of {@code container} with the minimum amount so
- * that the content and the borders of the given {@code element} become visible.
- * If the element is bigger than the container, its top left corner will be
- * aligned as close to the container's top left corner as possible.
- *
- * @param {Element} element The element to make visible.
- * @param {Element} container The container to scroll.
- * @param {boolean=} opt_center Whether to center the element in the container.
- *     Defaults to false.
- * @return {!goog.math.Coordinate} The new scroll position of the container,
- *     in form of goog.math.Coordinate(scrollLeft, scrollTop).
- */
-goog.style.getContainerOffsetToScrollInto =
-    function(element, container, opt_center) {
-  // Absolute position of the element's border's top left corner.
-  var elementPos = goog.style.getPageOffset(element);
-  // Absolute position of the container's border's top left corner.
-  var containerPos = goog.style.getPageOffset(container);
-  var containerBorder = goog.style.getBorderBox(container);
-  // Relative pos. of the element's border box to the container's content box.
-  var relX = elementPos.x - containerPos.x - containerBorder.left;
-  var relY = elementPos.y - containerPos.y - containerBorder.top;
-  // How much the element can move in the container, i.e. the difference between
-  // the element's bottom-right-most and top-left-most position where it's
-  // fully visible.
-  var spaceX = container.clientWidth - element.offsetWidth;
-  var spaceY = container.clientHeight - element.offsetHeight;
-
-  var scrollLeft = container.scrollLeft;
-  var scrollTop = container.scrollTop;
-  if (opt_center) {
-    // All browsers round non-integer scroll positions down.
-    scrollLeft += relX - spaceX / 2;
-    scrollTop += relY - spaceY / 2;
-  } else {
-    // This formula was designed to give the correct scroll values in the
-    // following cases:
-    // - element is higher than container (spaceY < 0) => scroll down by relY
-    // - element is not higher that container (spaceY >= 0):
-    //   - it is above container (relY < 0) => scroll up by abs(relY)
-    //   - it is below container (relY > spaceY) => scroll down by relY - spaceY
-    //   - it is in the container => don't scroll
-    scrollLeft += Math.min(relX, Math.max(relX - spaceX, 0));
-    scrollTop += Math.min(relY, Math.max(relY - spaceY, 0));
-  }
-  return new goog.math.Coordinate(scrollLeft, scrollTop);
-};
-
-
-/**
- * Changes the scroll position of {@code container} with the minimum amount so
- * that the content and the borders of the given {@code element} become visible.
- * If the element is bigger than the container, its top left corner will be
- * aligned as close to the container's top left corner as possible.
- *
- * @param {Element} element The element to make visible.
- * @param {Element} container The container to scroll.
- * @param {boolean=} opt_center Whether to center the element in the container.
- *     Defaults to false.
- */
-goog.style.scrollIntoContainerView = function(element, container, opt_center) {
-  var offset =
-      goog.style.getContainerOffsetToScrollInto(element, container, opt_center);
-  container.scrollLeft = offset.x;
-  container.scrollTop = offset.y;
-};
-
-
-/**
- * Returns clientLeft (width of the left border and, if the directionality is
- * right to left, the vertical scrollbar) and clientTop as a coordinate object.
- *
- * @param {Element} el Element to get clientLeft for.
- * @return {!goog.math.Coordinate} Client left and top.
- */
-goog.style.getClientLeftTop = function(el) {
-  // NOTE(eae): Gecko prior to 1.9 doesn't support clientTop/Left, see
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=111207
-  if (goog.userAgent.GECKO && !goog.userAgent.isVersionOrHigher('1.9')) {
-    var left = parseFloat(goog.style.getComputedStyle(el, 'borderLeftWidth'));
-    if (goog.style.isRightToLeft(el)) {
-      var scrollbarWidth = el.offsetWidth - el.clientWidth - left -
-          parseFloat(goog.style.getComputedStyle(el, 'borderRightWidth'));
-      left += scrollbarWidth;
-    }
-    return new goog.math.Coordinate(left,
-        parseFloat(goog.style.getComputedStyle(el, 'borderTopWidth')));
-  }
-
-  return new goog.math.Coordinate(el.clientLeft, el.clientTop);
-};
-
-
-/**
- * Returns a Coordinate object relative to the top-left of the HTML document.
- * Implemented as a single function to save having to do two recursive loops in
- * opera and safari just to get both coordinates.  If you just want one value do
- * use goog.style.getPageOffsetLeft() and goog.style.getPageOffsetTop(), but
- * note if you call both those methods the tree will be analysed twice.
- *
- * @param {Element} el Element to get the page offset for.
- * @return {!goog.math.Coordinate} The page offset.
- */
-goog.style.getPageOffset = function(el) {
-  var box, doc = goog.dom.getOwnerDocument(el);
-  var positionStyle = goog.style.getStyle_(el, 'position');
-  // TODO(gboyer): Update the jsdoc in a way that doesn't break the universe.
-  goog.asserts.assertObject(el, 'Parameter is required');
-
-  // NOTE(eae): Gecko pre 1.9 normally use getBoxObjectFor to calculate the
-  // position. When invoked for an element with position absolute and a negative
-  // position though it can be off by one. Therefor the recursive implementation
-  // is used in those (relatively rare) cases.
-  var BUGGY_GECKO_BOX_OBJECT =
-      !goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS &&
-      goog.userAgent.GECKO && doc.getBoxObjectFor &&
-      !el.getBoundingClientRect && positionStyle == 'absolute' &&
-      (box = doc.getBoxObjectFor(el)) && (box.screenX < 0 || box.screenY < 0);
-
-  // NOTE(arv): If element is hidden (display none or disconnected or any the
-  // ancestors are hidden) we get (0,0) by default but we still do the
-  // accumulation of scroll position.
-
-  // TODO(arv): Should we check if the node is disconnected and in that case
-  //            return (0,0)?
-
-  var pos = new goog.math.Coordinate(0, 0);
-  var viewportElement = goog.style.getClientViewportElement(doc);
-  if (el == viewportElement) {
-    // viewport is always at 0,0 as that defined the coordinate system for this
-    // function - this avoids special case checks in the code below
-    return pos;
-  }
-
-  // IE, Gecko 1.9+, and most modern WebKit.
-  if (goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS ||
-      el.getBoundingClientRect) {
-    box = goog.style.getBoundingClientRect_(el);
-    // Must add the scroll coordinates in to get the absolute page offset
-    // of element since getBoundingClientRect returns relative coordinates to
-    // the viewport.
-    var scrollCoord = goog.dom.getDomHelper(doc).getDocumentScroll();
-    pos.x = box.left + scrollCoord.x;
-    pos.y = box.top + scrollCoord.y;
-
-  // Gecko prior to 1.9.
-  } else if (doc.getBoxObjectFor && !BUGGY_GECKO_BOX_OBJECT) {
-    // Gecko ignores the scroll values for ancestors, up to 1.9.  See:
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=328881 and
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=330619
-
-    box = doc.getBoxObjectFor(el);
-    // TODO(user): Fix the off-by-one error when window is scrolled down
-    // or right more than 1 pixel. The viewport offset does not move in lock
-    // step with the window scroll; it moves in increments of 2px and at
-    // somewhat random intervals.
-    var vpBox = doc.getBoxObjectFor(viewportElement);
-    pos.x = box.screenX - vpBox.screenX;
-    pos.y = box.screenY - vpBox.screenY;
-
-  // Safari, Opera and Camino up to 1.0.4.
-  } else {
-    var parent = el;
-    do {
-      pos.x += parent.offsetLeft;
-      pos.y += parent.offsetTop;
-      // For safari/chrome, we need to add parent's clientLeft/Top as well.
-      if (parent != el) {
-        pos.x += parent.clientLeft || 0;
-        pos.y += parent.clientTop || 0;
-      }
-      // In Safari when hit a position fixed element the rest of the offsets
-      // are not correct.
-      if (goog.userAgent.WEBKIT &&
-          goog.style.getComputedPosition(parent) == 'fixed') {
-        pos.x += doc.body.scrollLeft;
-        pos.y += doc.body.scrollTop;
-        break;
-      }
-      parent = parent.offsetParent;
-    } while (parent && parent != el);
-
-    // Opera & (safari absolute) incorrectly account for body offsetTop.
-    if (goog.userAgent.OPERA || (goog.userAgent.WEBKIT &&
-        positionStyle == 'absolute')) {
-      pos.y -= doc.body.offsetTop;
-    }
-
-    for (parent = el; (parent = goog.style.getOffsetParent(parent)) &&
-        parent != doc.body && parent != viewportElement; ) {
-      pos.x -= parent.scrollLeft;
-      // Workaround for a bug in Opera 9.2 (and earlier) where table rows may
-      // report an invalid scroll top value. The bug was fixed in Opera 9.5
-      // however as that version supports getBoundingClientRect it won't
-      // trigger this code path. https://bugs.opera.com/show_bug.cgi?id=249965
-      if (!goog.userAgent.OPERA || parent.tagName != 'TR') {
-        pos.y -= parent.scrollTop;
-      }
-    }
-  }
-
-  return pos;
-};
-
-
-/**
- * Returns the left coordinate of an element relative to the HTML document
- * @param {Element} el Elements.
- * @return {number} The left coordinate.
- */
-goog.style.getPageOffsetLeft = function(el) {
-  return goog.style.getPageOffset(el).x;
-};
-
-
-/**
- * Returns the top coordinate of an element relative to the HTML document
- * @param {Element} el Elements.
- * @return {number} The top coordinate.
- */
-goog.style.getPageOffsetTop = function(el) {
-  return goog.style.getPageOffset(el).y;
-};
-
-
-/**
- * Returns a Coordinate object relative to the top-left of an HTML document
- * in an ancestor frame of this element. Used for measuring the position of
- * an element inside a frame relative to a containing frame.
- *
- * @param {Element} el Element to get the page offset for.
- * @param {Window} relativeWin The window to measure relative to. If relativeWin
- *     is not in the ancestor frame chain of the element, we measure relative to
- *     the top-most window.
- * @return {!goog.math.Coordinate} The page offset.
- */
-goog.style.getFramedPageOffset = function(el, relativeWin) {
-  var position = new goog.math.Coordinate(0, 0);
-
-  // Iterate up the ancestor frame chain, keeping track of the current window
-  // and the current element in that window.
-  var currentWin = goog.dom.getWindow(goog.dom.getOwnerDocument(el));
-  var currentEl = el;
-  do {
-    // if we're at the top window, we want to get the page offset.
-    // if we're at an inner frame, we only want to get the window position
-    // so that we can determine the actual page offset in the context of
-    // the outer window.
-    var offset = currentWin == relativeWin ?
-        goog.style.getPageOffset(currentEl) :
-        goog.style.getClientPositionForElement_(
-            goog.asserts.assert(currentEl));
-
-    position.x += offset.x;
-    position.y += offset.y;
-  } while (currentWin && currentWin != relativeWin &&
-      (currentEl = currentWin.frameElement) &&
-      (currentWin = currentWin.parent));
-
-  return position;
-};
-
-
-/**
- * Translates the specified rect relative to origBase page, for newBase page.
- * If origBase and newBase are the same, this function does nothing.
- *
- * @param {goog.math.Rect} rect The source rectangle relative to origBase page,
- *     and it will have the translated result.
- * @param {goog.dom.DomHelper} origBase The DomHelper for the input rectangle.
- * @param {goog.dom.DomHelper} newBase The DomHelper for the resultant
- *     coordinate.  This must be a DOM for an ancestor frame of origBase
- *     or the same as origBase.
- */
-goog.style.translateRectForAnotherFrame = function(rect, origBase, newBase) {
-  if (origBase.getDocument() != newBase.getDocument()) {
-    var body = origBase.getDocument().body;
-    var pos = goog.style.getFramedPageOffset(body, newBase.getWindow());
-
-    // Adjust Body's margin.
-    pos = goog.math.Coordinate.difference(pos, goog.style.getPageOffset(body));
-
-    if (goog.userAgent.IE && !origBase.isCss1CompatMode()) {
-      pos = goog.math.Coordinate.difference(pos, origBase.getDocumentScroll());
-    }
-
-    rect.left += pos.x;
-    rect.top += pos.y;
-  }
-};
-
-
-/**
- * Returns the position of an element relative to another element in the
- * document.  A relative to B
- * @param {Element|Event|goog.events.Event} a Element or mouse event whose
- *     position we're calculating.
- * @param {Element|Event|goog.events.Event} b Element or mouse event position
- *     is relative to.
- * @return {!goog.math.Coordinate} The relative position.
- */
-goog.style.getRelativePosition = function(a, b) {
-  var ap = goog.style.getClientPosition(a);
-  var bp = goog.style.getClientPosition(b);
-  return new goog.math.Coordinate(ap.x - bp.x, ap.y - bp.y);
-};
-
-
-/**
- * Returns the position of the event or the element's border box relative to
- * the client viewport.
- * @param {!Element} el Element whose position to get.
- * @return {!goog.math.Coordinate} The position.
- * @private
- */
-goog.style.getClientPositionForElement_ = function(el) {
-  var pos;
-  if (goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS ||
-      el.getBoundingClientRect) {
-    // IE, Gecko 1.9+, and most modern WebKit
-    var box = goog.style.getBoundingClientRect_(el);
-    pos = new goog.math.Coordinate(box.left, box.top);
-  } else {
-    var scrollCoord = goog.dom.getDomHelper(el).getDocumentScroll();
-    var pageCoord = goog.style.getPageOffset(el);
-    pos = new goog.math.Coordinate(
-        pageCoord.x - scrollCoord.x,
-        pageCoord.y - scrollCoord.y);
-  }
-
-  // Gecko below version 12 doesn't add CSS translation to the client position
-  // (using either getBoundingClientRect or getBoxOffsetFor) so we need to do
-  // so manually.
-  if (goog.userAgent.GECKO && !goog.userAgent.isVersionOrHigher(12)) {
-    return goog.math.Coordinate.sum(pos, goog.style.getCssTranslation(el));
-  } else {
-    return pos;
-  }
-};
-
-
-/**
- * Returns the position of the event or the element's border box relative to
- * the client viewport.
- * @param {Element|Event|goog.events.Event} el Element or a mouse / touch event.
- * @return {!goog.math.Coordinate} The position.
- */
-goog.style.getClientPosition = function(el) {
-  goog.asserts.assert(el);
-  if (el.nodeType == goog.dom.NodeType.ELEMENT) {
-    return goog.style.getClientPositionForElement_(
-        /** @type {!Element} */ (el));
-  } else {
-    var isAbstractedEvent = goog.isFunction(el.getBrowserEvent);
-    var be = /** @type {!goog.events.BrowserEvent} */ (el);
-    var targetEvent = el;
-
-    if (el.targetTouches) {
-      targetEvent = el.targetTouches[0];
-    } else if (isAbstractedEvent && be.getBrowserEvent().targetTouches) {
-      targetEvent = be.getBrowserEvent().targetTouches[0];
-    }
-
-    return new goog.math.Coordinate(
-        targetEvent.clientX,
-        targetEvent.clientY);
-  }
-};
-
-
-/**
- * Moves an element to the given coordinates relative to the client viewport.
- * @param {Element} el Absolutely positioned element to set page offset for.
- *     It must be in the document.
- * @param {number|goog.math.Coordinate} x Left position of the element's margin
- *     box or a coordinate object.
- * @param {number=} opt_y Top position of the element's margin box.
- */
-goog.style.setPageOffset = function(el, x, opt_y) {
-  // Get current pageoffset
-  var cur = goog.style.getPageOffset(el);
-
-  if (x instanceof goog.math.Coordinate) {
-    opt_y = x.y;
-    x = x.x;
-  }
-
-  // NOTE(arv): We cannot allow strings for x and y. We could but that would
-  // require us to manually transform between different units
-
-  // Work out deltas
-  var dx = x - cur.x;
-  var dy = opt_y - cur.y;
-
-  // Set position to current left/top + delta
-  goog.style.setPosition(el, el.offsetLeft + dx, el.offsetTop + dy);
-};
-
-
-/**
- * Sets the width/height values of an element.  If an argument is numeric,
- * or a goog.math.Size is passed, it is assumed to be pixels and will add
- * 'px' after converting it to an integer in string form. (This just sets the
- * CSS width and height properties so it might set content-box or border-box
- * size depending on the box model the browser is using.)
- *
- * @param {Element} element Element to set the size of.
- * @param {string|number|goog.math.Size} w Width of the element, or a
- *     size object.
- * @param {string|number=} opt_h Height of the element. Required if w is not a
- *     size object.
- */
-goog.style.setSize = function(element, w, opt_h) {
-  var h;
-  if (w instanceof goog.math.Size) {
-    h = w.height;
-    w = w.width;
-  } else {
-    if (opt_h == undefined) {
-      throw Error('missing height argument');
-    }
-    h = opt_h;
-  }
-
-  goog.style.setWidth(element, /** @type {string|number} */ (w));
-  goog.style.setHeight(element, /** @type {string|number} */ (h));
-};
-
-
-/**
- * Helper function to create a string to be set into a pixel-value style
- * property of an element. Can round to the nearest integer value.
- *
- * @param {string|number} value The style value to be used. If a number,
- *     'px' will be appended, otherwise the value will be applied directly.
- * @param {boolean} round Whether to round the nearest integer (if property
- *     is a number).
- * @return {string} The string value for the property.
- * @private
- */
-goog.style.getPixelStyleValue_ = function(value, round) {
-  if (typeof value == 'number') {
-    value = (round ? Math.round(value) : value) + 'px';
-  }
-
-  return value;
-};
-
-
-/**
- * Set the height of an element.  Sets the element's style property.
- * @param {Element} element Element to set the height of.
- * @param {string|number} height The height value to set.  If a number, 'px'
- *     will be appended, otherwise the value will be applied directly.
- */
-goog.style.setHeight = function(element, height) {
-  element.style.height = goog.style.getPixelStyleValue_(height, true);
-};
-
-
-/**
- * Set the width of an element.  Sets the element's style property.
- * @param {Element} element Element to set the width of.
- * @param {string|number} width The width value to set.  If a number, 'px'
- *     will be appended, otherwise the value will be applied directly.
- */
-goog.style.setWidth = function(element, width) {
-  element.style.width = goog.style.getPixelStyleValue_(width, true);
-};
-
-
-/**
- * Gets the height and width of an element, even if its display is none.
- *
- * Specifically, this returns the height and width of the border box,
- * irrespective of the box model in effect.
- *
- * Note that this function does not take CSS transforms into account. Please see
- * {@code goog.style.getTransformedSize}.
- * @param {Element} element Element to get size of.
- * @return {!goog.math.Size} Object with width/height properties.
- */
-goog.style.getSize = function(element) {
-  return goog.style.evaluateWithTemporaryDisplay_(
-      goog.style.getSizeWithDisplay_, /** @type {!Element} */ (element));
-};
-
-
-/**
- * Call {@code fn} on {@code element} such that {@code element}'s dimensions are
- * accurate when it's passed to {@code fn}.
- * @param {function(!Element): T} fn Function to call with {@code element} as
- *     an argument after temporarily changing {@code element}'s display such
- *     that its dimensions are accurate.
- * @param {!Element} element Element (which may have display none) to use as
- *     argument to {@code fn}.
- * @return {T} Value returned by calling {@code fn} with {@code element}.
- * @template T
- * @private
- */
-goog.style.evaluateWithTemporaryDisplay_ = function(fn, element) {
-  if (goog.style.getStyle_(element, 'display') != 'none') {
-    return fn(element);
-  }
-
-  var style = element.style;
-  var originalDisplay = style.display;
-  var originalVisibility = style.visibility;
-  var originalPosition = style.position;
-
-  style.visibility = 'hidden';
-  style.position = 'absolute';
-  style.display = 'inline';
-
-  var retVal = fn(element);
-
-  style.display = originalDisplay;
-  style.position = originalPosition;
-  style.visibility = originalVisibility;
-
-  return retVal;
-};
-
-
-/**
- * Gets the height and width of an element when the display is not none.
- * @param {Element} element Element to get size of.
- * @return {!goog.math.Size} Object with width/height properties.
- * @private
- */
-goog.style.getSizeWithDisplay_ = function(element) {
-  var offsetWidth = element.offsetWidth;
-  var offsetHeight = element.offsetHeight;
-  var webkitOffsetsZero =
-      goog.userAgent.WEBKIT && !offsetWidth && !offsetHeight;
-  if ((!goog.isDef(offsetWidth) || webkitOffsetsZero) &&
-      element.getBoundingClientRect) {
-    // Fall back to calling getBoundingClientRect when offsetWidth or
-    // offsetHeight are not defined, or when they are zero in WebKit browsers.
-    // This makes sure that we return for the correct size for SVG elements, but
-    // will still return 0 on Webkit prior to 534.8, see
-    // http://trac.webkit.org/changeset/67252.
-    var clientRect = goog.style.getBoundingClientRect_(element);
-    return new goog.math.Size(clientRect.right - clientRect.left,
-        clientRect.bottom - clientRect.top);
-  }
-  return new goog.math.Size(offsetWidth, offsetHeight);
-};
-
-
-/**
- * Gets the height and width of an element, post transform, even if its display
- * is none.
- *
- * This is like {@code goog.style.getSize}, except:
- * <ol>
- * <li>Takes webkitTransforms such as rotate and scale into account.
- * <li>Will return null if {@code element} doesn't respond to
- *     {@code getBoundingClientRect}.
- * <li>Currently doesn't make sense on non-WebKit browsers which don't support
- *    webkitTransforms.
- * </ol>
- * @param {!Element} element Element to get size of.
- * @return {goog.math.Size} Object with width/height properties.
- */
-goog.style.getTransformedSize = function(element) {
-  if (!element.getBoundingClientRect) {
-    return null;
-  }
-
-  var clientRect = goog.style.evaluateWithTemporaryDisplay_(
-      goog.style.getBoundingClientRect_, element);
-  return new goog.math.Size(clientRect.right - clientRect.left,
-      clientRect.bottom - clientRect.top);
-};
-
-
-/**
- * Returns a bounding rectangle for a given element in page space.
- * @param {Element} element Element to get bounds of. Must not be display none.
- * @return {!goog.math.Rect} Bounding rectangle for the element.
- */
-goog.style.getBounds = function(element) {
-  var o = goog.style.getPageOffset(element);
-  var s = goog.style.getSize(element);
-  return new goog.math.Rect(o.x, o.y, s.width, s.height);
-};
-
-
-/**
- * Converts a CSS selector in the form style-property to styleProperty.
- * @param {*} selector CSS Selector.
- * @return {string} Camel case selector.
- * @deprecated Use goog.string.toCamelCase instead.
- */
-goog.style.toCamelCase = function(selector) {
-  return goog.string.toCamelCase(String(selector));
-};
-
-
-/**
- * Converts a CSS selector in the form styleProperty to style-property.
- * @param {string} selector Camel case selector.
- * @return {string} Selector cased.
- * @deprecated Use goog.string.toSelectorCase instead.
- */
-goog.style.toSelectorCase = function(selector) {
-  return goog.string.toSelectorCase(selector);
-};
-
-
-/**
- * Gets the opacity of a node (x-browser). This gets the inline style opacity
- * of the node, and does not take into account the cascaded or the computed
- * style for this node.
- * @param {Element} el Element whose opacity has to be found.
- * @return {number|string} Opacity between 0 and 1 or an empty string {@code ''}
- *     if the opacity is not set.
- */
-goog.style.getOpacity = function(el) {
-  var style = el.style;
-  var result = '';
-  if ('opacity' in style) {
-    result = style.opacity;
-  } else if ('MozOpacity' in style) {
-    result = style.MozOpacity;
-  } else if ('filter' in style) {
-    var match = style.filter.match(/alpha\(opacity=([\d.]+)\)/);
-    if (match) {
-      result = String(match[1] / 100);
-    }
-  }
-  return result == '' ? result : Number(result);
-};
-
-
-/**
- * Sets the opacity of a node (x-browser).
- * @param {Element} el Elements whose opacity has to be set.
- * @param {number|string} alpha Opacity between 0 and 1 or an empty string
- *     {@code ''} to clear the opacity.
- */
-goog.style.setOpacity = function(el, alpha) {
-  var style = el.style;
-  if ('opacity' in style) {
-    style.opacity = alpha;
-  } else if ('MozOpacity' in style) {
-    style.MozOpacity = alpha;
-  } else if ('filter' in style) {
-    // TODO(arv): Overwriting the filter might have undesired side effects.
-    if (alpha === '') {
-      style.filter = '';
-    } else {
-      style.filter = 'alpha(opacity=' + alpha * 100 + ')';
-    }
-  }
-};
-
-
-/**
- * Sets the background of an element to a transparent image in a browser-
- * independent manner.
- *
- * This function does not support repeating backgrounds or alternate background
- * positions to match the behavior of Internet Explorer. It also does not
- * support sizingMethods other than crop since they cannot be replicated in
- * browsers other than Internet Explorer.
- *
- * @param {Element} el The element to set background on.
- * @param {string} src The image source URL.
- */
-goog.style.setTransparentBackgroundImage = function(el, src) {
-  var style = el.style;
-  // It is safe to use the style.filter in IE only. In Safari 'filter' is in
-  // style object but access to style.filter causes it to throw an exception.
-  // Note: IE8 supports images with an alpha channel.
-  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
-    // See TODO in setOpacity.
-    style.filter = 'progid:DXImageTransform.Microsoft.AlphaImageLoader(' +
-        'src="' + src + '", sizingMethod="crop")';
-  } else {
-    // Set style properties individually instead of using background shorthand
-    // to prevent overwriting a pre-existing background color.
-    style.backgroundImage = 'url(' + src + ')';
-    style.backgroundPosition = 'top left';
-    style.backgroundRepeat = 'no-repeat';
-  }
-};
-
-
-/**
- * Clears the background image of an element in a browser independent manner.
- * @param {Element} el The element to clear background image for.
- */
-goog.style.clearTransparentBackgroundImage = function(el) {
-  var style = el.style;
-  if ('filter' in style) {
-    // See TODO in setOpacity.
-    style.filter = '';
-  } else {
-    // Set style properties individually instead of using background shorthand
-    // to prevent overwriting a pre-existing background color.
-    style.backgroundImage = 'none';
-  }
-};
-
-
-/**
- * Shows or hides an element from the page. Hiding the element is done by
- * setting the display property to "none", removing the element from the
- * rendering hierarchy so it takes up no space. To show the element, the default
- * inherited display property is restored (defined either in stylesheets or by
- * the browser's default style rules.)
- *
- * Caveat 1: if the inherited display property for the element is set to "none"
- * by the stylesheets, that is the property that will be restored by a call to
- * showElement(), effectively toggling the display between "none" and "none".
- *
- * Caveat 2: if the element display style is set inline (by setting either
- * element.style.display or a style attribute in the HTML), a call to
- * showElement will clear that setting and defer to the inherited style in the
- * stylesheet.
- * @param {Element} el Element to show or hide.
- * @param {*} display True to render the element in its default style,
- *     false to disable rendering the element.
- * @deprecated Use goog.style.setElementShown instead.
- */
-goog.style.showElement = function(el, display) {
-  goog.style.setElementShown(el, display);
-};
-
-
-/**
- * Shows or hides an element from the page. Hiding the element is done by
- * setting the display property to "none", removing the element from the
- * rendering hierarchy so it takes up no space. To show the element, the default
- * inherited display property is restored (defined either in stylesheets or by
- * the browser's default style rules).
- *
- * Caveat 1: if the inherited display property for the element is set to "none"
- * by the stylesheets, that is the property that will be restored by a call to
- * setElementShown(), effectively toggling the display between "none" and
- * "none".
- *
- * Caveat 2: if the element display style is set inline (by setting either
- * element.style.display or a style attribute in the HTML), a call to
- * setElementShown will clear that setting and defer to the inherited style in
- * the stylesheet.
- * @param {Element} el Element to show or hide.
- * @param {*} isShown True to render the element in its default style,
- *     false to disable rendering the element.
- */
-goog.style.setElementShown = function(el, isShown) {
-  el.style.display = isShown ? '' : 'none';
-};
-
-
-/**
- * Test whether the given element has been shown or hidden via a call to
- * {@link #setElementShown}.
- *
- * Note this is strictly a companion method for a call
- * to {@link #setElementShown} and the same caveats apply; in particular, this
- * method does not guarantee that the return value will be consistent with
- * whether or not the element is actually visible.
- *
- * @param {Element} el The element to test.
- * @return {boolean} Whether the element has been shown.
- * @see #setElementShown
- */
-goog.style.isElementShown = function(el) {
-  return el.style.display != 'none';
-};
-
-
-/**
- * Installs the styles string into the window that contains opt_element.  If
- * opt_element is null, the main window is used.
- * @param {string} stylesString The style string to install.
- * @param {Node=} opt_node Node whose parent document should have the
- *     styles installed.
- * @return {Element|StyleSheet} The style element created.
- */
-goog.style.installStyles = function(stylesString, opt_node) {
-  var dh = goog.dom.getDomHelper(opt_node);
-  var styleSheet = null;
-
-  // IE < 11 requires createStyleSheet. Note that doc.createStyleSheet will be
-  // undefined as of IE 11.
-  var doc = dh.getDocument();
-  if (goog.userAgent.IE && doc.createStyleSheet) {
-    styleSheet = doc.createStyleSheet();
-    goog.style.setStyles(styleSheet, stylesString);
-  } else {
-    var head = dh.getElementsByTagNameAndClass('head')[0];
-
-    // In opera documents are not guaranteed to have a head element, thus we
-    // have to make sure one exists before using it.
-    if (!head) {
-      var body = dh.getElementsByTagNameAndClass('body')[0];
-      head = dh.createDom('head');
-      body.parentNode.insertBefore(head, body);
-    }
-    styleSheet = dh.createDom('style');
-    // NOTE(user): Setting styles after the style element has been appended
-    // to the head results in a nasty Webkit bug in certain scenarios. Please
-    // refer to https://bugs.webkit.org/show_bug.cgi?id=26307 for additional
-    // details.
-    goog.style.setStyles(styleSheet, stylesString);
-    dh.appendChild(head, styleSheet);
-  }
-  return styleSheet;
-};
-
-
-/**
- * Removes the styles added by {@link #installStyles}.
- * @param {Element|StyleSheet} styleSheet The value returned by
- *     {@link #installStyles}.
- */
-goog.style.uninstallStyles = function(styleSheet) {
-  var node = styleSheet.ownerNode || styleSheet.owningElement ||
-      /** @type {Element} */ (styleSheet);
-  goog.dom.removeNode(node);
-};
-
-
-/**
- * Sets the content of a style element.  The style element can be any valid
- * style element.  This element will have its content completely replaced by
- * the new stylesString.
- * @param {Element|StyleSheet} element A stylesheet element as returned by
- *     installStyles.
- * @param {string} stylesString The new content of the stylesheet.
- */
-goog.style.setStyles = function(element, stylesString) {
-  if (goog.userAgent.IE && goog.isDef(element.cssText)) {
-    // Adding the selectors individually caused the browser to hang if the
-    // selector was invalid or there were CSS comments.  Setting the cssText of
-    // the style node works fine and ignores CSS that IE doesn't understand.
-    // However IE >= 11 doesn't support cssText any more, so we make sure that
-    // cssText is a defined property and otherwise fall back to innerHTML.
-    element.cssText = stylesString;
-  } else {
-    element.innerHTML = stylesString;
-  }
-};
-
-
-/**
- * Sets 'white-space: pre-wrap' for a node (x-browser).
- *
- * There are as many ways of specifying pre-wrap as there are browsers.
- *
- * CSS3/IE8: white-space: pre-wrap;
- * Mozilla:  white-space: -moz-pre-wrap;
- * Opera:    white-space: -o-pre-wrap;
- * IE6/7:    white-space: pre; word-wrap: break-word;
- *
- * @param {Element} el Element to enable pre-wrap for.
- */
-goog.style.setPreWrap = function(el) {
-  var style = el.style;
-  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
-    style.whiteSpace = 'pre';
-    style.wordWrap = 'break-word';
-  } else if (goog.userAgent.GECKO) {
-    style.whiteSpace = '-moz-pre-wrap';
-  } else {
-    style.whiteSpace = 'pre-wrap';
-  }
-};
-
-
-/**
- * Sets 'display: inline-block' for an element (cross-browser).
- * @param {Element} el Element to which the inline-block display style is to be
- *    applied.
- * @see ../demos/inline_block_quirks.html
- * @see ../demos/inline_block_standards.html
- */
-goog.style.setInlineBlock = function(el) {
-  var style = el.style;
-  // Without position:relative, weirdness ensues.  Just accept it and move on.
-  style.position = 'relative';
-
-  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
-    // IE8 supports inline-block so fall through to the else
-    // Zoom:1 forces hasLayout, display:inline gives inline behavior.
-    style.zoom = '1';
-    style.display = 'inline';
-  } else if (goog.userAgent.GECKO) {
-    // Pre-Firefox 3, Gecko doesn't support inline-block, but -moz-inline-box
-    // is close enough.
-    style.display = goog.userAgent.isVersionOrHigher('1.9a') ? 'inline-block' :
-        '-moz-inline-box';
-  } else {
-    // Opera, Webkit, and Safari seem to do OK with the standard inline-block
-    // style.
-    style.display = 'inline-block';
-  }
-};
-
-
-/**
- * Returns true if the element is using right to left (rtl) direction.
- * @param {Element} el  The element to test.
- * @return {boolean} True for right to left, false for left to right.
- */
-goog.style.isRightToLeft = function(el) {
-  return 'rtl' == goog.style.getStyle_(el, 'direction');
-};
-
-
-/**
- * The CSS style property corresponding to an element being
- * unselectable on the current browser platform (null if none).
- * Opera and IE instead use a DOM attribute 'unselectable'.
- * @type {?string}
- * @private
- */
-goog.style.unselectableStyle_ =
-    goog.userAgent.GECKO ? 'MozUserSelect' :
-    goog.userAgent.WEBKIT ? 'WebkitUserSelect' :
-    null;
-
-
-/**
- * Returns true if the element is set to be unselectable, false otherwise.
- * Note that on some platforms (e.g. Mozilla), even if an element isn't set
- * to be unselectable, it will behave as such if any of its ancestors is
- * unselectable.
- * @param {Element} el  Element to check.
- * @return {boolean}  Whether the element is set to be unselectable.
- */
-goog.style.isUnselectable = function(el) {
-  if (goog.style.unselectableStyle_) {
-    return el.style[goog.style.unselectableStyle_].toLowerCase() == 'none';
-  } else if (goog.userAgent.IE || goog.userAgent.OPERA) {
-    return el.getAttribute('unselectable') == 'on';
-  }
-  return false;
-};
-
-
-/**
- * Makes the element and its descendants selectable or unselectable.  Note
- * that on some platforms (e.g. Mozilla), even if an element isn't set to
- * be unselectable, it will behave as such if any of its ancestors is
- * unselectable.
- * @param {Element} el  The element to alter.
- * @param {boolean} unselectable  Whether the element and its descendants
- *     should be made unselectable.
- * @param {boolean=} opt_noRecurse  Whether to only alter the element's own
- *     selectable state, and leave its descendants alone; defaults to false.
- */
-goog.style.setUnselectable = function(el, unselectable, opt_noRecurse) {
-  // TODO(attila): Do we need all of TR_DomUtil.makeUnselectable() in Closure?
-  var descendants = !opt_noRecurse ? el.getElementsByTagName('*') : null;
-  var name = goog.style.unselectableStyle_;
-  if (name) {
-    // Add/remove the appropriate CSS style to/from the element and its
-    // descendants.
-    var value = unselectable ? 'none' : '';
-    el.style[name] = value;
-    if (descendants) {
-      for (var i = 0, descendant; descendant = descendants[i]; i++) {
-        descendant.style[name] = value;
-      }
-    }
-  } else if (goog.userAgent.IE || goog.userAgent.OPERA) {
-    // Toggle the 'unselectable' attribute on the element and its descendants.
-    var value = unselectable ? 'on' : '';
-    el.setAttribute('unselectable', value);
-    if (descendants) {
-      for (var i = 0, descendant; descendant = descendants[i]; i++) {
-        descendant.setAttribute('unselectable', value);
-      }
-    }
-  }
-};
-
-
-/**
- * Gets the border box size for an element.
- * @param {Element} element  The element to get the size for.
- * @return {!goog.math.Size} The border box size.
- */
-goog.style.getBorderBoxSize = function(element) {
-  return new goog.math.Size(element.offsetWidth, element.offsetHeight);
-};
-
-
-/**
- * Sets the border box size of an element. This is potentially expensive in IE
- * if the document is CSS1Compat mode
- * @param {Element} element  The element to set the size on.
- * @param {goog.math.Size} size  The new size.
- */
-goog.style.setBorderBoxSize = function(element, size) {
-  var doc = goog.dom.getOwnerDocument(element);
-  var isCss1CompatMode = goog.dom.getDomHelper(doc).isCss1CompatMode();
-
-  if (goog.userAgent.IE &&
-      (!isCss1CompatMode || !goog.userAgent.isVersionOrHigher('8'))) {
-    var style = element.style;
-    if (isCss1CompatMode) {
-      var paddingBox = goog.style.getPaddingBox(element);
-      var borderBox = goog.style.getBorderBox(element);
-      style.pixelWidth = size.width - borderBox.left - paddingBox.left -
-                         paddingBox.right - borderBox.right;
-      style.pixelHeight = size.height - borderBox.top - paddingBox.top -
-                          paddingBox.bottom - borderBox.bottom;
-    } else {
-      style.pixelWidth = size.width;
-      style.pixelHeight = size.height;
-    }
-  } else {
-    goog.style.setBoxSizingSize_(element, size, 'border-box');
-  }
-};
-
-
-/**
- * Gets the content box size for an element.  This is potentially expensive in
- * all browsers.
- * @param {Element} element  The element to get the size for.
- * @return {!goog.math.Size} The content box size.
- */
-goog.style.getContentBoxSize = function(element) {
-  var doc = goog.dom.getOwnerDocument(element);
-  var ieCurrentStyle = goog.userAgent.IE && element.currentStyle;
-  if (ieCurrentStyle &&
-      goog.dom.getDomHelper(doc).isCss1CompatMode() &&
-      ieCurrentStyle.width != 'auto' && ieCurrentStyle.height != 'auto' &&
-      !ieCurrentStyle.boxSizing) {
-    // If IE in CSS1Compat mode than just use the width and height.
-    // If we have a boxSizing then fall back on measuring the borders etc.
-    var width = goog.style.getIePixelValue_(element, ieCurrentStyle.width,
-                                            'width', 'pixelWidth');
-    var height = goog.style.getIePixelValue_(element, ieCurrentStyle.height,
-                                             'height', 'pixelHeight');
-    return new goog.math.Size(width, height);
-  } else {
-    var borderBoxSize = goog.style.getBorderBoxSize(element);
-    var paddingBox = goog.style.getPaddingBox(element);
-    var borderBox = goog.style.getBorderBox(element);
-    return new goog.math.Size(borderBoxSize.width -
-                              borderBox.left - paddingBox.left -
-                              paddingBox.right - borderBox.right,
-                              borderBoxSize.height -
-                              borderBox.top - paddingBox.top -
-                              paddingBox.bottom - borderBox.bottom);
-  }
-};
-
-
-/**
- * Sets the content box size of an element. This is potentially expensive in IE
- * if the document is BackCompat mode.
- * @param {Element} element  The element to set the size on.
- * @param {goog.math.Size} size  The new size.
- */
-goog.style.setContentBoxSize = function(element, size) {
-  var doc = goog.dom.getOwnerDocument(element);
-  var isCss1CompatMode = goog.dom.getDomHelper(doc).isCss1CompatMode();
-  if (goog.userAgent.IE &&
-      (!isCss1CompatMode || !goog.userAgent.isVersionOrHigher('8'))) {
-    var style = element.style;
-    if (isCss1CompatMode) {
-      style.pixelWidth = size.width;
-      style.pixelHeight = size.height;
-    } else {
-      var paddingBox = goog.style.getPaddingBox(element);
-      var borderBox = goog.style.getBorderBox(element);
-      style.pixelWidth = size.width + borderBox.left + paddingBox.left +
-                         paddingBox.right + borderBox.right;
-      style.pixelHeight = size.height + borderBox.top + paddingBox.top +
-                          paddingBox.bottom + borderBox.bottom;
-    }
-  } else {
-    goog.style.setBoxSizingSize_(element, size, 'content-box');
-  }
-};
-
-
-/**
- * Helper function that sets the box sizing as well as the width and height
- * @param {Element} element  The element to set the size on.
- * @param {goog.math.Size} size  The new size to set.
- * @param {string} boxSizing  The box-sizing value.
- * @private
- */
-goog.style.setBoxSizingSize_ = function(element, size, boxSizing) {
-  var style = element.style;
-  if (goog.userAgent.GECKO) {
-    style.MozBoxSizing = boxSizing;
-  } else if (goog.userAgent.WEBKIT) {
-    style.WebkitBoxSizing = boxSizing;
-  } else {
-    // Includes IE8 and Opera 9.50+
-    style.boxSizing = boxSizing;
-  }
-
-  // Setting this to a negative value will throw an exception on IE
-  // (and doesn't do anything different than setting it to 0).
-  style.width = Math.max(size.width, 0) + 'px';
-  style.height = Math.max(size.height, 0) + 'px';
-};
-
-
-/**
- * IE specific function that converts a non pixel unit to pixels.
- * @param {Element} element  The element to convert the value for.
- * @param {string} value  The current value as a string. The value must not be
- *     ''.
- * @param {string} name  The CSS property name to use for the converstion. This
- *     should be 'left', 'top', 'width' or 'height'.
- * @param {string} pixelName  The CSS pixel property name to use to get the
- *     value in pixels.
- * @return {number} The value in pixels.
- * @private
- */
-goog.style.getIePixelValue_ = function(element, value, name, pixelName) {
-  // Try if we already have a pixel value. IE does not do half pixels so we
-  // only check if it matches a number followed by 'px'.
-  if (/^\d+px?$/.test(value)) {
-    return parseInt(value, 10);
-  } else {
-    var oldStyleValue = element.style[name];
-    var oldRuntimeValue = element.runtimeStyle[name];
-    // set runtime style to prevent changes
-    element.runtimeStyle[name] = element.currentStyle[name];
-    element.style[name] = value;
-    var pixelValue = element.style[pixelName];
-    // restore
-    element.style[name] = oldStyleValue;
-    element.runtimeStyle[name] = oldRuntimeValue;
-    return pixelValue;
-  }
-};
-
-
-/**
- * Helper function for getting the pixel padding or margin for IE.
- * @param {Element} element  The element to get the padding for.
- * @param {string} propName  The property name.
- * @return {number} The pixel padding.
- * @private
- */
-goog.style.getIePixelDistance_ = function(element, propName) {
-  var value = goog.style.getCascadedStyle(element, propName);
-  return value ?
-      goog.style.getIePixelValue_(element, value, 'left', 'pixelLeft') : 0;
-};
-
-
-/**
- * Gets the computed paddings or margins (on all sides) in pixels.
- * @param {Element} element  The element to get the padding for.
- * @param {string} stylePrefix  Pass 'padding' to retrieve the padding box,
- *     or 'margin' to retrieve the margin box.
- * @return {!goog.math.Box} The computed paddings or margins.
- * @private
- */
-goog.style.getBox_ = function(element, stylePrefix) {
-  if (goog.userAgent.IE) {
-    var left = goog.style.getIePixelDistance_(element, stylePrefix + 'Left');
-    var right = goog.style.getIePixelDistance_(element, stylePrefix + 'Right');
-    var top = goog.style.getIePixelDistance_(element, stylePrefix + 'Top');
-    var bottom = goog.style.getIePixelDistance_(
-        element, stylePrefix + 'Bottom');
-    return new goog.math.Box(top, right, bottom, left);
-  } else {
-    // On non-IE browsers, getComputedStyle is always non-null.
-    var left = /** @type {string} */ (
-        goog.style.getComputedStyle(element, stylePrefix + 'Left'));
-    var right = /** @type {string} */ (
-        goog.style.getComputedStyle(element, stylePrefix + 'Right'));
-    var top = /** @type {string} */ (
-        goog.style.getComputedStyle(element, stylePrefix + 'Top'));
-    var bottom = /** @type {string} */ (
-        goog.style.getComputedStyle(element, stylePrefix + 'Bottom'));
-
-    // NOTE(arv): Gecko can return floating point numbers for the computed
-    // style values.
-    return new goog.math.Box(parseFloat(top),
-                             parseFloat(right),
-                             parseFloat(bottom),
-                             parseFloat(left));
-  }
-};
-
-
-/**
- * Gets the computed paddings (on all sides) in pixels.
- * @param {Element} element  The element to get the padding for.
- * @return {!goog.math.Box} The computed paddings.
- */
-goog.style.getPaddingBox = function(element) {
-  return goog.style.getBox_(element, 'padding');
-};
-
-
-/**
- * Gets the computed margins (on all sides) in pixels.
- * @param {Element} element  The element to get the margins for.
- * @return {!goog.math.Box} The computed margins.
- */
-goog.style.getMarginBox = function(element) {
-  return goog.style.getBox_(element, 'margin');
-};
-
-
-/**
- * A map used to map the border width keywords to a pixel width.
- * @type {Object}
- * @private
- */
-goog.style.ieBorderWidthKeywords_ = {
-  'thin': 2,
-  'medium': 4,
-  'thick': 6
-};
-
-
-/**
- * Helper function for IE to get the pixel border.
- * @param {Element} element  The element to get the pixel border for.
- * @param {string} prop  The part of the property name.
- * @return {number} The value in pixels.
- * @private
- */
-goog.style.getIePixelBorder_ = function(element, prop) {
-  if (goog.style.getCascadedStyle(element, prop + 'Style') == 'none') {
-    return 0;
-  }
-  var width = goog.style.getCascadedStyle(element, prop + 'Width');
-  if (width in goog.style.ieBorderWidthKeywords_) {
-    return goog.style.ieBorderWidthKeywords_[width];
-  }
-  return goog.style.getIePixelValue_(element, width, 'left', 'pixelLeft');
-};
-
-
-/**
- * Gets the computed border widths (on all sides) in pixels
- * @param {Element} element  The element to get the border widths for.
- * @return {!goog.math.Box} The computed border widths.
- */
-goog.style.getBorderBox = function(element) {
-  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(9)) {
-    var left = goog.style.getIePixelBorder_(element, 'borderLeft');
-    var right = goog.style.getIePixelBorder_(element, 'borderRight');
-    var top = goog.style.getIePixelBorder_(element, 'borderTop');
-    var bottom = goog.style.getIePixelBorder_(element, 'borderBottom');
-    return new goog.math.Box(top, right, bottom, left);
-  } else {
-    // On non-IE browsers, getComputedStyle is always non-null.
-    var left = /** @type {string} */ (
-        goog.style.getComputedStyle(element, 'borderLeftWidth'));
-    var right = /** @type {string} */ (
-        goog.style.getComputedStyle(element, 'borderRightWidth'));
-    var top = /** @type {string} */ (
-        goog.style.getComputedStyle(element, 'borderTopWidth'));
-    var bottom = /** @type {string} */ (
-        goog.style.getComputedStyle(element, 'borderBottomWidth'));
-
-    return new goog.math.Box(parseFloat(top),
-                             parseFloat(right),
-                             parseFloat(bottom),
-                             parseFloat(left));
-  }
-};
-
-
-/**
- * Returns the font face applied to a given node. Opera and IE should return
- * the font actually displayed. Firefox returns the author's most-preferred
- * font (whether the browser is capable of displaying it or not.)
- * @param {Element} el  The element whose font family is returned.
- * @return {string} The font family applied to el.
- */
-goog.style.getFontFamily = function(el) {
-  var doc = goog.dom.getOwnerDocument(el);
-  var font = '';
-  // The moveToElementText method from the TextRange only works if the element
-  // is attached to the owner document.
-  if (doc.body.createTextRange && goog.dom.contains(doc, el)) {
-    var range = doc.body.createTextRange();
-    range.moveToElementText(el);
-    /** @preserveTry */
-    try {
-      font = range.queryCommandValue('FontName');
-    } catch (e) {
-      // This is a workaround for a awkward exception.
-      // On some IE, there is an exception coming from it.
-      // The error description from this exception is:
-      // This window has already been registered as a drop target
-      // This is bogus description, likely due to a bug in ie.
-      font = '';
-    }
-  }
-  if (!font) {
-    // Note if for some reason IE can't derive FontName with a TextRange, we
-    // fallback to using currentStyle
-    font = goog.style.getStyle_(el, 'fontFamily');
-  }
-
-  // Firefox returns the applied font-family string (author's list of
-  // preferred fonts.) We want to return the most-preferred font, in lieu of
-  // the *actually* applied font.
-  var fontsArray = font.split(',');
-  if (fontsArray.length > 1) font = fontsArray[0];
-
-  // Sanitize for x-browser consistency:
-  // Strip quotes because browsers aren't consistent with how they're
-  // applied; Opera always encloses, Firefox sometimes, and IE never.
-  return goog.string.stripQuotes(font, '"\'');
-};
-
-
-/**
- * Regular expression used for getLengthUnits.
- * @type {RegExp}
- * @private
- */
-goog.style.lengthUnitRegex_ = /[^\d]+$/;
-
-
-/**
- * Returns the units used for a CSS length measurement.
- * @param {string} value  A CSS length quantity.
- * @return {?string} The units of measurement.
- */
-goog.style.getLengthUnits = function(value) {
-  var units = value.match(goog.style.lengthUnitRegex_);
-  return units && units[0] || null;
-};
-
-
-/**
- * Map of absolute CSS length units
- * @type {Object}
- * @private
- */
-goog.style.ABSOLUTE_CSS_LENGTH_UNITS_ = {
-  'cm' : 1,
-  'in' : 1,
-  'mm' : 1,
-  'pc' : 1,
-  'pt' : 1
-};
-
-
-/**
- * Map of relative CSS length units that can be accurately converted to px
- * font-size values using getIePixelValue_. Only units that are defined in
- * relation to a font size are convertible (%, small, etc. are not).
- * @type {Object}
- * @private
- */
-goog.style.CONVERTIBLE_RELATIVE_CSS_UNITS_ = {
-  'em' : 1,
-  'ex' : 1
-};
-
-
-/**
- * Returns the font size, in pixels, of text in an element.
- * @param {Element} el  The element whose font size is returned.
- * @return {number} The font size (in pixels).
- */
-goog.style.getFontSize = function(el) {
-  var fontSize = goog.style.getStyle_(el, 'fontSize');
-  var sizeUnits = goog.style.getLengthUnits(fontSize);
-  if (fontSize && 'px' == sizeUnits) {
-    // NOTE(user): This could be parseFloat instead, but IE doesn't return
-    // decimal fractions in getStyle_ and Firefox reports the fractions, but
-    // ignores them when rendering. Interestingly enough, when we force the
-    // issue and size something to e.g., 50% of 25px, the browsers round in
-    // opposite directions with Firefox reporting 12px and IE 13px. I punt.
-    return parseInt(fontSize, 10);
-  }
-
-  // In IE, we can convert absolute length units to a px value using
-  // goog.style.getIePixelValue_. Units defined in relation to a font size
-  // (em, ex) are applied relative to the element's parentNode and can also
-  // be converted.
-  if (goog.userAgent.IE) {
-    if (sizeUnits in goog.style.ABSOLUTE_CSS_LENGTH_UNITS_) {
-      return goog.style.getIePixelValue_(el,
-                                         fontSize,
-                                         'left',
-                                         'pixelLeft');
-    } else if (el.parentNode &&
-               el.parentNode.nodeType == goog.dom.NodeType.ELEMENT &&
-               sizeUnits in goog.style.CONVERTIBLE_RELATIVE_CSS_UNITS_) {
-      // Check the parent size - if it is the same it means the relative size
-      // value is inherited and we therefore don't want to count it twice.  If
-      // it is different, this element either has explicit style or has a CSS
-      // rule applying to it.
-      var parentElement = /** @type {Element} */ (el.parentNode);
-      var parentSize = goog.style.getStyle_(parentElement, 'fontSize');
-      return goog.style.getIePixelValue_(parentElement,
-                                         fontSize == parentSize ?
-                                             '1em' : fontSize,
-                                         'left',
-                                         'pixelLeft');
-    }
-  }
-
-  // Sometimes we can't cleanly find the font size (some units relative to a
-  // node's parent's font size are difficult: %, smaller et al), so we create
-  // an invisible, absolutely-positioned span sized to be the height of an 'M'
-  // rendered in its parent's (i.e., our target element's) font size. This is
-  // the definition of CSS's font size attribute.
-  var sizeElement = goog.dom.createDom(
-      'span',
-      {'style': 'visibility:hidden;position:absolute;' +
-            'line-height:0;padding:0;margin:0;border:0;height:1em;'});
-  goog.dom.appendChild(el, sizeElement);
-  fontSize = sizeElement.offsetHeight;
-  goog.dom.removeNode(sizeElement);
-
-  return fontSize;
-};
-
-
-/**
- * Parses a style attribute value.  Converts CSS property names to camel case.
- * @param {string} value The style attribute value.
- * @return {!Object} Map of CSS properties to string values.
- */
-goog.style.parseStyleAttribute = function(value) {
-  var result = {};
-  goog.array.forEach(value.split(/\s*;\s*/), function(pair) {
-    var keyValue = pair.split(/\s*:\s*/);
-    if (keyValue.length == 2) {
-      result[goog.string.toCamelCase(keyValue[0].toLowerCase())] = keyValue[1];
-    }
-  });
-  return result;
-};
-
-
-/**
- * Reverse of parseStyleAttribute; that is, takes a style object and returns the
- * corresponding attribute value.  Converts camel case property names to proper
- * CSS selector names.
- * @param {Object} obj Map of CSS properties to values.
- * @return {string} The style attribute value.
- */
-goog.style.toStyleAttribute = function(obj) {
-  var buffer = [];
-  goog.object.forEach(obj, function(value, key) {
-    buffer.push(goog.string.toSelectorCase(key), ':', value, ';');
-  });
-  return buffer.join('');
-};
-
-
-/**
- * Sets CSS float property on an element.
- * @param {Element} el The element to set float property on.
- * @param {string} value The value of float CSS property to set on this element.
- */
-goog.style.setFloat = function(el, value) {
-  el.style[goog.userAgent.IE ? 'styleFloat' : 'cssFloat'] = value;
-};
-
-
-/**
- * Gets value of explicitly-set float CSS property on an element.
- * @param {Element} el The element to get float property of.
- * @return {string} The value of explicitly-set float CSS property on this
- *     element.
- */
-goog.style.getFloat = function(el) {
-  return el.style[goog.userAgent.IE ? 'styleFloat' : 'cssFloat'] || '';
-};
-
-
-/**
- * Returns the scroll bar width (represents the width of both horizontal
- * and vertical scroll).
- *
- * @param {string=} opt_className An optional class name (or names) to apply
- *     to the invisible div created to measure the scrollbar. This is necessary
- *     if some scrollbars are styled differently than others.
- * @return {number} The scroll bar width in px.
- */
-goog.style.getScrollbarWidth = function(opt_className) {
-  // Add two hidden divs.  The child div is larger than the parent and
-  // forces scrollbars to appear on it.
-  // Using overflow:scroll does not work consistently with scrollbars that
-  // are styled with ::-webkit-scrollbar.
-  var outerDiv = goog.dom.createElement('div');
-  if (opt_className) {
-    outerDiv.className = opt_className;
-  }
-  outerDiv.style.cssText = 'overflow:auto;' +
-      'position:absolute;top:0;width:100px;height:100px';
-  var innerDiv = goog.dom.createElement('div');
-  goog.style.setSize(innerDiv, '200px', '200px');
-  outerDiv.appendChild(innerDiv);
-  goog.dom.appendChild(goog.dom.getDocument().body, outerDiv);
-  var width = outerDiv.offsetWidth - outerDiv.clientWidth;
-  goog.dom.removeNode(outerDiv);
-  return width;
-};
-
-
-/**
- * Regular expression to extract x and y translation components from a CSS
- * transform Matrix representation.
- *
- * @type {!RegExp}
- * @const
- * @private
- */
-goog.style.MATRIX_TRANSLATION_REGEX_ =
-    new RegExp('matrix\\([0-9\\.\\-]+, [0-9\\.\\-]+, ' +
-               '[0-9\\.\\-]+, [0-9\\.\\-]+, ' +
-               '([0-9\\.\\-]+)p?x?, ([0-9\\.\\-]+)p?x?\\)');
-
-
-/**
- * Returns the x,y translation component of any CSS transforms applied to the
- * element, in pixels.
- *
- * @param {!Element} element The element to get the translation of.
- * @return {!goog.math.Coordinate} The CSS translation of the element in px.
- */
-goog.style.getCssTranslation = function(element) {
-  var transform = goog.style.getComputedTransform(element);
-  if (!transform) {
-    return new goog.math.Coordinate(0, 0);
-  }
-  var matches = transform.match(goog.style.MATRIX_TRANSLATION_REGEX_);
-  if (!matches) {
-    return new goog.math.Coordinate(0, 0);
-  }
-  return new goog.math.Coordinate(parseFloat(matches[1]),
-                                  parseFloat(matches[2]));
-};
-
 // FIXME add tests for browser features (Modernizr?)
 
 goog.provide('ol.dom');
@@ -26305,7 +23724,6 @@ goog.provide('ol.dom.BrowserFeature');
 goog.require('goog.asserts');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
-goog.require('goog.style');
 goog.require('goog.userAgent');
 goog.require('goog.vec.Mat4');
 goog.require('ol');
@@ -26479,7 +23897,7 @@ ol.dom.setOpacity = function(element, value) {
       element.style.zIndex = 0;
     }
   } else {
-    goog.style.setOpacity(element, value);
+    element.style.opacity = value;
   }
 };
 
@@ -26714,8 +24132,7 @@ ol.has.CANVAS = ol.ENABLE_CANVAS && (
  * @type {boolean}
  * @api stable
  */
-ol.has.DEVICE_ORIENTATION =
-    'DeviceOrientationEvent' in goog.global;
+ol.has.DEVICE_ORIENTATION = 'DeviceOrientationEvent' in goog.global;
 
 
 /**
@@ -26757,8 +24174,7 @@ ol.has.POINTER = 'PointerEvent' in goog.global;
  * @const
  * @type {boolean}
  */
-ol.has.MSPOINTER =
-    !!(goog.global.navigator.msPointerEnabled);
+ol.has.MSPOINTER = !!(goog.global.navigator.msPointerEnabled);
 
 
 /**
@@ -29051,6 +26467,3068 @@ goog.dom.classlist.addRemove = function(element, classToRemove, classToAdd) {
   goog.dom.classlist.add(element, classToAdd);
 };
 
+// Copyright 2012 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview Vendor prefix getters.
+ */
+
+goog.provide('goog.dom.vendor');
+
+goog.require('goog.string');
+goog.require('goog.userAgent');
+
+
+/**
+ * Returns the JS vendor prefix used in CSS properties. Different vendors
+ * use different methods of changing the case of the property names.
+ *
+ * @return {?string} The JS vendor prefix or null if there is none.
+ */
+goog.dom.vendor.getVendorJsPrefix = function() {
+  if (goog.userAgent.WEBKIT) {
+    return 'Webkit';
+  } else if (goog.userAgent.GECKO) {
+    return 'Moz';
+  } else if (goog.userAgent.IE) {
+    return 'ms';
+  } else if (goog.userAgent.OPERA) {
+    return 'O';
+  }
+
+  return null;
+};
+
+
+/**
+ * Returns the vendor prefix used in CSS properties.
+ *
+ * @return {?string} The vendor prefix or null if there is none.
+ */
+goog.dom.vendor.getVendorPrefix = function() {
+  if (goog.userAgent.WEBKIT) {
+    return '-webkit';
+  } else if (goog.userAgent.GECKO) {
+    return '-moz';
+  } else if (goog.userAgent.IE) {
+    return '-ms';
+  } else if (goog.userAgent.OPERA) {
+    return '-o';
+  }
+
+  return null;
+};
+
+
+/**
+ * @param {string} propertyName A property name.
+ * @param {!Object=} opt_object If provided, we verify if the property exists in
+ *     the object.
+ * @return {?string} A vendor prefixed property name, or null if it does not
+ *     exist.
+ */
+goog.dom.vendor.getPrefixedPropertyName = function(propertyName, opt_object) {
+  // We first check for a non-prefixed property, if available.
+  if (opt_object && propertyName in opt_object) {
+    return propertyName;
+  }
+  var prefix = goog.dom.vendor.getVendorJsPrefix();
+  if (prefix) {
+    prefix = prefix.toLowerCase();
+    var prefixedPropertyName = prefix + goog.string.toTitleCase(propertyName);
+    return (!goog.isDef(opt_object) || prefixedPropertyName in opt_object) ?
+        prefixedPropertyName : null;
+  }
+  return null;
+};
+
+
+/**
+ * @param {string} eventType An event type.
+ * @return {string} A lower-cased vendor prefixed event type.
+ */
+goog.dom.vendor.getPrefixedEventType = function(eventType) {
+  var prefix = goog.dom.vendor.getVendorJsPrefix() || '';
+  return (prefix + eventType).toLowerCase();
+};
+
+// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview A utility class for representing a numeric box.
+ */
+
+
+goog.provide('goog.math.Box');
+
+goog.require('goog.math.Coordinate');
+
+
+
+/**
+ * Class for representing a box. A box is specified as a top, right, bottom,
+ * and left. A box is useful for representing margins and padding.
+ *
+ * This class assumes 'screen coordinates': larger Y coordinates are further
+ * from the top of the screen.
+ *
+ * @param {number} top Top.
+ * @param {number} right Right.
+ * @param {number} bottom Bottom.
+ * @param {number} left Left.
+ * @constructor
+ */
+goog.math.Box = function(top, right, bottom, left) {
+  /**
+   * Top
+   * @type {number}
+   */
+  this.top = top;
+
+  /**
+   * Right
+   * @type {number}
+   */
+  this.right = right;
+
+  /**
+   * Bottom
+   * @type {number}
+   */
+  this.bottom = bottom;
+
+  /**
+   * Left
+   * @type {number}
+   */
+  this.left = left;
+};
+
+
+/**
+ * Creates a Box by bounding a collection of goog.math.Coordinate objects
+ * @param {...goog.math.Coordinate} var_args Coordinates to be included inside
+ *     the box.
+ * @return {!goog.math.Box} A Box containing all the specified Coordinates.
+ */
+goog.math.Box.boundingBox = function(var_args) {
+  var box = new goog.math.Box(arguments[0].y, arguments[0].x,
+                              arguments[0].y, arguments[0].x);
+  for (var i = 1; i < arguments.length; i++) {
+    var coord = arguments[i];
+    box.top = Math.min(box.top, coord.y);
+    box.right = Math.max(box.right, coord.x);
+    box.bottom = Math.max(box.bottom, coord.y);
+    box.left = Math.min(box.left, coord.x);
+  }
+  return box;
+};
+
+
+/**
+ * @return {number} width The width of this Box.
+ */
+goog.math.Box.prototype.getWidth = function() {
+  return this.right - this.left;
+};
+
+
+/**
+ * @return {number} height The height of this Box.
+ */
+goog.math.Box.prototype.getHeight = function() {
+  return this.bottom - this.top;
+};
+
+
+/**
+ * Creates a copy of the box with the same dimensions.
+ * @return {!goog.math.Box} A clone of this Box.
+ */
+goog.math.Box.prototype.clone = function() {
+  return new goog.math.Box(this.top, this.right, this.bottom, this.left);
+};
+
+
+if (goog.DEBUG) {
+  /**
+   * Returns a nice string representing the box.
+   * @return {string} In the form (50t, 73r, 24b, 13l).
+   * @override
+   */
+  goog.math.Box.prototype.toString = function() {
+    return '(' + this.top + 't, ' + this.right + 'r, ' + this.bottom + 'b, ' +
+           this.left + 'l)';
+  };
+}
+
+
+/**
+ * Returns whether the box contains a coordinate or another box.
+ *
+ * @param {goog.math.Coordinate|goog.math.Box} other A Coordinate or a Box.
+ * @return {boolean} Whether the box contains the coordinate or other box.
+ */
+goog.math.Box.prototype.contains = function(other) {
+  return goog.math.Box.contains(this, other);
+};
+
+
+/**
+ * Expands box with the given margins.
+ *
+ * @param {number|goog.math.Box} top Top margin or box with all margins.
+ * @param {number=} opt_right Right margin.
+ * @param {number=} opt_bottom Bottom margin.
+ * @param {number=} opt_left Left margin.
+ * @return {!goog.math.Box} A reference to this Box.
+ */
+goog.math.Box.prototype.expand = function(top, opt_right, opt_bottom,
+    opt_left) {
+  if (goog.isObject(top)) {
+    this.top -= top.top;
+    this.right += top.right;
+    this.bottom += top.bottom;
+    this.left -= top.left;
+  } else {
+    this.top -= top;
+    this.right += opt_right;
+    this.bottom += opt_bottom;
+    this.left -= opt_left;
+  }
+
+  return this;
+};
+
+
+/**
+ * Expand this box to include another box.
+ * NOTE(user): This is used in code that needs to be very fast, please don't
+ * add functionality to this function at the expense of speed (variable
+ * arguments, accepting multiple argument types, etc).
+ * @param {goog.math.Box} box The box to include in this one.
+ */
+goog.math.Box.prototype.expandToInclude = function(box) {
+  this.left = Math.min(this.left, box.left);
+  this.top = Math.min(this.top, box.top);
+  this.right = Math.max(this.right, box.right);
+  this.bottom = Math.max(this.bottom, box.bottom);
+};
+
+
+/**
+ * Compares boxes for equality.
+ * @param {goog.math.Box} a A Box.
+ * @param {goog.math.Box} b A Box.
+ * @return {boolean} True iff the boxes are equal, or if both are null.
+ */
+goog.math.Box.equals = function(a, b) {
+  if (a == b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return a.top == b.top && a.right == b.right &&
+         a.bottom == b.bottom && a.left == b.left;
+};
+
+
+/**
+ * Returns whether a box contains a coordinate or another box.
+ *
+ * @param {goog.math.Box} box A Box.
+ * @param {goog.math.Coordinate|goog.math.Box} other A Coordinate or a Box.
+ * @return {boolean} Whether the box contains the coordinate or other box.
+ */
+goog.math.Box.contains = function(box, other) {
+  if (!box || !other) {
+    return false;
+  }
+
+  if (other instanceof goog.math.Box) {
+    return other.left >= box.left && other.right <= box.right &&
+        other.top >= box.top && other.bottom <= box.bottom;
+  }
+
+  // other is a Coordinate.
+  return other.x >= box.left && other.x <= box.right &&
+         other.y >= box.top && other.y <= box.bottom;
+};
+
+
+/**
+ * Returns the relative x position of a coordinate compared to a box.  Returns
+ * zero if the coordinate is inside the box.
+ *
+ * @param {goog.math.Box} box A Box.
+ * @param {goog.math.Coordinate} coord A Coordinate.
+ * @return {number} The x position of {@code coord} relative to the nearest
+ *     side of {@code box}, or zero if {@code coord} is inside {@code box}.
+ */
+goog.math.Box.relativePositionX = function(box, coord) {
+  if (coord.x < box.left) {
+    return coord.x - box.left;
+  } else if (coord.x > box.right) {
+    return coord.x - box.right;
+  }
+  return 0;
+};
+
+
+/**
+ * Returns the relative y position of a coordinate compared to a box.  Returns
+ * zero if the coordinate is inside the box.
+ *
+ * @param {goog.math.Box} box A Box.
+ * @param {goog.math.Coordinate} coord A Coordinate.
+ * @return {number} The y position of {@code coord} relative to the nearest
+ *     side of {@code box}, or zero if {@code coord} is inside {@code box}.
+ */
+goog.math.Box.relativePositionY = function(box, coord) {
+  if (coord.y < box.top) {
+    return coord.y - box.top;
+  } else if (coord.y > box.bottom) {
+    return coord.y - box.bottom;
+  }
+  return 0;
+};
+
+
+/**
+ * Returns the distance between a coordinate and the nearest corner/side of a
+ * box. Returns zero if the coordinate is inside the box.
+ *
+ * @param {goog.math.Box} box A Box.
+ * @param {goog.math.Coordinate} coord A Coordinate.
+ * @return {number} The distance between {@code coord} and the nearest
+ *     corner/side of {@code box}, or zero if {@code coord} is inside
+ *     {@code box}.
+ */
+goog.math.Box.distance = function(box, coord) {
+  var x = goog.math.Box.relativePositionX(box, coord);
+  var y = goog.math.Box.relativePositionY(box, coord);
+  return Math.sqrt(x * x + y * y);
+};
+
+
+/**
+ * Returns whether two boxes intersect.
+ *
+ * @param {goog.math.Box} a A Box.
+ * @param {goog.math.Box} b A second Box.
+ * @return {boolean} Whether the boxes intersect.
+ */
+goog.math.Box.intersects = function(a, b) {
+  return (a.left <= b.right && b.left <= a.right &&
+          a.top <= b.bottom && b.top <= a.bottom);
+};
+
+
+/**
+ * Returns whether two boxes would intersect with additional padding.
+ *
+ * @param {goog.math.Box} a A Box.
+ * @param {goog.math.Box} b A second Box.
+ * @param {number} padding The additional padding.
+ * @return {boolean} Whether the boxes intersect.
+ */
+goog.math.Box.intersectsWithPadding = function(a, b, padding) {
+  return (a.left <= b.right + padding && b.left <= a.right + padding &&
+          a.top <= b.bottom + padding && b.top <= a.bottom + padding);
+};
+
+
+/**
+ * Rounds the fields to the next larger integer values.
+ *
+ * @return {!goog.math.Box} This box with ceil'd fields.
+ */
+goog.math.Box.prototype.ceil = function() {
+  this.top = Math.ceil(this.top);
+  this.right = Math.ceil(this.right);
+  this.bottom = Math.ceil(this.bottom);
+  this.left = Math.ceil(this.left);
+  return this;
+};
+
+
+/**
+ * Rounds the fields to the next smaller integer values.
+ *
+ * @return {!goog.math.Box} This box with floored fields.
+ */
+goog.math.Box.prototype.floor = function() {
+  this.top = Math.floor(this.top);
+  this.right = Math.floor(this.right);
+  this.bottom = Math.floor(this.bottom);
+  this.left = Math.floor(this.left);
+  return this;
+};
+
+
+/**
+ * Rounds the fields to nearest integer values.
+ *
+ * @return {!goog.math.Box} This box with rounded fields.
+ */
+goog.math.Box.prototype.round = function() {
+  this.top = Math.round(this.top);
+  this.right = Math.round(this.right);
+  this.bottom = Math.round(this.bottom);
+  this.left = Math.round(this.left);
+  return this;
+};
+
+
+/**
+ * Translates this box by the given offsets. If a {@code goog.math.Coordinate}
+ * is given, then the left and right values are translated by the coordinate's
+ * x value and the top and bottom values are translated by the coordinate's y
+ * value.  Otherwise, {@code tx} and {@code opt_ty} are used to translate the x
+ * and y dimension values.
+ *
+ * @param {number|goog.math.Coordinate} tx The value to translate the x
+ *     dimension values by or the the coordinate to translate this box by.
+ * @param {number=} opt_ty The value to translate y dimension values by.
+ * @return {!goog.math.Box} This box after translating.
+ */
+goog.math.Box.prototype.translate = function(tx, opt_ty) {
+  if (tx instanceof goog.math.Coordinate) {
+    this.left += tx.x;
+    this.right += tx.x;
+    this.top += tx.y;
+    this.bottom += tx.y;
+  } else {
+    this.left += tx;
+    this.right += tx;
+    if (goog.isNumber(opt_ty)) {
+      this.top += opt_ty;
+      this.bottom += opt_ty;
+    }
+  }
+  return this;
+};
+
+
+/**
+ * Scales this coordinate by the given scale factors. The x and y dimension
+ * values are scaled by {@code sx} and {@code opt_sy} respectively.
+ * If {@code opt_sy} is not given, then {@code sx} is used for both x and y.
+ *
+ * @param {number} sx The scale factor to use for the x dimension.
+ * @param {number=} opt_sy The scale factor to use for the y dimension.
+ * @return {!goog.math.Box} This box after scaling.
+ */
+goog.math.Box.prototype.scale = function(sx, opt_sy) {
+  var sy = goog.isNumber(opt_sy) ? opt_sy : sx;
+  this.left *= sx;
+  this.right *= sx;
+  this.top *= sy;
+  this.bottom *= sy;
+  return this;
+};
+
+// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview A utility class for representing rectangles.
+ */
+
+goog.provide('goog.math.Rect');
+
+goog.require('goog.math.Box');
+goog.require('goog.math.Coordinate');
+goog.require('goog.math.Size');
+
+
+
+/**
+ * Class for representing rectangular regions.
+ * @param {number} x Left.
+ * @param {number} y Top.
+ * @param {number} w Width.
+ * @param {number} h Height.
+ * @constructor
+ */
+goog.math.Rect = function(x, y, w, h) {
+  /** @type {number} */
+  this.left = x;
+
+  /** @type {number} */
+  this.top = y;
+
+  /** @type {number} */
+  this.width = w;
+
+  /** @type {number} */
+  this.height = h;
+};
+
+
+/**
+ * @return {!goog.math.Rect} A new copy of this Rectangle.
+ */
+goog.math.Rect.prototype.clone = function() {
+  return new goog.math.Rect(this.left, this.top, this.width, this.height);
+};
+
+
+/**
+ * Returns a new Box object with the same position and dimensions as this
+ * rectangle.
+ * @return {!goog.math.Box} A new Box representation of this Rectangle.
+ */
+goog.math.Rect.prototype.toBox = function() {
+  var right = this.left + this.width;
+  var bottom = this.top + this.height;
+  return new goog.math.Box(this.top,
+                           right,
+                           bottom,
+                           this.left);
+};
+
+
+/**
+ * Creates a new Rect object with the same position and dimensions as a given
+ * Box.  Note that this is only the inverse of toBox if left/top are defined.
+ * @param {goog.math.Box} box A box.
+ * @return {!goog.math.Rect} A new Rect initialized with the box's position
+ *     and size.
+ */
+goog.math.Rect.createFromBox = function(box) {
+  return new goog.math.Rect(box.left, box.top,
+      box.right - box.left, box.bottom - box.top);
+};
+
+
+if (goog.DEBUG) {
+  /**
+   * Returns a nice string representing size and dimensions of rectangle.
+   * @return {string} In the form (50, 73 - 75w x 25h).
+   * @override
+   */
+  goog.math.Rect.prototype.toString = function() {
+    return '(' + this.left + ', ' + this.top + ' - ' + this.width + 'w x ' +
+           this.height + 'h)';
+  };
+}
+
+
+/**
+ * Compares rectangles for equality.
+ * @param {goog.math.Rect} a A Rectangle.
+ * @param {goog.math.Rect} b A Rectangle.
+ * @return {boolean} True iff the rectangles have the same left, top, width,
+ *     and height, or if both are null.
+ */
+goog.math.Rect.equals = function(a, b) {
+  if (a == b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return a.left == b.left && a.width == b.width &&
+         a.top == b.top && a.height == b.height;
+};
+
+
+/**
+ * Computes the intersection of this rectangle and the rectangle parameter.  If
+ * there is no intersection, returns false and leaves this rectangle as is.
+ * @param {goog.math.Rect} rect A Rectangle.
+ * @return {boolean} True iff this rectangle intersects with the parameter.
+ */
+goog.math.Rect.prototype.intersection = function(rect) {
+  var x0 = Math.max(this.left, rect.left);
+  var x1 = Math.min(this.left + this.width, rect.left + rect.width);
+
+  if (x0 <= x1) {
+    var y0 = Math.max(this.top, rect.top);
+    var y1 = Math.min(this.top + this.height, rect.top + rect.height);
+
+    if (y0 <= y1) {
+      this.left = x0;
+      this.top = y0;
+      this.width = x1 - x0;
+      this.height = y1 - y0;
+
+      return true;
+    }
+  }
+  return false;
+};
+
+
+/**
+ * Returns the intersection of two rectangles. Two rectangles intersect if they
+ * touch at all, for example, two zero width and height rectangles would
+ * intersect if they had the same top and left.
+ * @param {goog.math.Rect} a A Rectangle.
+ * @param {goog.math.Rect} b A Rectangle.
+ * @return {goog.math.Rect} A new intersection rect (even if width and height
+ *     are 0), or null if there is no intersection.
+ */
+goog.math.Rect.intersection = function(a, b) {
+  // There is no nice way to do intersection via a clone, because any such
+  // clone might be unnecessary if this function returns null.  So, we duplicate
+  // code from above.
+
+  var x0 = Math.max(a.left, b.left);
+  var x1 = Math.min(a.left + a.width, b.left + b.width);
+
+  if (x0 <= x1) {
+    var y0 = Math.max(a.top, b.top);
+    var y1 = Math.min(a.top + a.height, b.top + b.height);
+
+    if (y0 <= y1) {
+      return new goog.math.Rect(x0, y0, x1 - x0, y1 - y0);
+    }
+  }
+  return null;
+};
+
+
+/**
+ * Returns whether two rectangles intersect. Two rectangles intersect if they
+ * touch at all, for example, two zero width and height rectangles would
+ * intersect if they had the same top and left.
+ * @param {goog.math.Rect} a A Rectangle.
+ * @param {goog.math.Rect} b A Rectangle.
+ * @return {boolean} Whether a and b intersect.
+ */
+goog.math.Rect.intersects = function(a, b) {
+  return (a.left <= b.left + b.width && b.left <= a.left + a.width &&
+      a.top <= b.top + b.height && b.top <= a.top + a.height);
+};
+
+
+/**
+ * Returns whether a rectangle intersects this rectangle.
+ * @param {goog.math.Rect} rect A rectangle.
+ * @return {boolean} Whether rect intersects this rectangle.
+ */
+goog.math.Rect.prototype.intersects = function(rect) {
+  return goog.math.Rect.intersects(this, rect);
+};
+
+
+/**
+ * Computes the difference regions between two rectangles. The return value is
+ * an array of 0 to 4 rectangles defining the remaining regions of the first
+ * rectangle after the second has been subtracted.
+ * @param {goog.math.Rect} a A Rectangle.
+ * @param {goog.math.Rect} b A Rectangle.
+ * @return {!Array.<!goog.math.Rect>} An array with 0 to 4 rectangles which
+ *     together define the difference area of rectangle a minus rectangle b.
+ */
+goog.math.Rect.difference = function(a, b) {
+  var intersection = goog.math.Rect.intersection(a, b);
+  if (!intersection || !intersection.height || !intersection.width) {
+    return [a.clone()];
+  }
+
+  var result = [];
+
+  var top = a.top;
+  var height = a.height;
+
+  var ar = a.left + a.width;
+  var ab = a.top + a.height;
+
+  var br = b.left + b.width;
+  var bb = b.top + b.height;
+
+  // Subtract off any area on top where A extends past B
+  if (b.top > a.top) {
+    result.push(new goog.math.Rect(a.left, a.top, a.width, b.top - a.top));
+    top = b.top;
+    // If we're moving the top down, we also need to subtract the height diff.
+    height -= b.top - a.top;
+  }
+  // Subtract off any area on bottom where A extends past B
+  if (bb < ab) {
+    result.push(new goog.math.Rect(a.left, bb, a.width, ab - bb));
+    height = bb - top;
+  }
+  // Subtract any area on left where A extends past B
+  if (b.left > a.left) {
+    result.push(new goog.math.Rect(a.left, top, b.left - a.left, height));
+  }
+  // Subtract any area on right where A extends past B
+  if (br < ar) {
+    result.push(new goog.math.Rect(br, top, ar - br, height));
+  }
+
+  return result;
+};
+
+
+/**
+ * Computes the difference regions between this rectangle and {@code rect}. The
+ * return value is an array of 0 to 4 rectangles defining the remaining regions
+ * of this rectangle after the other has been subtracted.
+ * @param {goog.math.Rect} rect A Rectangle.
+ * @return {!Array.<!goog.math.Rect>} An array with 0 to 4 rectangles which
+ *     together define the difference area of rectangle a minus rectangle b.
+ */
+goog.math.Rect.prototype.difference = function(rect) {
+  return goog.math.Rect.difference(this, rect);
+};
+
+
+/**
+ * Expand this rectangle to also include the area of the given rectangle.
+ * @param {goog.math.Rect} rect The other rectangle.
+ */
+goog.math.Rect.prototype.boundingRect = function(rect) {
+  // We compute right and bottom before we change left and top below.
+  var right = Math.max(this.left + this.width, rect.left + rect.width);
+  var bottom = Math.max(this.top + this.height, rect.top + rect.height);
+
+  this.left = Math.min(this.left, rect.left);
+  this.top = Math.min(this.top, rect.top);
+
+  this.width = right - this.left;
+  this.height = bottom - this.top;
+};
+
+
+/**
+ * Returns a new rectangle which completely contains both input rectangles.
+ * @param {goog.math.Rect} a A rectangle.
+ * @param {goog.math.Rect} b A rectangle.
+ * @return {goog.math.Rect} A new bounding rect, or null if either rect is
+ *     null.
+ */
+goog.math.Rect.boundingRect = function(a, b) {
+  if (!a || !b) {
+    return null;
+  }
+
+  var clone = a.clone();
+  clone.boundingRect(b);
+
+  return clone;
+};
+
+
+/**
+ * Tests whether this rectangle entirely contains another rectangle or
+ * coordinate.
+ *
+ * @param {goog.math.Rect|goog.math.Coordinate} another The rectangle or
+ *     coordinate to test for containment.
+ * @return {boolean} Whether this rectangle contains given rectangle or
+ *     coordinate.
+ */
+goog.math.Rect.prototype.contains = function(another) {
+  if (another instanceof goog.math.Rect) {
+    return this.left <= another.left &&
+           this.left + this.width >= another.left + another.width &&
+           this.top <= another.top &&
+           this.top + this.height >= another.top + another.height;
+  } else { // (another instanceof goog.math.Coordinate)
+    return another.x >= this.left &&
+           another.x <= this.left + this.width &&
+           another.y >= this.top &&
+           another.y <= this.top + this.height;
+  }
+};
+
+
+/**
+ * @param {!goog.math.Coordinate} point A coordinate.
+ * @return {number} The squared distance between the point and the closest
+ *     point inside the rectangle. Returns 0 if the point is inside the
+ *     rectangle.
+ */
+goog.math.Rect.prototype.squaredDistance = function(point) {
+  var dx = point.x < this.left ?
+      this.left - point.x : Math.max(point.x - (this.left + this.width), 0);
+  var dy = point.y < this.top ?
+      this.top - point.y : Math.max(point.y - (this.top + this.height), 0);
+  return dx * dx + dy * dy;
+};
+
+
+/**
+ * @param {!goog.math.Coordinate} point A coordinate.
+ * @return {number} The distance between the point and the closest point
+ *     inside the rectangle. Returns 0 if the point is inside the rectangle.
+ */
+goog.math.Rect.prototype.distance = function(point) {
+  return Math.sqrt(this.squaredDistance(point));
+};
+
+
+/**
+ * @return {!goog.math.Size} The size of this rectangle.
+ */
+goog.math.Rect.prototype.getSize = function() {
+  return new goog.math.Size(this.width, this.height);
+};
+
+
+/**
+ * @return {!goog.math.Coordinate} A new coordinate for the top-left corner of
+ *     the rectangle.
+ */
+goog.math.Rect.prototype.getTopLeft = function() {
+  return new goog.math.Coordinate(this.left, this.top);
+};
+
+
+/**
+ * @return {!goog.math.Coordinate} A new coordinate for the center of the
+ *     rectangle.
+ */
+goog.math.Rect.prototype.getCenter = function() {
+  return new goog.math.Coordinate(
+      this.left + this.width / 2, this.top + this.height / 2);
+};
+
+
+/**
+ * @return {!goog.math.Coordinate} A new coordinate for the bottom-right corner
+ *     of the rectangle.
+ */
+goog.math.Rect.prototype.getBottomRight = function() {
+  return new goog.math.Coordinate(
+      this.left + this.width, this.top + this.height);
+};
+
+
+/**
+ * Rounds the fields to the next larger integer values.
+ * @return {!goog.math.Rect} This rectangle with ceil'd fields.
+ */
+goog.math.Rect.prototype.ceil = function() {
+  this.left = Math.ceil(this.left);
+  this.top = Math.ceil(this.top);
+  this.width = Math.ceil(this.width);
+  this.height = Math.ceil(this.height);
+  return this;
+};
+
+
+/**
+ * Rounds the fields to the next smaller integer values.
+ * @return {!goog.math.Rect} This rectangle with floored fields.
+ */
+goog.math.Rect.prototype.floor = function() {
+  this.left = Math.floor(this.left);
+  this.top = Math.floor(this.top);
+  this.width = Math.floor(this.width);
+  this.height = Math.floor(this.height);
+  return this;
+};
+
+
+/**
+ * Rounds the fields to nearest integer values.
+ * @return {!goog.math.Rect} This rectangle with rounded fields.
+ */
+goog.math.Rect.prototype.round = function() {
+  this.left = Math.round(this.left);
+  this.top = Math.round(this.top);
+  this.width = Math.round(this.width);
+  this.height = Math.round(this.height);
+  return this;
+};
+
+
+/**
+ * Translates this rectangle by the given offsets. If a
+ * {@code goog.math.Coordinate} is given, then the left and top values are
+ * translated by the coordinate's x and y values. Otherwise, top and left are
+ * translated by {@code tx} and {@code opt_ty} respectively.
+ * @param {number|goog.math.Coordinate} tx The value to translate left by or the
+ *     the coordinate to translate this rect by.
+ * @param {number=} opt_ty The value to translate top by.
+ * @return {!goog.math.Rect} This rectangle after translating.
+ */
+goog.math.Rect.prototype.translate = function(tx, opt_ty) {
+  if (tx instanceof goog.math.Coordinate) {
+    this.left += tx.x;
+    this.top += tx.y;
+  } else {
+    this.left += tx;
+    if (goog.isNumber(opt_ty)) {
+      this.top += opt_ty;
+    }
+  }
+  return this;
+};
+
+
+/**
+ * Scales this rectangle by the given scale factors. The left and width values
+ * are scaled by {@code sx} and the top and height values are scaled by
+ * {@code opt_sy}.  If {@code opt_sy} is not given, then all fields are scaled
+ * by {@code sx}.
+ * @param {number} sx The scale factor to use for the x dimension.
+ * @param {number=} opt_sy The scale factor to use for the y dimension.
+ * @return {!goog.math.Rect} This rectangle after scaling.
+ */
+goog.math.Rect.prototype.scale = function(sx, opt_sy) {
+  var sy = goog.isNumber(opt_sy) ? opt_sy : sx;
+  this.left *= sx;
+  this.width *= sx;
+  this.top *= sy;
+  this.height *= sy;
+  return this;
+};
+
+// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview Utilities for element styles.
+ *
+ * @see ../demos/inline_block_quirks.html
+ * @see ../demos/inline_block_standards.html
+ * @see ../demos/style_viewport.html
+ */
+
+goog.provide('goog.style');
+
+
+goog.require('goog.array');
+goog.require('goog.asserts');
+goog.require('goog.dom');
+goog.require('goog.dom.NodeType');
+goog.require('goog.dom.vendor');
+goog.require('goog.math.Box');
+goog.require('goog.math.Coordinate');
+goog.require('goog.math.Rect');
+goog.require('goog.math.Size');
+goog.require('goog.object');
+goog.require('goog.string');
+goog.require('goog.userAgent');
+
+
+/**
+ * @define {boolean} Whether we know at compile time that
+ *     getBoundingClientRect() is present and bug-free on the browser.
+ */
+goog.define('goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS', false);
+
+
+/**
+ * Sets a style value on an element.
+ *
+ * This function is not indended to patch issues in the browser's style
+ * handling, but to allow easy programmatic access to setting dash-separated
+ * style properties.  An example is setting a batch of properties from a data
+ * object without overwriting old styles.  When possible, use native APIs:
+ * elem.style.propertyKey = 'value' or (if obliterating old styles is fine)
+ * elem.style.cssText = 'property1: value1; property2: value2'.
+ *
+ * @param {Element} element The element to change.
+ * @param {string|Object} style If a string, a style name. If an object, a hash
+ *     of style names to style values.
+ * @param {string|number|boolean=} opt_value If style was a string, then this
+ *     should be the value.
+ */
+goog.style.setStyle = function(element, style, opt_value) {
+  if (goog.isString(style)) {
+    goog.style.setStyle_(element, opt_value, style);
+  } else {
+    for (var key in style) {
+      goog.style.setStyle_(element, style[key], key);
+    }
+  }
+};
+
+
+/**
+ * Sets a style value on an element, with parameters swapped to work with
+ * {@code goog.object.forEach()}. Prepends a vendor-specific prefix when
+ * necessary.
+ * @param {Element} element The element to change.
+ * @param {string|number|boolean|undefined} value Style value.
+ * @param {string} style Style name.
+ * @private
+ */
+goog.style.setStyle_ = function(element, value, style) {
+  var propertyName = goog.style.getVendorJsStyleName_(element, style);
+
+  if (propertyName) {
+    element.style[propertyName] = value;
+  }
+};
+
+
+/**
+ * Returns the style property name in camel-case. If it does not exist and a
+ * vendor-specific version of the property does exist, then return the vendor-
+ * specific property name instead.
+ * @param {Element} element The element to change.
+ * @param {string} style Style name.
+ * @return {string} Vendor-specific style.
+ * @private
+ */
+goog.style.getVendorJsStyleName_ = function(element, style) {
+  var camelStyle = goog.string.toCamelCase(style);
+
+  if (element.style[camelStyle] === undefined) {
+    var prefixedStyle = goog.dom.vendor.getVendorJsPrefix() +
+        goog.string.toTitleCase(camelStyle);
+
+    if (element.style[prefixedStyle] !== undefined) {
+      return prefixedStyle;
+    }
+  }
+
+  return camelStyle;
+};
+
+
+/**
+ * Returns the style property name in CSS notation. If it does not exist and a
+ * vendor-specific version of the property does exist, then return the vendor-
+ * specific property name instead.
+ * @param {Element} element The element to change.
+ * @param {string} style Style name.
+ * @return {string} Vendor-specific style.
+ * @private
+ */
+goog.style.getVendorStyleName_ = function(element, style) {
+  var camelStyle = goog.string.toCamelCase(style);
+
+  if (element.style[camelStyle] === undefined) {
+    var prefixedStyle = goog.dom.vendor.getVendorJsPrefix() +
+        goog.string.toTitleCase(camelStyle);
+
+    if (element.style[prefixedStyle] !== undefined) {
+      return goog.dom.vendor.getVendorPrefix() + '-' + style;
+    }
+  }
+
+  return style;
+};
+
+
+/**
+ * Retrieves an explicitly-set style value of a node. This returns '' if there
+ * isn't a style attribute on the element or if this style property has not been
+ * explicitly set in script.
+ *
+ * @param {Element} element Element to get style of.
+ * @param {string} property Property to get, css-style (if you have a camel-case
+ * property, use element.style[style]).
+ * @return {string} Style value.
+ */
+goog.style.getStyle = function(element, property) {
+  // element.style is '' for well-known properties which are unset.
+  // For for browser specific styles as 'filter' is undefined
+  // so we need to return '' explicitly to make it consistent across
+  // browsers.
+  var styleValue = element.style[goog.string.toCamelCase(property)];
+
+  // Using typeof here because of a bug in Safari 5.1, where this value
+  // was undefined, but === undefined returned false.
+  if (typeof(styleValue) !== 'undefined') {
+    return styleValue;
+  }
+
+  return element.style[goog.style.getVendorJsStyleName_(element, property)] ||
+      '';
+};
+
+
+/**
+ * Retrieves a computed style value of a node. It returns empty string if the
+ * value cannot be computed (which will be the case in Internet Explorer) or
+ * "none" if the property requested is an SVG one and it has not been
+ * explicitly set (firefox and webkit).
+ *
+ * @param {Element} element Element to get style of.
+ * @param {string} property Property to get (camel-case).
+ * @return {string} Style value.
+ */
+goog.style.getComputedStyle = function(element, property) {
+  var doc = goog.dom.getOwnerDocument(element);
+  if (doc.defaultView && doc.defaultView.getComputedStyle) {
+    var styles = doc.defaultView.getComputedStyle(element, null);
+    if (styles) {
+      // element.style[..] is undefined for browser specific styles
+      // as 'filter'.
+      return styles[property] || styles.getPropertyValue(property) || '';
+    }
+  }
+
+  return '';
+};
+
+
+/**
+ * Gets the cascaded style value of a node, or null if the value cannot be
+ * computed (only Internet Explorer can do this).
+ *
+ * @param {Element} element Element to get style of.
+ * @param {string} style Property to get (camel-case).
+ * @return {string} Style value.
+ */
+goog.style.getCascadedStyle = function(element, style) {
+  // TODO(nicksantos): This should be documented to return null. #fixTypes
+  return element.currentStyle ? element.currentStyle[style] : null;
+};
+
+
+/**
+ * Cross-browser pseudo get computed style. It returns the computed style where
+ * available. If not available it tries the cascaded style value (IE
+ * currentStyle) and in worst case the inline style value.  It shouldn't be
+ * called directly, see http://wiki/Main/ComputedStyleVsCascadedStyle for
+ * discussion.
+ *
+ * @param {Element} element Element to get style of.
+ * @param {string} style Property to get (must be camelCase, not css-style.).
+ * @return {string} Style value.
+ * @private
+ */
+goog.style.getStyle_ = function(element, style) {
+  return goog.style.getComputedStyle(element, style) ||
+         goog.style.getCascadedStyle(element, style) ||
+         (element.style && element.style[style]);
+};
+
+
+/**
+ * Retrieves the computed value of the box-sizing CSS attribute.
+ * Browser support: http://caniuse.com/css3-boxsizing.
+ * @param {!Element} element The element whose box-sizing to get.
+ * @return {?string} 'content-box', 'border-box' or 'padding-box'. null if
+ *     box-sizing is not supported (IE7 and below).
+ */
+goog.style.getComputedBoxSizing = function(element) {
+  return goog.style.getStyle_(element, 'boxSizing') ||
+      goog.style.getStyle_(element, 'MozBoxSizing') ||
+      goog.style.getStyle_(element, 'WebkitBoxSizing') || null;
+};
+
+
+/**
+ * Retrieves the computed value of the position CSS attribute.
+ * @param {Element} element The element to get the position of.
+ * @return {string} Position value.
+ */
+goog.style.getComputedPosition = function(element) {
+  return goog.style.getStyle_(element, 'position');
+};
+
+
+/**
+ * Retrieves the computed background color string for a given element. The
+ * string returned is suitable for assigning to another element's
+ * background-color, but is not guaranteed to be in any particular string
+ * format. Accessing the color in a numeric form may not be possible in all
+ * browsers or with all input.
+ *
+ * If the background color for the element is defined as a hexadecimal value,
+ * the resulting string can be parsed by goog.color.parse in all supported
+ * browsers.
+ *
+ * Whether named colors like "red" or "lightblue" get translated into a
+ * format which can be parsed is browser dependent. Calling this function on
+ * transparent elements will return "transparent" in most browsers or
+ * "rgba(0, 0, 0, 0)" in WebKit.
+ * @param {Element} element The element to get the background color of.
+ * @return {string} The computed string value of the background color.
+ */
+goog.style.getBackgroundColor = function(element) {
+  return goog.style.getStyle_(element, 'backgroundColor');
+};
+
+
+/**
+ * Retrieves the computed value of the overflow-x CSS attribute.
+ * @param {Element} element The element to get the overflow-x of.
+ * @return {string} The computed string value of the overflow-x attribute.
+ */
+goog.style.getComputedOverflowX = function(element) {
+  return goog.style.getStyle_(element, 'overflowX');
+};
+
+
+/**
+ * Retrieves the computed value of the overflow-y CSS attribute.
+ * @param {Element} element The element to get the overflow-y of.
+ * @return {string} The computed string value of the overflow-y attribute.
+ */
+goog.style.getComputedOverflowY = function(element) {
+  return goog.style.getStyle_(element, 'overflowY');
+};
+
+
+/**
+ * Retrieves the computed value of the z-index CSS attribute.
+ * @param {Element} element The element to get the z-index of.
+ * @return {string|number} The computed value of the z-index attribute.
+ */
+goog.style.getComputedZIndex = function(element) {
+  return goog.style.getStyle_(element, 'zIndex');
+};
+
+
+/**
+ * Retrieves the computed value of the text-align CSS attribute.
+ * @param {Element} element The element to get the text-align of.
+ * @return {string} The computed string value of the text-align attribute.
+ */
+goog.style.getComputedTextAlign = function(element) {
+  return goog.style.getStyle_(element, 'textAlign');
+};
+
+
+/**
+ * Retrieves the computed value of the cursor CSS attribute.
+ * @param {Element} element The element to get the cursor of.
+ * @return {string} The computed string value of the cursor attribute.
+ */
+goog.style.getComputedCursor = function(element) {
+  return goog.style.getStyle_(element, 'cursor');
+};
+
+
+/**
+ * Retrieves the computed value of the CSS transform attribute.
+ * @param {Element} element The element to get the transform of.
+ * @return {string} The computed string representation of the transform matrix.
+ */
+goog.style.getComputedTransform = function(element) {
+  var property = goog.style.getVendorStyleName_(element, 'transform');
+  return goog.style.getStyle_(element, property) ||
+      goog.style.getStyle_(element, 'transform');
+};
+
+
+/**
+ * Sets the top/left values of an element.  If no unit is specified in the
+ * argument then it will add px. The second argument is required if the first
+ * argument is a string or number and is ignored if the first argument
+ * is a coordinate.
+ * @param {Element} el Element to move.
+ * @param {string|number|goog.math.Coordinate} arg1 Left position or coordinate.
+ * @param {string|number=} opt_arg2 Top position.
+ */
+goog.style.setPosition = function(el, arg1, opt_arg2) {
+  var x, y;
+  var buggyGeckoSubPixelPos = goog.userAgent.GECKO &&
+      (goog.userAgent.MAC || goog.userAgent.X11) &&
+      goog.userAgent.isVersionOrHigher('1.9');
+
+  if (arg1 instanceof goog.math.Coordinate) {
+    x = arg1.x;
+    y = arg1.y;
+  } else {
+    x = arg1;
+    y = opt_arg2;
+  }
+
+  // Round to the nearest pixel for buggy sub-pixel support.
+  el.style.left = goog.style.getPixelStyleValue_(
+      /** @type {number|string} */ (x), buggyGeckoSubPixelPos);
+  el.style.top = goog.style.getPixelStyleValue_(
+      /** @type {number|string} */ (y), buggyGeckoSubPixelPos);
+};
+
+
+/**
+ * Gets the offsetLeft and offsetTop properties of an element and returns them
+ * in a Coordinate object
+ * @param {Element} element Element.
+ * @return {!goog.math.Coordinate} The position.
+ */
+goog.style.getPosition = function(element) {
+  return new goog.math.Coordinate(element.offsetLeft, element.offsetTop);
+};
+
+
+/**
+ * Returns the viewport element for a particular document
+ * @param {Node=} opt_node DOM node (Document is OK) to get the viewport element
+ *     of.
+ * @return {Element} document.documentElement or document.body.
+ */
+goog.style.getClientViewportElement = function(opt_node) {
+  var doc;
+  if (opt_node) {
+    doc = goog.dom.getOwnerDocument(opt_node);
+  } else {
+    doc = goog.dom.getDocument();
+  }
+
+  // In old IE versions the document.body represented the viewport
+  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(9) &&
+      !goog.dom.getDomHelper(doc).isCss1CompatMode()) {
+    return doc.body;
+  }
+  return doc.documentElement;
+};
+
+
+/**
+ * Calculates the viewport coordinates relative to the page/document
+ * containing the node. The viewport may be the browser viewport for
+ * non-iframe document, or the iframe container for iframe'd document.
+ * @param {!Document} doc The document to use as the reference point.
+ * @return {!goog.math.Coordinate} The page offset of the viewport.
+ */
+goog.style.getViewportPageOffset = function(doc) {
+  var body = doc.body;
+  var documentElement = doc.documentElement;
+  var scrollLeft = body.scrollLeft || documentElement.scrollLeft;
+  var scrollTop = body.scrollTop || documentElement.scrollTop;
+  return new goog.math.Coordinate(scrollLeft, scrollTop);
+};
+
+
+/**
+ * Gets the client rectangle of the DOM element.
+ *
+ * getBoundingClientRect is part of a new CSS object model draft (with a
+ * long-time presence in IE), replacing the error-prone parent offset
+ * computation and the now-deprecated Gecko getBoxObjectFor.
+ *
+ * This utility patches common browser bugs in getBoundingClientRect. It
+ * will fail if getBoundingClientRect is unsupported.
+ *
+ * If the element is not in the DOM, the result is undefined, and an error may
+ * be thrown depending on user agent.
+ *
+ * @param {!Element} el The element whose bounding rectangle is being queried.
+ * @return {Object} A native bounding rectangle with numerical left, top,
+ *     right, and bottom.  Reported by Firefox to be of object type ClientRect.
+ * @private
+ */
+goog.style.getBoundingClientRect_ = function(el) {
+  var rect;
+  try {
+    rect = el.getBoundingClientRect();
+  } catch (e) {
+    // In IE < 9, calling getBoundingClientRect on an orphan element raises an
+    // "Unspecified Error". All other browsers return zeros.
+    return {'left': 0, 'top': 0, 'right': 0, 'bottom': 0};
+  }
+
+  // Patch the result in IE only, so that this function can be inlined if
+  // compiled for non-IE.
+  if (goog.userAgent.IE && el.ownerDocument.body) {
+
+    // In IE, most of the time, 2 extra pixels are added to the top and left
+    // due to the implicit 2-pixel inset border.  In IE6/7 quirks mode and
+    // IE6 standards mode, this border can be overridden by setting the
+    // document element's border to zero -- thus, we cannot rely on the
+    // offset always being 2 pixels.
+
+    // In quirks mode, the offset can be determined by querying the body's
+    // clientLeft/clientTop, but in standards mode, it is found by querying
+    // the document element's clientLeft/clientTop.  Since we already called
+    // getBoundingClientRect we have already forced a reflow, so it is not
+    // too expensive just to query them all.
+
+    // See: http://msdn.microsoft.com/en-us/library/ms536433(VS.85).aspx
+    var doc = el.ownerDocument;
+    rect.left -= doc.documentElement.clientLeft + doc.body.clientLeft;
+    rect.top -= doc.documentElement.clientTop + doc.body.clientTop;
+  }
+  return /** @type {Object} */ (rect);
+};
+
+
+/**
+ * Returns the first parent that could affect the position of a given element.
+ * @param {Element} element The element to get the offset parent for.
+ * @return {Element} The first offset parent or null if one cannot be found.
+ */
+goog.style.getOffsetParent = function(element) {
+  // element.offsetParent does the right thing in IE7 and below.  In other
+  // browsers it only includes elements with position absolute, relative or
+  // fixed, not elements with overflow set to auto or scroll.
+  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(8)) {
+    return element.offsetParent;
+  }
+
+  var doc = goog.dom.getOwnerDocument(element);
+  var positionStyle = goog.style.getStyle_(element, 'position');
+  var skipStatic = positionStyle == 'fixed' || positionStyle == 'absolute';
+  for (var parent = element.parentNode; parent && parent != doc;
+       parent = parent.parentNode) {
+    positionStyle =
+        goog.style.getStyle_(/** @type {!Element} */ (parent), 'position');
+    skipStatic = skipStatic && positionStyle == 'static' &&
+                 parent != doc.documentElement && parent != doc.body;
+    if (!skipStatic && (parent.scrollWidth > parent.clientWidth ||
+                        parent.scrollHeight > parent.clientHeight ||
+                        positionStyle == 'fixed' ||
+                        positionStyle == 'absolute' ||
+                        positionStyle == 'relative')) {
+      return /** @type {!Element} */ (parent);
+    }
+  }
+  return null;
+};
+
+
+/**
+ * Calculates and returns the visible rectangle for a given element. Returns a
+ * box describing the visible portion of the nearest scrollable offset ancestor.
+ * Coordinates are given relative to the document.
+ *
+ * @param {Element} element Element to get the visible rect for.
+ * @return {goog.math.Box} Bounding elementBox describing the visible rect or
+ *     null if scrollable ancestor isn't inside the visible viewport.
+ */
+goog.style.getVisibleRectForElement = function(element) {
+  var visibleRect = new goog.math.Box(0, Infinity, Infinity, 0);
+  var dom = goog.dom.getDomHelper(element);
+  var body = dom.getDocument().body;
+  var documentElement = dom.getDocument().documentElement;
+  var scrollEl = dom.getDocumentScrollElement();
+
+  // Determine the size of the visible rect by climbing the dom accounting for
+  // all scrollable containers.
+  for (var el = element; el = goog.style.getOffsetParent(el); ) {
+    // clientWidth is zero for inline block elements in IE.
+    // on WEBKIT, body element can have clientHeight = 0 and scrollHeight > 0
+    if ((!goog.userAgent.IE || el.clientWidth != 0) &&
+        (!goog.userAgent.WEBKIT || el.clientHeight != 0 || el != body) &&
+        // body may have overflow set on it, yet we still get the entire
+        // viewport. In some browsers, el.offsetParent may be
+        // document.documentElement, so check for that too.
+        (el != body && el != documentElement &&
+            goog.style.getStyle_(el, 'overflow') != 'visible')) {
+      var pos = goog.style.getPageOffset(el);
+      var client = goog.style.getClientLeftTop(el);
+      pos.x += client.x;
+      pos.y += client.y;
+
+      visibleRect.top = Math.max(visibleRect.top, pos.y);
+      visibleRect.right = Math.min(visibleRect.right,
+                                   pos.x + el.clientWidth);
+      visibleRect.bottom = Math.min(visibleRect.bottom,
+                                    pos.y + el.clientHeight);
+      visibleRect.left = Math.max(visibleRect.left, pos.x);
+    }
+  }
+
+  // Clip by window's viewport.
+  var scrollX = scrollEl.scrollLeft, scrollY = scrollEl.scrollTop;
+  visibleRect.left = Math.max(visibleRect.left, scrollX);
+  visibleRect.top = Math.max(visibleRect.top, scrollY);
+  var winSize = dom.getViewportSize();
+  visibleRect.right = Math.min(visibleRect.right, scrollX + winSize.width);
+  visibleRect.bottom = Math.min(visibleRect.bottom, scrollY + winSize.height);
+  return visibleRect.top >= 0 && visibleRect.left >= 0 &&
+         visibleRect.bottom > visibleRect.top &&
+         visibleRect.right > visibleRect.left ?
+         visibleRect : null;
+};
+
+
+/**
+ * Calculate the scroll position of {@code container} with the minimum amount so
+ * that the content and the borders of the given {@code element} become visible.
+ * If the element is bigger than the container, its top left corner will be
+ * aligned as close to the container's top left corner as possible.
+ *
+ * @param {Element} element The element to make visible.
+ * @param {Element} container The container to scroll.
+ * @param {boolean=} opt_center Whether to center the element in the container.
+ *     Defaults to false.
+ * @return {!goog.math.Coordinate} The new scroll position of the container,
+ *     in form of goog.math.Coordinate(scrollLeft, scrollTop).
+ */
+goog.style.getContainerOffsetToScrollInto =
+    function(element, container, opt_center) {
+  // Absolute position of the element's border's top left corner.
+  var elementPos = goog.style.getPageOffset(element);
+  // Absolute position of the container's border's top left corner.
+  var containerPos = goog.style.getPageOffset(container);
+  var containerBorder = goog.style.getBorderBox(container);
+  // Relative pos. of the element's border box to the container's content box.
+  var relX = elementPos.x - containerPos.x - containerBorder.left;
+  var relY = elementPos.y - containerPos.y - containerBorder.top;
+  // How much the element can move in the container, i.e. the difference between
+  // the element's bottom-right-most and top-left-most position where it's
+  // fully visible.
+  var spaceX = container.clientWidth - element.offsetWidth;
+  var spaceY = container.clientHeight - element.offsetHeight;
+
+  var scrollLeft = container.scrollLeft;
+  var scrollTop = container.scrollTop;
+  if (opt_center) {
+    // All browsers round non-integer scroll positions down.
+    scrollLeft += relX - spaceX / 2;
+    scrollTop += relY - spaceY / 2;
+  } else {
+    // This formula was designed to give the correct scroll values in the
+    // following cases:
+    // - element is higher than container (spaceY < 0) => scroll down by relY
+    // - element is not higher that container (spaceY >= 0):
+    //   - it is above container (relY < 0) => scroll up by abs(relY)
+    //   - it is below container (relY > spaceY) => scroll down by relY - spaceY
+    //   - it is in the container => don't scroll
+    scrollLeft += Math.min(relX, Math.max(relX - spaceX, 0));
+    scrollTop += Math.min(relY, Math.max(relY - spaceY, 0));
+  }
+  return new goog.math.Coordinate(scrollLeft, scrollTop);
+};
+
+
+/**
+ * Changes the scroll position of {@code container} with the minimum amount so
+ * that the content and the borders of the given {@code element} become visible.
+ * If the element is bigger than the container, its top left corner will be
+ * aligned as close to the container's top left corner as possible.
+ *
+ * @param {Element} element The element to make visible.
+ * @param {Element} container The container to scroll.
+ * @param {boolean=} opt_center Whether to center the element in the container.
+ *     Defaults to false.
+ */
+goog.style.scrollIntoContainerView = function(element, container, opt_center) {
+  var offset =
+      goog.style.getContainerOffsetToScrollInto(element, container, opt_center);
+  container.scrollLeft = offset.x;
+  container.scrollTop = offset.y;
+};
+
+
+/**
+ * Returns clientLeft (width of the left border and, if the directionality is
+ * right to left, the vertical scrollbar) and clientTop as a coordinate object.
+ *
+ * @param {Element} el Element to get clientLeft for.
+ * @return {!goog.math.Coordinate} Client left and top.
+ */
+goog.style.getClientLeftTop = function(el) {
+  // NOTE(eae): Gecko prior to 1.9 doesn't support clientTop/Left, see
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=111207
+  if (goog.userAgent.GECKO && !goog.userAgent.isVersionOrHigher('1.9')) {
+    var left = parseFloat(goog.style.getComputedStyle(el, 'borderLeftWidth'));
+    if (goog.style.isRightToLeft(el)) {
+      var scrollbarWidth = el.offsetWidth - el.clientWidth - left -
+          parseFloat(goog.style.getComputedStyle(el, 'borderRightWidth'));
+      left += scrollbarWidth;
+    }
+    return new goog.math.Coordinate(left,
+        parseFloat(goog.style.getComputedStyle(el, 'borderTopWidth')));
+  }
+
+  return new goog.math.Coordinate(el.clientLeft, el.clientTop);
+};
+
+
+/**
+ * Returns a Coordinate object relative to the top-left of the HTML document.
+ * Implemented as a single function to save having to do two recursive loops in
+ * opera and safari just to get both coordinates.  If you just want one value do
+ * use goog.style.getPageOffsetLeft() and goog.style.getPageOffsetTop(), but
+ * note if you call both those methods the tree will be analysed twice.
+ *
+ * @param {Element} el Element to get the page offset for.
+ * @return {!goog.math.Coordinate} The page offset.
+ */
+goog.style.getPageOffset = function(el) {
+  var box, doc = goog.dom.getOwnerDocument(el);
+  var positionStyle = goog.style.getStyle_(el, 'position');
+  // TODO(gboyer): Update the jsdoc in a way that doesn't break the universe.
+  goog.asserts.assertObject(el, 'Parameter is required');
+
+  // NOTE(eae): Gecko pre 1.9 normally use getBoxObjectFor to calculate the
+  // position. When invoked for an element with position absolute and a negative
+  // position though it can be off by one. Therefor the recursive implementation
+  // is used in those (relatively rare) cases.
+  var BUGGY_GECKO_BOX_OBJECT =
+      !goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS &&
+      goog.userAgent.GECKO && doc.getBoxObjectFor &&
+      !el.getBoundingClientRect && positionStyle == 'absolute' &&
+      (box = doc.getBoxObjectFor(el)) && (box.screenX < 0 || box.screenY < 0);
+
+  // NOTE(arv): If element is hidden (display none or disconnected or any the
+  // ancestors are hidden) we get (0,0) by default but we still do the
+  // accumulation of scroll position.
+
+  // TODO(arv): Should we check if the node is disconnected and in that case
+  //            return (0,0)?
+
+  var pos = new goog.math.Coordinate(0, 0);
+  var viewportElement = goog.style.getClientViewportElement(doc);
+  if (el == viewportElement) {
+    // viewport is always at 0,0 as that defined the coordinate system for this
+    // function - this avoids special case checks in the code below
+    return pos;
+  }
+
+  // IE, Gecko 1.9+, and most modern WebKit.
+  if (goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS ||
+      el.getBoundingClientRect) {
+    box = goog.style.getBoundingClientRect_(el);
+    // Must add the scroll coordinates in to get the absolute page offset
+    // of element since getBoundingClientRect returns relative coordinates to
+    // the viewport.
+    var scrollCoord = goog.dom.getDomHelper(doc).getDocumentScroll();
+    pos.x = box.left + scrollCoord.x;
+    pos.y = box.top + scrollCoord.y;
+
+  // Gecko prior to 1.9.
+  } else if (doc.getBoxObjectFor && !BUGGY_GECKO_BOX_OBJECT) {
+    // Gecko ignores the scroll values for ancestors, up to 1.9.  See:
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=328881 and
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=330619
+
+    box = doc.getBoxObjectFor(el);
+    // TODO(user): Fix the off-by-one error when window is scrolled down
+    // or right more than 1 pixel. The viewport offset does not move in lock
+    // step with the window scroll; it moves in increments of 2px and at
+    // somewhat random intervals.
+    var vpBox = doc.getBoxObjectFor(viewportElement);
+    pos.x = box.screenX - vpBox.screenX;
+    pos.y = box.screenY - vpBox.screenY;
+
+  // Safari, Opera and Camino up to 1.0.4.
+  } else {
+    var parent = el;
+    do {
+      pos.x += parent.offsetLeft;
+      pos.y += parent.offsetTop;
+      // For safari/chrome, we need to add parent's clientLeft/Top as well.
+      if (parent != el) {
+        pos.x += parent.clientLeft || 0;
+        pos.y += parent.clientTop || 0;
+      }
+      // In Safari when hit a position fixed element the rest of the offsets
+      // are not correct.
+      if (goog.userAgent.WEBKIT &&
+          goog.style.getComputedPosition(parent) == 'fixed') {
+        pos.x += doc.body.scrollLeft;
+        pos.y += doc.body.scrollTop;
+        break;
+      }
+      parent = parent.offsetParent;
+    } while (parent && parent != el);
+
+    // Opera & (safari absolute) incorrectly account for body offsetTop.
+    if (goog.userAgent.OPERA || (goog.userAgent.WEBKIT &&
+        positionStyle == 'absolute')) {
+      pos.y -= doc.body.offsetTop;
+    }
+
+    for (parent = el; (parent = goog.style.getOffsetParent(parent)) &&
+        parent != doc.body && parent != viewportElement; ) {
+      pos.x -= parent.scrollLeft;
+      // Workaround for a bug in Opera 9.2 (and earlier) where table rows may
+      // report an invalid scroll top value. The bug was fixed in Opera 9.5
+      // however as that version supports getBoundingClientRect it won't
+      // trigger this code path. https://bugs.opera.com/show_bug.cgi?id=249965
+      if (!goog.userAgent.OPERA || parent.tagName != 'TR') {
+        pos.y -= parent.scrollTop;
+      }
+    }
+  }
+
+  return pos;
+};
+
+
+/**
+ * Returns the left coordinate of an element relative to the HTML document
+ * @param {Element} el Elements.
+ * @return {number} The left coordinate.
+ */
+goog.style.getPageOffsetLeft = function(el) {
+  return goog.style.getPageOffset(el).x;
+};
+
+
+/**
+ * Returns the top coordinate of an element relative to the HTML document
+ * @param {Element} el Elements.
+ * @return {number} The top coordinate.
+ */
+goog.style.getPageOffsetTop = function(el) {
+  return goog.style.getPageOffset(el).y;
+};
+
+
+/**
+ * Returns a Coordinate object relative to the top-left of an HTML document
+ * in an ancestor frame of this element. Used for measuring the position of
+ * an element inside a frame relative to a containing frame.
+ *
+ * @param {Element} el Element to get the page offset for.
+ * @param {Window} relativeWin The window to measure relative to. If relativeWin
+ *     is not in the ancestor frame chain of the element, we measure relative to
+ *     the top-most window.
+ * @return {!goog.math.Coordinate} The page offset.
+ */
+goog.style.getFramedPageOffset = function(el, relativeWin) {
+  var position = new goog.math.Coordinate(0, 0);
+
+  // Iterate up the ancestor frame chain, keeping track of the current window
+  // and the current element in that window.
+  var currentWin = goog.dom.getWindow(goog.dom.getOwnerDocument(el));
+  var currentEl = el;
+  do {
+    // if we're at the top window, we want to get the page offset.
+    // if we're at an inner frame, we only want to get the window position
+    // so that we can determine the actual page offset in the context of
+    // the outer window.
+    var offset = currentWin == relativeWin ?
+        goog.style.getPageOffset(currentEl) :
+        goog.style.getClientPositionForElement_(
+            goog.asserts.assert(currentEl));
+
+    position.x += offset.x;
+    position.y += offset.y;
+  } while (currentWin && currentWin != relativeWin &&
+      (currentEl = currentWin.frameElement) &&
+      (currentWin = currentWin.parent));
+
+  return position;
+};
+
+
+/**
+ * Translates the specified rect relative to origBase page, for newBase page.
+ * If origBase and newBase are the same, this function does nothing.
+ *
+ * @param {goog.math.Rect} rect The source rectangle relative to origBase page,
+ *     and it will have the translated result.
+ * @param {goog.dom.DomHelper} origBase The DomHelper for the input rectangle.
+ * @param {goog.dom.DomHelper} newBase The DomHelper for the resultant
+ *     coordinate.  This must be a DOM for an ancestor frame of origBase
+ *     or the same as origBase.
+ */
+goog.style.translateRectForAnotherFrame = function(rect, origBase, newBase) {
+  if (origBase.getDocument() != newBase.getDocument()) {
+    var body = origBase.getDocument().body;
+    var pos = goog.style.getFramedPageOffset(body, newBase.getWindow());
+
+    // Adjust Body's margin.
+    pos = goog.math.Coordinate.difference(pos, goog.style.getPageOffset(body));
+
+    if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(9) &&
+        !origBase.isCss1CompatMode()) {
+      pos = goog.math.Coordinate.difference(pos, origBase.getDocumentScroll());
+    }
+
+    rect.left += pos.x;
+    rect.top += pos.y;
+  }
+};
+
+
+/**
+ * Returns the position of an element relative to another element in the
+ * document.  A relative to B
+ * @param {Element|Event|goog.events.Event} a Element or mouse event whose
+ *     position we're calculating.
+ * @param {Element|Event|goog.events.Event} b Element or mouse event position
+ *     is relative to.
+ * @return {!goog.math.Coordinate} The relative position.
+ */
+goog.style.getRelativePosition = function(a, b) {
+  var ap = goog.style.getClientPosition(a);
+  var bp = goog.style.getClientPosition(b);
+  return new goog.math.Coordinate(ap.x - bp.x, ap.y - bp.y);
+};
+
+
+/**
+ * Returns the position of the event or the element's border box relative to
+ * the client viewport.
+ * @param {!Element} el Element whose position to get.
+ * @return {!goog.math.Coordinate} The position.
+ * @private
+ */
+goog.style.getClientPositionForElement_ = function(el) {
+  var pos;
+  if (goog.style.GET_BOUNDING_CLIENT_RECT_ALWAYS_EXISTS ||
+      el.getBoundingClientRect) {
+    // IE, Gecko 1.9+, and most modern WebKit
+    var box = goog.style.getBoundingClientRect_(el);
+    pos = new goog.math.Coordinate(box.left, box.top);
+  } else {
+    var scrollCoord = goog.dom.getDomHelper(el).getDocumentScroll();
+    var pageCoord = goog.style.getPageOffset(el);
+    pos = new goog.math.Coordinate(
+        pageCoord.x - scrollCoord.x,
+        pageCoord.y - scrollCoord.y);
+  }
+
+  // Gecko below version 12 doesn't add CSS translation to the client position
+  // (using either getBoundingClientRect or getBoxOffsetFor) so we need to do
+  // so manually.
+  if (goog.userAgent.GECKO && !goog.userAgent.isVersionOrHigher(12)) {
+    return goog.math.Coordinate.sum(pos, goog.style.getCssTranslation(el));
+  } else {
+    return pos;
+  }
+};
+
+
+/**
+ * Returns the position of the event or the element's border box relative to
+ * the client viewport.
+ * @param {Element|Event|goog.events.Event} el Element or a mouse / touch event.
+ * @return {!goog.math.Coordinate} The position.
+ */
+goog.style.getClientPosition = function(el) {
+  goog.asserts.assert(el);
+  if (el.nodeType == goog.dom.NodeType.ELEMENT) {
+    return goog.style.getClientPositionForElement_(
+        /** @type {!Element} */ (el));
+  } else {
+    var isAbstractedEvent = goog.isFunction(el.getBrowserEvent);
+    var be = /** @type {!goog.events.BrowserEvent} */ (el);
+    var targetEvent = el;
+
+    if (el.targetTouches && el.targetTouches.length) {
+      targetEvent = el.targetTouches[0];
+    } else if (isAbstractedEvent && be.getBrowserEvent().targetTouches &&
+        be.getBrowserEvent().targetTouches.length) {
+      targetEvent = be.getBrowserEvent().targetTouches[0];
+    }
+
+    return new goog.math.Coordinate(
+        targetEvent.clientX,
+        targetEvent.clientY);
+  }
+};
+
+
+/**
+ * Moves an element to the given coordinates relative to the client viewport.
+ * @param {Element} el Absolutely positioned element to set page offset for.
+ *     It must be in the document.
+ * @param {number|goog.math.Coordinate} x Left position of the element's margin
+ *     box or a coordinate object.
+ * @param {number=} opt_y Top position of the element's margin box.
+ */
+goog.style.setPageOffset = function(el, x, opt_y) {
+  // Get current pageoffset
+  var cur = goog.style.getPageOffset(el);
+
+  if (x instanceof goog.math.Coordinate) {
+    opt_y = x.y;
+    x = x.x;
+  }
+
+  // NOTE(arv): We cannot allow strings for x and y. We could but that would
+  // require us to manually transform between different units
+
+  // Work out deltas
+  var dx = x - cur.x;
+  var dy = opt_y - cur.y;
+
+  // Set position to current left/top + delta
+  goog.style.setPosition(el, el.offsetLeft + dx, el.offsetTop + dy);
+};
+
+
+/**
+ * Sets the width/height values of an element.  If an argument is numeric,
+ * or a goog.math.Size is passed, it is assumed to be pixels and will add
+ * 'px' after converting it to an integer in string form. (This just sets the
+ * CSS width and height properties so it might set content-box or border-box
+ * size depending on the box model the browser is using.)
+ *
+ * @param {Element} element Element to set the size of.
+ * @param {string|number|goog.math.Size} w Width of the element, or a
+ *     size object.
+ * @param {string|number=} opt_h Height of the element. Required if w is not a
+ *     size object.
+ */
+goog.style.setSize = function(element, w, opt_h) {
+  var h;
+  if (w instanceof goog.math.Size) {
+    h = w.height;
+    w = w.width;
+  } else {
+    if (opt_h == undefined) {
+      throw Error('missing height argument');
+    }
+    h = opt_h;
+  }
+
+  goog.style.setWidth(element, /** @type {string|number} */ (w));
+  goog.style.setHeight(element, /** @type {string|number} */ (h));
+};
+
+
+/**
+ * Helper function to create a string to be set into a pixel-value style
+ * property of an element. Can round to the nearest integer value.
+ *
+ * @param {string|number} value The style value to be used. If a number,
+ *     'px' will be appended, otherwise the value will be applied directly.
+ * @param {boolean} round Whether to round the nearest integer (if property
+ *     is a number).
+ * @return {string} The string value for the property.
+ * @private
+ */
+goog.style.getPixelStyleValue_ = function(value, round) {
+  if (typeof value == 'number') {
+    value = (round ? Math.round(value) : value) + 'px';
+  }
+
+  return value;
+};
+
+
+/**
+ * Set the height of an element.  Sets the element's style property.
+ * @param {Element} element Element to set the height of.
+ * @param {string|number} height The height value to set.  If a number, 'px'
+ *     will be appended, otherwise the value will be applied directly.
+ */
+goog.style.setHeight = function(element, height) {
+  element.style.height = goog.style.getPixelStyleValue_(height, true);
+};
+
+
+/**
+ * Set the width of an element.  Sets the element's style property.
+ * @param {Element} element Element to set the width of.
+ * @param {string|number} width The width value to set.  If a number, 'px'
+ *     will be appended, otherwise the value will be applied directly.
+ */
+goog.style.setWidth = function(element, width) {
+  element.style.width = goog.style.getPixelStyleValue_(width, true);
+};
+
+
+/**
+ * Gets the height and width of an element, even if its display is none.
+ *
+ * Specifically, this returns the height and width of the border box,
+ * irrespective of the box model in effect.
+ *
+ * Note that this function does not take CSS transforms into account. Please see
+ * {@code goog.style.getTransformedSize}.
+ * @param {Element} element Element to get size of.
+ * @return {!goog.math.Size} Object with width/height properties.
+ */
+goog.style.getSize = function(element) {
+  return goog.style.evaluateWithTemporaryDisplay_(
+      goog.style.getSizeWithDisplay_, /** @type {!Element} */ (element));
+};
+
+
+/**
+ * Call {@code fn} on {@code element} such that {@code element}'s dimensions are
+ * accurate when it's passed to {@code fn}.
+ * @param {function(!Element): T} fn Function to call with {@code element} as
+ *     an argument after temporarily changing {@code element}'s display such
+ *     that its dimensions are accurate.
+ * @param {!Element} element Element (which may have display none) to use as
+ *     argument to {@code fn}.
+ * @return {T} Value returned by calling {@code fn} with {@code element}.
+ * @template T
+ * @private
+ */
+goog.style.evaluateWithTemporaryDisplay_ = function(fn, element) {
+  if (goog.style.getStyle_(element, 'display') != 'none') {
+    return fn(element);
+  }
+
+  var style = element.style;
+  var originalDisplay = style.display;
+  var originalVisibility = style.visibility;
+  var originalPosition = style.position;
+
+  style.visibility = 'hidden';
+  style.position = 'absolute';
+  style.display = 'inline';
+
+  var retVal = fn(element);
+
+  style.display = originalDisplay;
+  style.position = originalPosition;
+  style.visibility = originalVisibility;
+
+  return retVal;
+};
+
+
+/**
+ * Gets the height and width of an element when the display is not none.
+ * @param {Element} element Element to get size of.
+ * @return {!goog.math.Size} Object with width/height properties.
+ * @private
+ */
+goog.style.getSizeWithDisplay_ = function(element) {
+  var offsetWidth = element.offsetWidth;
+  var offsetHeight = element.offsetHeight;
+  var webkitOffsetsZero =
+      goog.userAgent.WEBKIT && !offsetWidth && !offsetHeight;
+  if ((!goog.isDef(offsetWidth) || webkitOffsetsZero) &&
+      element.getBoundingClientRect) {
+    // Fall back to calling getBoundingClientRect when offsetWidth or
+    // offsetHeight are not defined, or when they are zero in WebKit browsers.
+    // This makes sure that we return for the correct size for SVG elements, but
+    // will still return 0 on Webkit prior to 534.8, see
+    // http://trac.webkit.org/changeset/67252.
+    var clientRect = goog.style.getBoundingClientRect_(element);
+    return new goog.math.Size(clientRect.right - clientRect.left,
+        clientRect.bottom - clientRect.top);
+  }
+  return new goog.math.Size(offsetWidth, offsetHeight);
+};
+
+
+/**
+ * Gets the height and width of an element, post transform, even if its display
+ * is none.
+ *
+ * This is like {@code goog.style.getSize}, except:
+ * <ol>
+ * <li>Takes webkitTransforms such as rotate and scale into account.
+ * <li>Will return null if {@code element} doesn't respond to
+ *     {@code getBoundingClientRect}.
+ * <li>Currently doesn't make sense on non-WebKit browsers which don't support
+ *    webkitTransforms.
+ * </ol>
+ * @param {!Element} element Element to get size of.
+ * @return {goog.math.Size} Object with width/height properties.
+ */
+goog.style.getTransformedSize = function(element) {
+  if (!element.getBoundingClientRect) {
+    return null;
+  }
+
+  var clientRect = goog.style.evaluateWithTemporaryDisplay_(
+      goog.style.getBoundingClientRect_, element);
+  return new goog.math.Size(clientRect.right - clientRect.left,
+      clientRect.bottom - clientRect.top);
+};
+
+
+/**
+ * Returns a bounding rectangle for a given element in page space.
+ * @param {Element} element Element to get bounds of. Must not be display none.
+ * @return {!goog.math.Rect} Bounding rectangle for the element.
+ */
+goog.style.getBounds = function(element) {
+  var o = goog.style.getPageOffset(element);
+  var s = goog.style.getSize(element);
+  return new goog.math.Rect(o.x, o.y, s.width, s.height);
+};
+
+
+/**
+ * Converts a CSS selector in the form style-property to styleProperty.
+ * @param {*} selector CSS Selector.
+ * @return {string} Camel case selector.
+ * @deprecated Use goog.string.toCamelCase instead.
+ */
+goog.style.toCamelCase = function(selector) {
+  return goog.string.toCamelCase(String(selector));
+};
+
+
+/**
+ * Converts a CSS selector in the form styleProperty to style-property.
+ * @param {string} selector Camel case selector.
+ * @return {string} Selector cased.
+ * @deprecated Use goog.string.toSelectorCase instead.
+ */
+goog.style.toSelectorCase = function(selector) {
+  return goog.string.toSelectorCase(selector);
+};
+
+
+/**
+ * Gets the opacity of a node (x-browser). This gets the inline style opacity
+ * of the node, and does not take into account the cascaded or the computed
+ * style for this node.
+ * @param {Element} el Element whose opacity has to be found.
+ * @return {number|string} Opacity between 0 and 1 or an empty string {@code ''}
+ *     if the opacity is not set.
+ */
+goog.style.getOpacity = function(el) {
+  var style = el.style;
+  var result = '';
+  if ('opacity' in style) {
+    result = style.opacity;
+  } else if ('MozOpacity' in style) {
+    result = style.MozOpacity;
+  } else if ('filter' in style) {
+    var match = style.filter.match(/alpha\(opacity=([\d.]+)\)/);
+    if (match) {
+      result = String(match[1] / 100);
+    }
+  }
+  return result == '' ? result : Number(result);
+};
+
+
+/**
+ * Sets the opacity of a node (x-browser).
+ * @param {Element} el Elements whose opacity has to be set.
+ * @param {number|string} alpha Opacity between 0 and 1 or an empty string
+ *     {@code ''} to clear the opacity.
+ */
+goog.style.setOpacity = function(el, alpha) {
+  var style = el.style;
+  if ('opacity' in style) {
+    style.opacity = alpha;
+  } else if ('MozOpacity' in style) {
+    style.MozOpacity = alpha;
+  } else if ('filter' in style) {
+    // TODO(arv): Overwriting the filter might have undesired side effects.
+    if (alpha === '') {
+      style.filter = '';
+    } else {
+      style.filter = 'alpha(opacity=' + alpha * 100 + ')';
+    }
+  }
+};
+
+
+/**
+ * Sets the background of an element to a transparent image in a browser-
+ * independent manner.
+ *
+ * This function does not support repeating backgrounds or alternate background
+ * positions to match the behavior of Internet Explorer. It also does not
+ * support sizingMethods other than crop since they cannot be replicated in
+ * browsers other than Internet Explorer.
+ *
+ * @param {Element} el The element to set background on.
+ * @param {string} src The image source URL.
+ */
+goog.style.setTransparentBackgroundImage = function(el, src) {
+  var style = el.style;
+  // It is safe to use the style.filter in IE only. In Safari 'filter' is in
+  // style object but access to style.filter causes it to throw an exception.
+  // Note: IE8 supports images with an alpha channel.
+  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
+    // See TODO in setOpacity.
+    style.filter = 'progid:DXImageTransform.Microsoft.AlphaImageLoader(' +
+        'src="' + src + '", sizingMethod="crop")';
+  } else {
+    // Set style properties individually instead of using background shorthand
+    // to prevent overwriting a pre-existing background color.
+    style.backgroundImage = 'url(' + src + ')';
+    style.backgroundPosition = 'top left';
+    style.backgroundRepeat = 'no-repeat';
+  }
+};
+
+
+/**
+ * Clears the background image of an element in a browser independent manner.
+ * @param {Element} el The element to clear background image for.
+ */
+goog.style.clearTransparentBackgroundImage = function(el) {
+  var style = el.style;
+  if ('filter' in style) {
+    // See TODO in setOpacity.
+    style.filter = '';
+  } else {
+    // Set style properties individually instead of using background shorthand
+    // to prevent overwriting a pre-existing background color.
+    style.backgroundImage = 'none';
+  }
+};
+
+
+/**
+ * Shows or hides an element from the page. Hiding the element is done by
+ * setting the display property to "none", removing the element from the
+ * rendering hierarchy so it takes up no space. To show the element, the default
+ * inherited display property is restored (defined either in stylesheets or by
+ * the browser's default style rules.)
+ *
+ * Caveat 1: if the inherited display property for the element is set to "none"
+ * by the stylesheets, that is the property that will be restored by a call to
+ * showElement(), effectively toggling the display between "none" and "none".
+ *
+ * Caveat 2: if the element display style is set inline (by setting either
+ * element.style.display or a style attribute in the HTML), a call to
+ * showElement will clear that setting and defer to the inherited style in the
+ * stylesheet.
+ * @param {Element} el Element to show or hide.
+ * @param {*} display True to render the element in its default style,
+ *     false to disable rendering the element.
+ * @deprecated Use goog.style.setElementShown instead.
+ */
+goog.style.showElement = function(el, display) {
+  goog.style.setElementShown(el, display);
+};
+
+
+/**
+ * Shows or hides an element from the page. Hiding the element is done by
+ * setting the display property to "none", removing the element from the
+ * rendering hierarchy so it takes up no space. To show the element, the default
+ * inherited display property is restored (defined either in stylesheets or by
+ * the browser's default style rules).
+ *
+ * Caveat 1: if the inherited display property for the element is set to "none"
+ * by the stylesheets, that is the property that will be restored by a call to
+ * setElementShown(), effectively toggling the display between "none" and
+ * "none".
+ *
+ * Caveat 2: if the element display style is set inline (by setting either
+ * element.style.display or a style attribute in the HTML), a call to
+ * setElementShown will clear that setting and defer to the inherited style in
+ * the stylesheet.
+ * @param {Element} el Element to show or hide.
+ * @param {*} isShown True to render the element in its default style,
+ *     false to disable rendering the element.
+ */
+goog.style.setElementShown = function(el, isShown) {
+  el.style.display = isShown ? '' : 'none';
+};
+
+
+/**
+ * Test whether the given element has been shown or hidden via a call to
+ * {@link #setElementShown}.
+ *
+ * Note this is strictly a companion method for a call
+ * to {@link #setElementShown} and the same caveats apply; in particular, this
+ * method does not guarantee that the return value will be consistent with
+ * whether or not the element is actually visible.
+ *
+ * @param {Element} el The element to test.
+ * @return {boolean} Whether the element has been shown.
+ * @see #setElementShown
+ */
+goog.style.isElementShown = function(el) {
+  return el.style.display != 'none';
+};
+
+
+/**
+ * Installs the styles string into the window that contains opt_element.  If
+ * opt_element is null, the main window is used.
+ * @param {string} stylesString The style string to install.
+ * @param {Node=} opt_node Node whose parent document should have the
+ *     styles installed.
+ * @return {Element|StyleSheet} The style element created.
+ */
+goog.style.installStyles = function(stylesString, opt_node) {
+  var dh = goog.dom.getDomHelper(opt_node);
+  var styleSheet = null;
+
+  // IE < 11 requires createStyleSheet. Note that doc.createStyleSheet will be
+  // undefined as of IE 11.
+  var doc = dh.getDocument();
+  if (goog.userAgent.IE && doc.createStyleSheet) {
+    styleSheet = doc.createStyleSheet();
+    goog.style.setStyles(styleSheet, stylesString);
+  } else {
+    var head = dh.getElementsByTagNameAndClass('head')[0];
+
+    // In opera documents are not guaranteed to have a head element, thus we
+    // have to make sure one exists before using it.
+    if (!head) {
+      var body = dh.getElementsByTagNameAndClass('body')[0];
+      head = dh.createDom('head');
+      body.parentNode.insertBefore(head, body);
+    }
+    styleSheet = dh.createDom('style');
+    // NOTE(user): Setting styles after the style element has been appended
+    // to the head results in a nasty Webkit bug in certain scenarios. Please
+    // refer to https://bugs.webkit.org/show_bug.cgi?id=26307 for additional
+    // details.
+    goog.style.setStyles(styleSheet, stylesString);
+    dh.appendChild(head, styleSheet);
+  }
+  return styleSheet;
+};
+
+
+/**
+ * Removes the styles added by {@link #installStyles}.
+ * @param {Element|StyleSheet} styleSheet The value returned by
+ *     {@link #installStyles}.
+ */
+goog.style.uninstallStyles = function(styleSheet) {
+  var node = styleSheet.ownerNode || styleSheet.owningElement ||
+      /** @type {Element} */ (styleSheet);
+  goog.dom.removeNode(node);
+};
+
+
+/**
+ * Sets the content of a style element.  The style element can be any valid
+ * style element.  This element will have its content completely replaced by
+ * the new stylesString.
+ * @param {Element|StyleSheet} element A stylesheet element as returned by
+ *     installStyles.
+ * @param {string} stylesString The new content of the stylesheet.
+ */
+goog.style.setStyles = function(element, stylesString) {
+  if (goog.userAgent.IE && goog.isDef(element.cssText)) {
+    // Adding the selectors individually caused the browser to hang if the
+    // selector was invalid or there were CSS comments.  Setting the cssText of
+    // the style node works fine and ignores CSS that IE doesn't understand.
+    // However IE >= 11 doesn't support cssText any more, so we make sure that
+    // cssText is a defined property and otherwise fall back to innerHTML.
+    element.cssText = stylesString;
+  } else {
+    element.innerHTML = stylesString;
+  }
+};
+
+
+/**
+ * Sets 'white-space: pre-wrap' for a node (x-browser).
+ *
+ * There are as many ways of specifying pre-wrap as there are browsers.
+ *
+ * CSS3/IE8: white-space: pre-wrap;
+ * Mozilla:  white-space: -moz-pre-wrap;
+ * Opera:    white-space: -o-pre-wrap;
+ * IE6/7:    white-space: pre; word-wrap: break-word;
+ *
+ * @param {Element} el Element to enable pre-wrap for.
+ */
+goog.style.setPreWrap = function(el) {
+  var style = el.style;
+  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
+    style.whiteSpace = 'pre';
+    style.wordWrap = 'break-word';
+  } else if (goog.userAgent.GECKO) {
+    style.whiteSpace = '-moz-pre-wrap';
+  } else {
+    style.whiteSpace = 'pre-wrap';
+  }
+};
+
+
+/**
+ * Sets 'display: inline-block' for an element (cross-browser).
+ * @param {Element} el Element to which the inline-block display style is to be
+ *    applied.
+ * @see ../demos/inline_block_quirks.html
+ * @see ../demos/inline_block_standards.html
+ */
+goog.style.setInlineBlock = function(el) {
+  var style = el.style;
+  // Without position:relative, weirdness ensues.  Just accept it and move on.
+  style.position = 'relative';
+
+  if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('8')) {
+    // IE8 supports inline-block so fall through to the else
+    // Zoom:1 forces hasLayout, display:inline gives inline behavior.
+    style.zoom = '1';
+    style.display = 'inline';
+  } else if (goog.userAgent.GECKO) {
+    // Pre-Firefox 3, Gecko doesn't support inline-block, but -moz-inline-box
+    // is close enough.
+    style.display = goog.userAgent.isVersionOrHigher('1.9a') ? 'inline-block' :
+        '-moz-inline-box';
+  } else {
+    // Opera, Webkit, and Safari seem to do OK with the standard inline-block
+    // style.
+    style.display = 'inline-block';
+  }
+};
+
+
+/**
+ * Returns true if the element is using right to left (rtl) direction.
+ * @param {Element} el  The element to test.
+ * @return {boolean} True for right to left, false for left to right.
+ */
+goog.style.isRightToLeft = function(el) {
+  return 'rtl' == goog.style.getStyle_(el, 'direction');
+};
+
+
+/**
+ * The CSS style property corresponding to an element being
+ * unselectable on the current browser platform (null if none).
+ * Opera and IE instead use a DOM attribute 'unselectable'.
+ * @type {?string}
+ * @private
+ */
+goog.style.unselectableStyle_ =
+    goog.userAgent.GECKO ? 'MozUserSelect' :
+    goog.userAgent.WEBKIT ? 'WebkitUserSelect' :
+    null;
+
+
+/**
+ * Returns true if the element is set to be unselectable, false otherwise.
+ * Note that on some platforms (e.g. Mozilla), even if an element isn't set
+ * to be unselectable, it will behave as such if any of its ancestors is
+ * unselectable.
+ * @param {Element} el  Element to check.
+ * @return {boolean}  Whether the element is set to be unselectable.
+ */
+goog.style.isUnselectable = function(el) {
+  if (goog.style.unselectableStyle_) {
+    return el.style[goog.style.unselectableStyle_].toLowerCase() == 'none';
+  } else if (goog.userAgent.IE || goog.userAgent.OPERA) {
+    return el.getAttribute('unselectable') == 'on';
+  }
+  return false;
+};
+
+
+/**
+ * Makes the element and its descendants selectable or unselectable.  Note
+ * that on some platforms (e.g. Mozilla), even if an element isn't set to
+ * be unselectable, it will behave as such if any of its ancestors is
+ * unselectable.
+ * @param {Element} el  The element to alter.
+ * @param {boolean} unselectable  Whether the element and its descendants
+ *     should be made unselectable.
+ * @param {boolean=} opt_noRecurse  Whether to only alter the element's own
+ *     selectable state, and leave its descendants alone; defaults to false.
+ */
+goog.style.setUnselectable = function(el, unselectable, opt_noRecurse) {
+  // TODO(attila): Do we need all of TR_DomUtil.makeUnselectable() in Closure?
+  var descendants = !opt_noRecurse ? el.getElementsByTagName('*') : null;
+  var name = goog.style.unselectableStyle_;
+  if (name) {
+    // Add/remove the appropriate CSS style to/from the element and its
+    // descendants.
+    var value = unselectable ? 'none' : '';
+    el.style[name] = value;
+    if (descendants) {
+      for (var i = 0, descendant; descendant = descendants[i]; i++) {
+        descendant.style[name] = value;
+      }
+    }
+  } else if (goog.userAgent.IE || goog.userAgent.OPERA) {
+    // Toggle the 'unselectable' attribute on the element and its descendants.
+    var value = unselectable ? 'on' : '';
+    el.setAttribute('unselectable', value);
+    if (descendants) {
+      for (var i = 0, descendant; descendant = descendants[i]; i++) {
+        descendant.setAttribute('unselectable', value);
+      }
+    }
+  }
+};
+
+
+/**
+ * Gets the border box size for an element.
+ * @param {Element} element  The element to get the size for.
+ * @return {!goog.math.Size} The border box size.
+ */
+goog.style.getBorderBoxSize = function(element) {
+  return new goog.math.Size(element.offsetWidth, element.offsetHeight);
+};
+
+
+/**
+ * Sets the border box size of an element. This is potentially expensive in IE
+ * if the document is CSS1Compat mode
+ * @param {Element} element  The element to set the size on.
+ * @param {goog.math.Size} size  The new size.
+ */
+goog.style.setBorderBoxSize = function(element, size) {
+  var doc = goog.dom.getOwnerDocument(element);
+  var isCss1CompatMode = goog.dom.getDomHelper(doc).isCss1CompatMode();
+
+  if (goog.userAgent.IE &&
+      !goog.userAgent.isVersionOrHigher('10') &&
+      (!isCss1CompatMode || !goog.userAgent.isVersionOrHigher('8'))) {
+    var style = element.style;
+    if (isCss1CompatMode) {
+      var paddingBox = goog.style.getPaddingBox(element);
+      var borderBox = goog.style.getBorderBox(element);
+      style.pixelWidth = size.width - borderBox.left - paddingBox.left -
+                         paddingBox.right - borderBox.right;
+      style.pixelHeight = size.height - borderBox.top - paddingBox.top -
+                          paddingBox.bottom - borderBox.bottom;
+    } else {
+      style.pixelWidth = size.width;
+      style.pixelHeight = size.height;
+    }
+  } else {
+    goog.style.setBoxSizingSize_(element, size, 'border-box');
+  }
+};
+
+
+/**
+ * Gets the content box size for an element.  This is potentially expensive in
+ * all browsers.
+ * @param {Element} element  The element to get the size for.
+ * @return {!goog.math.Size} The content box size.
+ */
+goog.style.getContentBoxSize = function(element) {
+  var doc = goog.dom.getOwnerDocument(element);
+  var ieCurrentStyle = goog.userAgent.IE && element.currentStyle;
+  if (ieCurrentStyle &&
+      goog.dom.getDomHelper(doc).isCss1CompatMode() &&
+      ieCurrentStyle.width != 'auto' && ieCurrentStyle.height != 'auto' &&
+      !ieCurrentStyle.boxSizing) {
+    // If IE in CSS1Compat mode than just use the width and height.
+    // If we have a boxSizing then fall back on measuring the borders etc.
+    var width = goog.style.getIePixelValue_(element, ieCurrentStyle.width,
+                                            'width', 'pixelWidth');
+    var height = goog.style.getIePixelValue_(element, ieCurrentStyle.height,
+                                             'height', 'pixelHeight');
+    return new goog.math.Size(width, height);
+  } else {
+    var borderBoxSize = goog.style.getBorderBoxSize(element);
+    var paddingBox = goog.style.getPaddingBox(element);
+    var borderBox = goog.style.getBorderBox(element);
+    return new goog.math.Size(borderBoxSize.width -
+                              borderBox.left - paddingBox.left -
+                              paddingBox.right - borderBox.right,
+                              borderBoxSize.height -
+                              borderBox.top - paddingBox.top -
+                              paddingBox.bottom - borderBox.bottom);
+  }
+};
+
+
+/**
+ * Sets the content box size of an element. This is potentially expensive in IE
+ * if the document is BackCompat mode.
+ * @param {Element} element  The element to set the size on.
+ * @param {goog.math.Size} size  The new size.
+ */
+goog.style.setContentBoxSize = function(element, size) {
+  var doc = goog.dom.getOwnerDocument(element);
+  var isCss1CompatMode = goog.dom.getDomHelper(doc).isCss1CompatMode();
+  if (goog.userAgent.IE &&
+      !goog.userAgent.isVersionOrHigher('10') &&
+      (!isCss1CompatMode || !goog.userAgent.isVersionOrHigher('8'))) {
+    var style = element.style;
+    if (isCss1CompatMode) {
+      style.pixelWidth = size.width;
+      style.pixelHeight = size.height;
+    } else {
+      var paddingBox = goog.style.getPaddingBox(element);
+      var borderBox = goog.style.getBorderBox(element);
+      style.pixelWidth = size.width + borderBox.left + paddingBox.left +
+                         paddingBox.right + borderBox.right;
+      style.pixelHeight = size.height + borderBox.top + paddingBox.top +
+                          paddingBox.bottom + borderBox.bottom;
+    }
+  } else {
+    goog.style.setBoxSizingSize_(element, size, 'content-box');
+  }
+};
+
+
+/**
+ * Helper function that sets the box sizing as well as the width and height
+ * @param {Element} element  The element to set the size on.
+ * @param {goog.math.Size} size  The new size to set.
+ * @param {string} boxSizing  The box-sizing value.
+ * @private
+ */
+goog.style.setBoxSizingSize_ = function(element, size, boxSizing) {
+  var style = element.style;
+  if (goog.userAgent.GECKO) {
+    style.MozBoxSizing = boxSizing;
+  } else if (goog.userAgent.WEBKIT) {
+    style.WebkitBoxSizing = boxSizing;
+  } else {
+    // Includes IE8 and Opera 9.50+
+    style.boxSizing = boxSizing;
+  }
+
+  // Setting this to a negative value will throw an exception on IE
+  // (and doesn't do anything different than setting it to 0).
+  style.width = Math.max(size.width, 0) + 'px';
+  style.height = Math.max(size.height, 0) + 'px';
+};
+
+
+/**
+ * IE specific function that converts a non pixel unit to pixels.
+ * @param {Element} element  The element to convert the value for.
+ * @param {string} value  The current value as a string. The value must not be
+ *     ''.
+ * @param {string} name  The CSS property name to use for the converstion. This
+ *     should be 'left', 'top', 'width' or 'height'.
+ * @param {string} pixelName  The CSS pixel property name to use to get the
+ *     value in pixels.
+ * @return {number} The value in pixels.
+ * @private
+ */
+goog.style.getIePixelValue_ = function(element, value, name, pixelName) {
+  // Try if we already have a pixel value. IE does not do half pixels so we
+  // only check if it matches a number followed by 'px'.
+  if (/^\d+px?$/.test(value)) {
+    return parseInt(value, 10);
+  } else {
+    var oldStyleValue = element.style[name];
+    var oldRuntimeValue = element.runtimeStyle[name];
+    // set runtime style to prevent changes
+    element.runtimeStyle[name] = element.currentStyle[name];
+    element.style[name] = value;
+    var pixelValue = element.style[pixelName];
+    // restore
+    element.style[name] = oldStyleValue;
+    element.runtimeStyle[name] = oldRuntimeValue;
+    return pixelValue;
+  }
+};
+
+
+/**
+ * Helper function for getting the pixel padding or margin for IE.
+ * @param {Element} element  The element to get the padding for.
+ * @param {string} propName  The property name.
+ * @return {number} The pixel padding.
+ * @private
+ */
+goog.style.getIePixelDistance_ = function(element, propName) {
+  var value = goog.style.getCascadedStyle(element, propName);
+  return value ?
+      goog.style.getIePixelValue_(element, value, 'left', 'pixelLeft') : 0;
+};
+
+
+/**
+ * Gets the computed paddings or margins (on all sides) in pixels.
+ * @param {Element} element  The element to get the padding for.
+ * @param {string} stylePrefix  Pass 'padding' to retrieve the padding box,
+ *     or 'margin' to retrieve the margin box.
+ * @return {!goog.math.Box} The computed paddings or margins.
+ * @private
+ */
+goog.style.getBox_ = function(element, stylePrefix) {
+  if (goog.userAgent.IE) {
+    var left = goog.style.getIePixelDistance_(element, stylePrefix + 'Left');
+    var right = goog.style.getIePixelDistance_(element, stylePrefix + 'Right');
+    var top = goog.style.getIePixelDistance_(element, stylePrefix + 'Top');
+    var bottom = goog.style.getIePixelDistance_(
+        element, stylePrefix + 'Bottom');
+    return new goog.math.Box(top, right, bottom, left);
+  } else {
+    // On non-IE browsers, getComputedStyle is always non-null.
+    var left = /** @type {string} */ (
+        goog.style.getComputedStyle(element, stylePrefix + 'Left'));
+    var right = /** @type {string} */ (
+        goog.style.getComputedStyle(element, stylePrefix + 'Right'));
+    var top = /** @type {string} */ (
+        goog.style.getComputedStyle(element, stylePrefix + 'Top'));
+    var bottom = /** @type {string} */ (
+        goog.style.getComputedStyle(element, stylePrefix + 'Bottom'));
+
+    // NOTE(arv): Gecko can return floating point numbers for the computed
+    // style values.
+    return new goog.math.Box(parseFloat(top),
+                             parseFloat(right),
+                             parseFloat(bottom),
+                             parseFloat(left));
+  }
+};
+
+
+/**
+ * Gets the computed paddings (on all sides) in pixels.
+ * @param {Element} element  The element to get the padding for.
+ * @return {!goog.math.Box} The computed paddings.
+ */
+goog.style.getPaddingBox = function(element) {
+  return goog.style.getBox_(element, 'padding');
+};
+
+
+/**
+ * Gets the computed margins (on all sides) in pixels.
+ * @param {Element} element  The element to get the margins for.
+ * @return {!goog.math.Box} The computed margins.
+ */
+goog.style.getMarginBox = function(element) {
+  return goog.style.getBox_(element, 'margin');
+};
+
+
+/**
+ * A map used to map the border width keywords to a pixel width.
+ * @type {Object}
+ * @private
+ */
+goog.style.ieBorderWidthKeywords_ = {
+  'thin': 2,
+  'medium': 4,
+  'thick': 6
+};
+
+
+/**
+ * Helper function for IE to get the pixel border.
+ * @param {Element} element  The element to get the pixel border for.
+ * @param {string} prop  The part of the property name.
+ * @return {number} The value in pixels.
+ * @private
+ */
+goog.style.getIePixelBorder_ = function(element, prop) {
+  if (goog.style.getCascadedStyle(element, prop + 'Style') == 'none') {
+    return 0;
+  }
+  var width = goog.style.getCascadedStyle(element, prop + 'Width');
+  if (width in goog.style.ieBorderWidthKeywords_) {
+    return goog.style.ieBorderWidthKeywords_[width];
+  }
+  return goog.style.getIePixelValue_(element, width, 'left', 'pixelLeft');
+};
+
+
+/**
+ * Gets the computed border widths (on all sides) in pixels
+ * @param {Element} element  The element to get the border widths for.
+ * @return {!goog.math.Box} The computed border widths.
+ */
+goog.style.getBorderBox = function(element) {
+  if (goog.userAgent.IE && !goog.userAgent.isDocumentModeOrHigher(9)) {
+    var left = goog.style.getIePixelBorder_(element, 'borderLeft');
+    var right = goog.style.getIePixelBorder_(element, 'borderRight');
+    var top = goog.style.getIePixelBorder_(element, 'borderTop');
+    var bottom = goog.style.getIePixelBorder_(element, 'borderBottom');
+    return new goog.math.Box(top, right, bottom, left);
+  } else {
+    // On non-IE browsers, getComputedStyle is always non-null.
+    var left = /** @type {string} */ (
+        goog.style.getComputedStyle(element, 'borderLeftWidth'));
+    var right = /** @type {string} */ (
+        goog.style.getComputedStyle(element, 'borderRightWidth'));
+    var top = /** @type {string} */ (
+        goog.style.getComputedStyle(element, 'borderTopWidth'));
+    var bottom = /** @type {string} */ (
+        goog.style.getComputedStyle(element, 'borderBottomWidth'));
+
+    return new goog.math.Box(parseFloat(top),
+                             parseFloat(right),
+                             parseFloat(bottom),
+                             parseFloat(left));
+  }
+};
+
+
+/**
+ * Returns the font face applied to a given node. Opera and IE should return
+ * the font actually displayed. Firefox returns the author's most-preferred
+ * font (whether the browser is capable of displaying it or not.)
+ * @param {Element} el  The element whose font family is returned.
+ * @return {string} The font family applied to el.
+ */
+goog.style.getFontFamily = function(el) {
+  var doc = goog.dom.getOwnerDocument(el);
+  var font = '';
+  // The moveToElementText method from the TextRange only works if the element
+  // is attached to the owner document.
+  if (doc.body.createTextRange && goog.dom.contains(doc, el)) {
+    var range = doc.body.createTextRange();
+    range.moveToElementText(el);
+    /** @preserveTry */
+    try {
+      font = range.queryCommandValue('FontName');
+    } catch (e) {
+      // This is a workaround for a awkward exception.
+      // On some IE, there is an exception coming from it.
+      // The error description from this exception is:
+      // This window has already been registered as a drop target
+      // This is bogus description, likely due to a bug in ie.
+      font = '';
+    }
+  }
+  if (!font) {
+    // Note if for some reason IE can't derive FontName with a TextRange, we
+    // fallback to using currentStyle
+    font = goog.style.getStyle_(el, 'fontFamily');
+  }
+
+  // Firefox returns the applied font-family string (author's list of
+  // preferred fonts.) We want to return the most-preferred font, in lieu of
+  // the *actually* applied font.
+  var fontsArray = font.split(',');
+  if (fontsArray.length > 1) font = fontsArray[0];
+
+  // Sanitize for x-browser consistency:
+  // Strip quotes because browsers aren't consistent with how they're
+  // applied; Opera always encloses, Firefox sometimes, and IE never.
+  return goog.string.stripQuotes(font, '"\'');
+};
+
+
+/**
+ * Regular expression used for getLengthUnits.
+ * @type {RegExp}
+ * @private
+ */
+goog.style.lengthUnitRegex_ = /[^\d]+$/;
+
+
+/**
+ * Returns the units used for a CSS length measurement.
+ * @param {string} value  A CSS length quantity.
+ * @return {?string} The units of measurement.
+ */
+goog.style.getLengthUnits = function(value) {
+  var units = value.match(goog.style.lengthUnitRegex_);
+  return units && units[0] || null;
+};
+
+
+/**
+ * Map of absolute CSS length units
+ * @type {Object}
+ * @private
+ */
+goog.style.ABSOLUTE_CSS_LENGTH_UNITS_ = {
+  'cm' : 1,
+  'in' : 1,
+  'mm' : 1,
+  'pc' : 1,
+  'pt' : 1
+};
+
+
+/**
+ * Map of relative CSS length units that can be accurately converted to px
+ * font-size values using getIePixelValue_. Only units that are defined in
+ * relation to a font size are convertible (%, small, etc. are not).
+ * @type {Object}
+ * @private
+ */
+goog.style.CONVERTIBLE_RELATIVE_CSS_UNITS_ = {
+  'em' : 1,
+  'ex' : 1
+};
+
+
+/**
+ * Returns the font size, in pixels, of text in an element.
+ * @param {Element} el  The element whose font size is returned.
+ * @return {number} The font size (in pixels).
+ */
+goog.style.getFontSize = function(el) {
+  var fontSize = goog.style.getStyle_(el, 'fontSize');
+  var sizeUnits = goog.style.getLengthUnits(fontSize);
+  if (fontSize && 'px' == sizeUnits) {
+    // NOTE(user): This could be parseFloat instead, but IE doesn't return
+    // decimal fractions in getStyle_ and Firefox reports the fractions, but
+    // ignores them when rendering. Interestingly enough, when we force the
+    // issue and size something to e.g., 50% of 25px, the browsers round in
+    // opposite directions with Firefox reporting 12px and IE 13px. I punt.
+    return parseInt(fontSize, 10);
+  }
+
+  // In IE, we can convert absolute length units to a px value using
+  // goog.style.getIePixelValue_. Units defined in relation to a font size
+  // (em, ex) are applied relative to the element's parentNode and can also
+  // be converted.
+  if (goog.userAgent.IE) {
+    if (sizeUnits in goog.style.ABSOLUTE_CSS_LENGTH_UNITS_) {
+      return goog.style.getIePixelValue_(el,
+                                         fontSize,
+                                         'left',
+                                         'pixelLeft');
+    } else if (el.parentNode &&
+               el.parentNode.nodeType == goog.dom.NodeType.ELEMENT &&
+               sizeUnits in goog.style.CONVERTIBLE_RELATIVE_CSS_UNITS_) {
+      // Check the parent size - if it is the same it means the relative size
+      // value is inherited and we therefore don't want to count it twice.  If
+      // it is different, this element either has explicit style or has a CSS
+      // rule applying to it.
+      var parentElement = /** @type {Element} */ (el.parentNode);
+      var parentSize = goog.style.getStyle_(parentElement, 'fontSize');
+      return goog.style.getIePixelValue_(parentElement,
+                                         fontSize == parentSize ?
+                                             '1em' : fontSize,
+                                         'left',
+                                         'pixelLeft');
+    }
+  }
+
+  // Sometimes we can't cleanly find the font size (some units relative to a
+  // node's parent's font size are difficult: %, smaller et al), so we create
+  // an invisible, absolutely-positioned span sized to be the height of an 'M'
+  // rendered in its parent's (i.e., our target element's) font size. This is
+  // the definition of CSS's font size attribute.
+  var sizeElement = goog.dom.createDom(
+      'span',
+      {'style': 'visibility:hidden;position:absolute;' +
+            'line-height:0;padding:0;margin:0;border:0;height:1em;'});
+  goog.dom.appendChild(el, sizeElement);
+  fontSize = sizeElement.offsetHeight;
+  goog.dom.removeNode(sizeElement);
+
+  return fontSize;
+};
+
+
+/**
+ * Parses a style attribute value.  Converts CSS property names to camel case.
+ * @param {string} value The style attribute value.
+ * @return {!Object} Map of CSS properties to string values.
+ */
+goog.style.parseStyleAttribute = function(value) {
+  var result = {};
+  goog.array.forEach(value.split(/\s*;\s*/), function(pair) {
+    var keyValue = pair.split(/\s*:\s*/);
+    if (keyValue.length == 2) {
+      result[goog.string.toCamelCase(keyValue[0].toLowerCase())] = keyValue[1];
+    }
+  });
+  return result;
+};
+
+
+/**
+ * Reverse of parseStyleAttribute; that is, takes a style object and returns the
+ * corresponding attribute value.  Converts camel case property names to proper
+ * CSS selector names.
+ * @param {Object} obj Map of CSS properties to values.
+ * @return {string} The style attribute value.
+ */
+goog.style.toStyleAttribute = function(obj) {
+  var buffer = [];
+  goog.object.forEach(obj, function(value, key) {
+    buffer.push(goog.string.toSelectorCase(key), ':', value, ';');
+  });
+  return buffer.join('');
+};
+
+
+/**
+ * Sets CSS float property on an element.
+ * @param {Element} el The element to set float property on.
+ * @param {string} value The value of float CSS property to set on this element.
+ */
+goog.style.setFloat = function(el, value) {
+  el.style[goog.userAgent.IE ? 'styleFloat' : 'cssFloat'] = value;
+};
+
+
+/**
+ * Gets value of explicitly-set float CSS property on an element.
+ * @param {Element} el The element to get float property of.
+ * @return {string} The value of explicitly-set float CSS property on this
+ *     element.
+ */
+goog.style.getFloat = function(el) {
+  return el.style[goog.userAgent.IE ? 'styleFloat' : 'cssFloat'] || '';
+};
+
+
+/**
+ * Returns the scroll bar width (represents the width of both horizontal
+ * and vertical scroll).
+ *
+ * @param {string=} opt_className An optional class name (or names) to apply
+ *     to the invisible div created to measure the scrollbar. This is necessary
+ *     if some scrollbars are styled differently than others.
+ * @return {number} The scroll bar width in px.
+ */
+goog.style.getScrollbarWidth = function(opt_className) {
+  // Add two hidden divs.  The child div is larger than the parent and
+  // forces scrollbars to appear on it.
+  // Using overflow:scroll does not work consistently with scrollbars that
+  // are styled with ::-webkit-scrollbar.
+  var outerDiv = goog.dom.createElement('div');
+  if (opt_className) {
+    outerDiv.className = opt_className;
+  }
+  outerDiv.style.cssText = 'overflow:auto;' +
+      'position:absolute;top:0;width:100px;height:100px';
+  var innerDiv = goog.dom.createElement('div');
+  goog.style.setSize(innerDiv, '200px', '200px');
+  outerDiv.appendChild(innerDiv);
+  goog.dom.appendChild(goog.dom.getDocument().body, outerDiv);
+  var width = outerDiv.offsetWidth - outerDiv.clientWidth;
+  goog.dom.removeNode(outerDiv);
+  return width;
+};
+
+
+/**
+ * Regular expression to extract x and y translation components from a CSS
+ * transform Matrix representation.
+ *
+ * @type {!RegExp}
+ * @const
+ * @private
+ */
+goog.style.MATRIX_TRANSLATION_REGEX_ =
+    new RegExp('matrix\\([0-9\\.\\-]+, [0-9\\.\\-]+, ' +
+               '[0-9\\.\\-]+, [0-9\\.\\-]+, ' +
+               '([0-9\\.\\-]+)p?x?, ([0-9\\.\\-]+)p?x?\\)');
+
+
+/**
+ * Returns the x,y translation component of any CSS transforms applied to the
+ * element, in pixels.
+ *
+ * @param {!Element} element The element to get the translation of.
+ * @return {!goog.math.Coordinate} The CSS translation of the element in px.
+ */
+goog.style.getCssTranslation = function(element) {
+  var transform = goog.style.getComputedTransform(element);
+  if (!transform) {
+    return new goog.math.Coordinate(0, 0);
+  }
+  var matches = transform.match(goog.style.MATRIX_TRANSLATION_REGEX_);
+  if (!matches) {
+    return new goog.math.Coordinate(0, 0);
+  }
+  return new goog.math.Coordinate(parseFloat(matches[1]),
+                                  parseFloat(matches[2]));
+};
+
 goog.provide('ol.MapEvent');
 goog.provide('ol.MapEventType');
 
@@ -29239,6 +29717,15 @@ ol.control.Control.prototype.setMap = function(map) {
 };
 
 goog.provide('ol.css');
+
+
+/**
+ * The CSS class for hidden feature.
+ *
+ * @const
+ * @type {string}
+ */
+ol.css.CLASS_HIDDEN = 'ol-hidden';
 
 
 /**
@@ -31455,8 +31942,7 @@ ol.control.Attribution.prototype.insertLogos_ = function(frameState) {
         logoElement = image;
       } else {
         logoElement = goog.dom.createDom(goog.dom.TagName.A, {
-          'href': logoValue,
-          'target': '_blank'
+          'href': logoValue
         });
         logoElement.appendChild(image);
       }
@@ -31553,6 +32039,7 @@ goog.provide('ol.control.Rotate');
 goog.require('goog.asserts');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
+goog.require('goog.dom.classlist');
 goog.require('goog.events');
 goog.require('goog.events.EventType');
 goog.require('goog.math');
@@ -31567,7 +32054,8 @@ goog.require('ol.pointer.PointerEventHandler');
 /**
  * @classdesc
  * A button control to reset rotation to 0.
- * To style this control use css selector `.ol-rotate`.
+ * To style this control use css selector `.ol-rotate`. A `.ol-hidden` css
+ * selector is added to the button when the rotation is 0.
  *
  * @constructor
  * @extends {ol.control.Control}
@@ -31597,7 +32085,6 @@ ol.control.Rotate = function(opt_options) {
   }, tipLabel);
   var button = goog.dom.createDom(goog.dom.TagName.BUTTON, {
     'class': className + '-reset ol-has-tooltip',
-    'name' : 'ResetRotation',
     'type' : 'button'
   }, tip, this.label_);
 
@@ -31642,7 +32129,9 @@ ol.control.Rotate = function(opt_options) {
    */
   this.rotation_ = undefined;
 
-  element.style.opacity = (this.autoHide_) ? 0 : 1;
+  if (this.autoHide_) {
+    goog.dom.classlist.add(this.element, ol.css.CLASS_HIDDEN);
+  }
 
 };
 goog.inherits(ol.control.Rotate, ol.control.Control);
@@ -31676,7 +32165,11 @@ ol.control.Rotate.prototype.handlePointerUp_ = function(pointerEvent) {
 ol.control.Rotate.prototype.resetNorth_ = function() {
   var map = this.getMap();
   var view = map.getView();
-  goog.asserts.assert(goog.isDef(view));
+  if (goog.isNull(view)) {
+    // the map does not have a view, so we can't act
+    // upon it
+    return;
+  }
   var currentRotation = view.getRotation();
   while (currentRotation < -Math.PI) {
     currentRotation += 2 * Math.PI;
@@ -31709,7 +32202,8 @@ ol.control.Rotate.prototype.handleMapPostrender = function(mapEvent) {
   if (rotation != this.rotation_) {
     var transform = 'rotate(' + goog.math.toDegrees(rotation) + 'deg)';
     if (this.autoHide_) {
-      this.element.style.opacity = (rotation === 0) ? 0 : 1;
+      goog.dom.classlist.enable(
+          this.element, ol.css.CLASS_HIDDEN, rotation === 0);
     }
     this.label_.style.msTransform = transform;
     this.label_.style.webkitTransform = transform;
@@ -31860,6 +32354,11 @@ ol.control.Zoom.prototype.handlePointerUp_ = function(delta, pointerEvent) {
 ol.control.Zoom.prototype.zoomByDelta_ = function(delta) {
   var map = this.getMap();
   var view = map.getView();
+  if (goog.isNull(view)) {
+    // the map does not have a view, so we can't act
+    // upon it
+    return;
+  }
   var currentResolution = view.getResolution();
   if (goog.isDef(currentResolution)) {
     if (this.duration_ > 0) {
@@ -32115,7 +32614,8 @@ ol.control.FullScreen = function(opt_options) {
 
   var button = goog.dom.createDom(goog.dom.TagName.BUTTON, {
     'class': this.cssClassName_ + '-' + goog.dom.fullscreen.isFullScreen() +
-        ' ol-has-tooltip'
+        ' ol-has-tooltip',
+    'type': 'button'
   });
   goog.dom.appendChild(button, tip);
   var buttonHandler = new ol.pointer.PointerEventHandler(button);
@@ -34329,6 +34829,1552 @@ goog.fx.DragEvent = function(type, dragobj, clientX, clientY, browserEvent,
 };
 goog.inherits(goog.fx.DragEvent, goog.events.Event);
 
+// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @fileoverview Abstract Base Class for Drag and Drop.
+ *
+ * Provides functionality for implementing drag and drop classes. Also provides
+ * support classes and events.
+ *
+ * @author eae@google.com (Emil A Eklund)
+ */
+
+goog.provide('goog.fx.AbstractDragDrop');
+goog.provide('goog.fx.AbstractDragDrop.EventType');
+goog.provide('goog.fx.DragDropEvent');
+goog.provide('goog.fx.DragDropItem');
+
+goog.require('goog.asserts');
+goog.require('goog.dom');
+goog.require('goog.dom.classlist');
+goog.require('goog.events');
+goog.require('goog.events.Event');
+goog.require('goog.events.EventHandler');
+goog.require('goog.events.EventTarget');
+goog.require('goog.events.EventType');
+goog.require('goog.fx.Dragger');
+goog.require('goog.math.Box');
+goog.require('goog.math.Coordinate');
+goog.require('goog.style');
+
+
+
+/**
+ * Abstract class that provides reusable functionality for implementing drag
+ * and drop functionality.
+ *
+ * This class also allows clients to define their own subtargeting function
+ * so that drop areas can have finer granularity then a singe element. This is
+ * accomplished by using a client provided function to map from element and
+ * coordinates to a subregion id.
+ *
+ * This class can also be made aware of scrollable containers that contain
+ * drop targets by calling addScrollableContainer. This will cause dnd to
+ * take changing scroll positions into account while a drag is occuring.
+ *
+ * @extends {goog.events.EventTarget}
+ * @constructor
+ */
+goog.fx.AbstractDragDrop = function() {
+  goog.fx.AbstractDragDrop.base(this, 'constructor');
+
+  /**
+   * List of items that makes up the drag source or drop target.
+   * @type {Array.<goog.fx.DragDropItem>}
+   * @protected
+   * @suppress {underscore|visibility}
+   */
+  this.items_ = [];
+
+  /**
+   * List of associated drop targets.
+   * @type {Array.<goog.fx.AbstractDragDrop>}
+   * @private
+   */
+  this.targets_ = [];
+
+  /**
+   * Scrollable containers to account for during drag
+   * @type {Array.<goog.fx.ScrollableContainer_>}
+   * @private
+   */
+  this.scrollableContainers_ = [];
+
+};
+goog.inherits(goog.fx.AbstractDragDrop, goog.events.EventTarget);
+
+
+/**
+ * Minimum size (in pixels) for a dummy target. If the box for the target is
+ * less than the specified size it's not created.
+ * @type {number}
+ * @private
+ */
+goog.fx.AbstractDragDrop.DUMMY_TARGET_MIN_SIZE_ = 10;
+
+
+/**
+ * Flag indicating if it's a drag source, set by addTarget.
+ * @type {boolean}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.isSource_ = false;
+
+
+/**
+ * Flag indicating if it's a drop target, set when added as target to another
+ * DragDrop object.
+ * @type {boolean}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.isTarget_ = false;
+
+
+/**
+ * Subtargeting function accepting args:
+ * (goog.fx.DragDropItem, goog.math.Box, number, number)
+ * @type {Function}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.subtargetFunction_;
+
+
+/**
+ * Last active subtarget.
+ * @type {Object}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.activeSubtarget_;
+
+
+/**
+ * Class name to add to source elements being dragged. Set by setDragClass.
+ * @type {?string}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.dragClass_;
+
+
+/**
+ * Class name to add to source elements. Set by setSourceClass.
+ * @type {?string}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.sourceClass_;
+
+
+/**
+ * Class name to add to target elements. Set by setTargetClass.
+ * @type {?string}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.targetClass_;
+
+
+/**
+ * The SCROLL event target used to make drag element follow scrolling.
+ * @type {EventTarget}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.scrollTarget_;
+
+
+/**
+ * Dummy target, {@see maybeCreateDummyTargetForPosition_}.
+ * @type {goog.fx.ActiveDropTarget_}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.dummyTarget_;
+
+
+/**
+ * Whether the object has been initialized.
+ * @type {boolean}
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.initialized_ = false;
+
+
+/**
+ * Constants for event names
+ * @type {Object}
+ */
+goog.fx.AbstractDragDrop.EventType = {
+  DRAGOVER: 'dragover',
+  DRAGOUT: 'dragout',
+  DRAG: 'drag',
+  DROP: 'drop',
+  DRAGSTART: 'dragstart',
+  DRAGEND: 'dragend'
+};
+
+
+/**
+ * Constant for distance threshold, in pixels, an element has to be moved to
+ * initiate a drag operation.
+ * @type {number}
+ */
+goog.fx.AbstractDragDrop.initDragDistanceThreshold = 5;
+
+
+/**
+ * Set class to add to source elements being dragged.
+ *
+ * @param {string} className Class to be added.  Must be a single, valid
+ *     classname.
+ */
+goog.fx.AbstractDragDrop.prototype.setDragClass = function(className) {
+  this.dragClass_ = className;
+};
+
+
+/**
+ * Set class to add to source elements.
+ *
+ * @param {string} className Class to be added.  Must be a single, valid
+ *     classname.
+ */
+goog.fx.AbstractDragDrop.prototype.setSourceClass = function(className) {
+  this.sourceClass_ = className;
+};
+
+
+/**
+ * Set class to add to target elements.
+ *
+ * @param {string} className Class to be added.  Must be a single, valid
+ *     classname.
+ */
+goog.fx.AbstractDragDrop.prototype.setTargetClass = function(className) {
+  this.targetClass_ = className;
+};
+
+
+/**
+ * Whether the control has been initialized.
+ *
+ * @return {boolean} True if it's been initialized.
+ */
+goog.fx.AbstractDragDrop.prototype.isInitialized = function() {
+  return this.initialized_;
+};
+
+
+/**
+ * Add item to drag object.
+ *
+ * @param {Element|string} element Dom Node, or string representation of node
+ *     id, to be used as drag source/drop target.
+ * @throws Error Thrown if called on instance of abstract class
+ */
+goog.fx.AbstractDragDrop.prototype.addItem = goog.abstractMethod;
+
+
+/**
+ * Associate drop target with drag element.
+ *
+ * @param {goog.fx.AbstractDragDrop} target Target to add.
+ */
+goog.fx.AbstractDragDrop.prototype.addTarget = function(target) {
+  this.targets_.push(target);
+  target.isTarget_ = true;
+  this.isSource_ = true;
+};
+
+
+/**
+ * Sets the SCROLL event target to make drag element follow scrolling.
+ *
+ * @param {EventTarget} scrollTarget The element that dispatches SCROLL events.
+ */
+goog.fx.AbstractDragDrop.prototype.setScrollTarget = function(scrollTarget) {
+  this.scrollTarget_ = scrollTarget;
+};
+
+
+/**
+ * Initialize drag and drop functionality for sources/targets already added.
+ * Sources/targets added after init has been called will initialize themselves
+ * one by one.
+ */
+goog.fx.AbstractDragDrop.prototype.init = function() {
+  if (this.initialized_) {
+    return;
+  }
+  for (var item, i = 0; item = this.items_[i]; i++) {
+    this.initItem(item);
+  }
+
+  this.initialized_ = true;
+};
+
+
+/**
+ * Initializes a single item.
+ *
+ * @param {goog.fx.DragDropItem} item Item to initialize.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.initItem = function(item) {
+  if (this.isSource_) {
+    goog.events.listen(item.element, goog.events.EventType.MOUSEDOWN,
+                       item.mouseDown_, false, item);
+    if (this.sourceClass_) {
+      goog.dom.classlist.add(
+          goog.asserts.assert(item.element), this.sourceClass_);
+    }
+  }
+
+  if (this.isTarget_ && this.targetClass_) {
+    goog.dom.classlist.add(
+        goog.asserts.assert(item.element), this.targetClass_);
+  }
+};
+
+
+/**
+ * Called when removing an item. Removes event listeners and classes.
+ *
+ * @param {goog.fx.DragDropItem} item Item to dispose.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.disposeItem = function(item) {
+  if (this.isSource_) {
+    goog.events.unlisten(item.element, goog.events.EventType.MOUSEDOWN,
+                         item.mouseDown_, false, item);
+    if (this.sourceClass_) {
+      goog.dom.classlist.remove(
+          goog.asserts.assert(item.element), this.sourceClass_);
+    }
+  }
+  if (this.isTarget_ && this.targetClass_) {
+    goog.dom.classlist.remove(
+        goog.asserts.assert(item.element), this.targetClass_);
+  }
+  item.dispose();
+};
+
+
+/**
+ * Removes all items.
+ */
+goog.fx.AbstractDragDrop.prototype.removeItems = function() {
+  for (var item, i = 0; item = this.items_[i]; i++) {
+    this.disposeItem(item);
+  }
+  this.items_.length = 0;
+};
+
+
+/**
+ * Starts a drag event for an item if the mouse button stays pressed and the
+ * cursor moves a few pixels. Allows dragging of items without first having to
+ * register them with addItem.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse down event.
+ * @param {goog.fx.DragDropItem} item Item that's being dragged.
+ */
+goog.fx.AbstractDragDrop.prototype.maybeStartDrag = function(event, item) {
+  item.maybeStartDrag_(event, item.element);
+};
+
+
+/**
+ * Event handler that's used to start drag.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse move event.
+ * @param {goog.fx.DragDropItem} item Item that's being dragged.
+ */
+goog.fx.AbstractDragDrop.prototype.startDrag = function(event, item) {
+
+  // Prevent a new drag operation from being started if another one is already
+  // in progress (could happen if the mouse was released outside of the
+  // document).
+  if (this.dragItem_) {
+    return;
+  }
+
+  this.dragItem_ = item;
+
+  // Dispatch DRAGSTART event
+  var dragStartEvent = new goog.fx.DragDropEvent(
+      goog.fx.AbstractDragDrop.EventType.DRAGSTART, this, this.dragItem_);
+  if (this.dispatchEvent(dragStartEvent) == false) {
+    this.dragItem_ = null;
+    return;
+  }
+
+  // Get the source element and create a drag element for it.
+  var el = item.getCurrentDragElement();
+  this.dragEl_ = this.createDragElement(el);
+  var doc = goog.dom.getOwnerDocument(el);
+  doc.body.appendChild(this.dragEl_);
+
+  this.dragger_ = this.createDraggerFor(el, this.dragEl_, event);
+  this.dragger_.setScrollTarget(this.scrollTarget_);
+
+  goog.events.listen(this.dragger_, goog.fx.Dragger.EventType.DRAG,
+                     this.moveDrag_, false, this);
+
+  goog.events.listen(this.dragger_, goog.fx.Dragger.EventType.END,
+                     this.endDrag, false, this);
+
+  // IE may issue a 'selectstart' event when dragging over an iframe even when
+  // default mousemove behavior is suppressed. If the default selectstart
+  // behavior is not suppressed, elements dragged over will show as selected.
+  goog.events.listen(doc.body, goog.events.EventType.SELECTSTART,
+                     this.suppressSelect_);
+
+  this.recalculateDragTargets();
+  this.recalculateScrollableContainers();
+  this.activeTarget_ = null;
+  this.initScrollableContainerListeners_();
+  this.dragger_.startDrag(event);
+
+  event.preventDefault();
+};
+
+
+/**
+ * Recalculates the geometry of this source's drag targets.  Call this
+ * if the position or visibility of a drag target has changed during
+ * a drag, or if targets are added or removed.
+ *
+ * TODO(user): this is an expensive operation;  more efficient APIs
+ * may be necessary.
+ */
+goog.fx.AbstractDragDrop.prototype.recalculateDragTargets = function() {
+  this.targetList_ = [];
+  for (var target, i = 0; target = this.targets_[i]; i++) {
+    for (var itm, j = 0; itm = target.items_[j]; j++) {
+      this.addDragTarget_(target, itm);
+    }
+  }
+  if (!this.targetBox_) {
+    this.targetBox_ = new goog.math.Box(0, 0, 0, 0);
+  }
+};
+
+
+/**
+ * Recalculates the current scroll positions of scrollable containers and
+ * allocates targets. Call this if the position of a container changed or if
+ * targets are added or removed.
+ */
+goog.fx.AbstractDragDrop.prototype.recalculateScrollableContainers =
+    function() {
+  var container, i, j, target;
+  for (i = 0; container = this.scrollableContainers_[i]; i++) {
+    container.containedTargets_ = [];
+    container.savedScrollLeft_ = container.element_.scrollLeft;
+    container.savedScrollTop_ = container.element_.scrollTop;
+    var pos = goog.style.getPageOffset(container.element_);
+    var size = goog.style.getSize(container.element_);
+    container.box_ = new goog.math.Box(pos.y, pos.x + size.width,
+                                       pos.y + size.height, pos.x);
+  }
+
+  for (i = 0; target = this.targetList_[i]; i++) {
+    for (j = 0; container = this.scrollableContainers_[j]; j++) {
+      if (goog.dom.contains(container.element_, target.element_)) {
+        container.containedTargets_.push(target);
+        target.scrollableContainer_ = container;
+      }
+    }
+  }
+};
+
+
+/**
+ * Creates the Dragger for the drag element.
+ * @param {Element} sourceEl Drag source element.
+ * @param {Element} el the element created by createDragElement().
+ * @param {goog.events.BrowserEvent} event Mouse down event for start of drag.
+ * @return {!goog.fx.Dragger} The new Dragger.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.createDraggerFor =
+    function(sourceEl, el, event) {
+  // Position the drag element.
+  var pos = this.getDragElementPosition(sourceEl, el, event);
+  el.style.position = 'absolute';
+  el.style.left = pos.x + 'px';
+  el.style.top = pos.y + 'px';
+  return new goog.fx.Dragger(el);
+};
+
+
+/**
+ * Event handler that's used to stop drag. Fires a drop event if over a valid
+ * target.
+ *
+ * @param {goog.fx.DragEvent} event Drag event.
+ */
+goog.fx.AbstractDragDrop.prototype.endDrag = function(event) {
+  var activeTarget = event.dragCanceled ? null : this.activeTarget_;
+  if (activeTarget && activeTarget.target_) {
+    var clientX = event.clientX;
+    var clientY = event.clientY;
+    var scroll = this.getScrollPos();
+    var x = clientX + scroll.x;
+    var y = clientY + scroll.y;
+
+    var subtarget;
+    // If a subtargeting function is enabled get the current subtarget
+    if (this.subtargetFunction_) {
+      subtarget = this.subtargetFunction_(activeTarget.item_,
+          activeTarget.box_, x, y);
+    }
+
+    var dragEvent = new goog.fx.DragDropEvent(
+        goog.fx.AbstractDragDrop.EventType.DRAG, this, this.dragItem_,
+        activeTarget.target_, activeTarget.item_, activeTarget.element_,
+        clientX, clientY, x, y);
+    this.dispatchEvent(dragEvent);
+
+    var dropEvent = new goog.fx.DragDropEvent(
+        goog.fx.AbstractDragDrop.EventType.DROP, this, this.dragItem_,
+        activeTarget.target_, activeTarget.item_, activeTarget.element_,
+        clientX, clientY, x, y, subtarget);
+    activeTarget.target_.dispatchEvent(dropEvent);
+  }
+
+  var dragEndEvent = new goog.fx.DragDropEvent(
+      goog.fx.AbstractDragDrop.EventType.DRAGEND, this, this.dragItem_);
+  this.dispatchEvent(dragEndEvent);
+
+  goog.events.unlisten(this.dragger_, goog.fx.Dragger.EventType.DRAG,
+                       this.moveDrag_, false, this);
+  goog.events.unlisten(this.dragger_, goog.fx.Dragger.EventType.END,
+                       this.endDrag, false, this);
+  var doc = goog.dom.getOwnerDocument(this.dragItem_.getCurrentDragElement());
+  goog.events.unlisten(doc.body, goog.events.EventType.SELECTSTART,
+                       this.suppressSelect_);
+
+
+  this.afterEndDrag(this.activeTarget_ ? this.activeTarget_.item_ : null);
+};
+
+
+/**
+ * Called after a drag operation has finished.
+ *
+ * @param {goog.fx.DragDropItem=} opt_dropTarget Target for successful drop.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.afterEndDrag = function(opt_dropTarget) {
+  this.disposeDrag();
+};
+
+
+/**
+ * Called once a drag operation has finished. Removes event listeners and
+ * elements.
+ *
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.disposeDrag = function() {
+  this.disposeScrollableContainerListeners_();
+  this.dragger_.dispose();
+
+  goog.dom.removeNode(this.dragEl_);
+  delete this.dragItem_;
+  delete this.dragEl_;
+  delete this.dragger_;
+  delete this.targetList_;
+  delete this.activeTarget_;
+};
+
+
+/**
+ * Event handler for drag events. Determines the active drop target, if any, and
+ * fires dragover and dragout events appropriately.
+ *
+ * @param {goog.fx.DragEvent} event Drag event.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.moveDrag_ = function(event) {
+  var position = this.getEventPosition(event);
+  var x = position.x;
+  var y = position.y;
+
+  // Check if we're still inside the bounds of the active target, if not fire
+  // a dragout event and proceed to find a new target.
+  var activeTarget = this.activeTarget_;
+
+  var subtarget;
+  if (activeTarget) {
+    // If a subtargeting function is enabled get the current subtarget
+    if (this.subtargetFunction_ && activeTarget.target_) {
+      subtarget = this.subtargetFunction_(activeTarget.item_,
+          activeTarget.box_, x, y);
+    }
+
+    if (activeTarget.box_.contains(position) &&
+        subtarget == this.activeSubtarget_) {
+      return;
+    }
+
+    if (activeTarget.target_) {
+      var sourceDragOutEvent = new goog.fx.DragDropEvent(
+          goog.fx.AbstractDragDrop.EventType.DRAGOUT, this, this.dragItem_,
+          activeTarget.target_, activeTarget.item_, activeTarget.element_);
+      this.dispatchEvent(sourceDragOutEvent);
+
+      // The event should be dispatched the by target DragDrop so that the
+      // target DragDrop can manage these events without having to know what
+      // sources this is a target for.
+      var targetDragOutEvent = new goog.fx.DragDropEvent(
+          goog.fx.AbstractDragDrop.EventType.DRAGOUT,
+          this,
+          this.dragItem_,
+          activeTarget.target_,
+          activeTarget.item_,
+          activeTarget.element_,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          this.activeSubtarget_);
+      activeTarget.target_.dispatchEvent(targetDragOutEvent);
+    }
+    this.activeSubtarget_ = subtarget;
+    this.activeTarget_ = null;
+  }
+
+  // Check if inside target box
+  if (this.targetBox_.contains(position)) {
+    // Search for target and fire a dragover event if found
+    activeTarget = this.activeTarget_ = this.getTargetFromPosition_(position);
+    if (activeTarget && activeTarget.target_) {
+      // If a subtargeting function is enabled get the current subtarget
+      if (this.subtargetFunction_) {
+        subtarget = this.subtargetFunction_(activeTarget.item_,
+            activeTarget.box_, x, y);
+      }
+      var sourceDragOverEvent = new goog.fx.DragDropEvent(
+          goog.fx.AbstractDragDrop.EventType.DRAGOVER, this, this.dragItem_,
+          activeTarget.target_, activeTarget.item_, activeTarget.element_);
+      sourceDragOverEvent.subtarget = subtarget;
+      this.dispatchEvent(sourceDragOverEvent);
+
+      // The event should be dispatched by the target DragDrop so that the
+      // target DragDrop can manage these events without having to know what
+      // sources this is a target for.
+      var targetDragOverEvent = new goog.fx.DragDropEvent(
+          goog.fx.AbstractDragDrop.EventType.DRAGOVER, this, this.dragItem_,
+          activeTarget.target_, activeTarget.item_, activeTarget.element_,
+          event.clientX, event.clientY, undefined, undefined, subtarget);
+      activeTarget.target_.dispatchEvent(targetDragOverEvent);
+
+    } else if (!activeTarget) {
+      // If no target was found create a dummy one so we won't have to iterate
+      // over all possible targets for every move event.
+      this.activeTarget_ = this.maybeCreateDummyTargetForPosition_(x, y);
+    }
+  }
+};
+
+
+/**
+ * Event handler for suppressing selectstart events. Selecting should be
+ * disabled while dragging.
+ *
+ * @param {goog.events.Event} event The selectstart event to suppress.
+ * @return {boolean} Whether to perform default behavior.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.suppressSelect_ = function(event) {
+  return false;
+};
+
+
+/**
+ * Sets up listeners for the scrollable containers that keep track of their
+ * scroll positions.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.initScrollableContainerListeners_ =
+    function() {
+  var container, i;
+  for (i = 0; container = this.scrollableContainers_[i]; i++) {
+    goog.events.listen(container.element_, goog.events.EventType.SCROLL,
+        this.containerScrollHandler_, false, this);
+  }
+};
+
+
+/**
+ * Cleans up the scrollable container listeners.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.disposeScrollableContainerListeners_ =
+    function() {
+  for (var i = 0, container; container = this.scrollableContainers_[i]; i++) {
+    goog.events.unlisten(container.element_, 'scroll',
+        this.containerScrollHandler_, false, this);
+    container.containedTargets_ = [];
+  }
+};
+
+
+/**
+ * Makes drag and drop aware of a target container that could scroll mid drag.
+ * @param {Element} element The scroll container.
+ */
+goog.fx.AbstractDragDrop.prototype.addScrollableContainer = function(element) {
+  this.scrollableContainers_.push(new goog.fx.ScrollableContainer_(element));
+};
+
+
+/**
+ * Removes all scrollable containers.
+ */
+goog.fx.AbstractDragDrop.prototype.removeAllScrollableContainers = function() {
+  this.disposeScrollableContainerListeners_();
+  this.scrollableContainers_ = [];
+};
+
+
+/**
+ * Event handler for containers scrolling.
+ * @param {goog.events.Event} e The event.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.containerScrollHandler_ = function(e) {
+  for (var i = 0, container; container = this.scrollableContainers_[i]; i++) {
+    if (e.target == container.element_) {
+      var deltaTop = container.savedScrollTop_ - container.element_.scrollTop;
+      var deltaLeft =
+          container.savedScrollLeft_ - container.element_.scrollLeft;
+      container.savedScrollTop_ = container.element_.scrollTop;
+      container.savedScrollLeft_ = container.element_.scrollLeft;
+
+      // When the container scrolls, it's possible that one of the targets will
+      // move to the region contained by the dummy target. Since we don't know
+      // which sides (if any) of the dummy target are defined by targets
+      // contained by this container, we are conservative and just shrink it.
+      if (this.dummyTarget_ && this.activeTarget_ == this.dummyTarget_) {
+        if (deltaTop > 0) {
+          this.dummyTarget_.box_.top += deltaTop;
+        } else {
+          this.dummyTarget_.box_.bottom += deltaTop;
+        }
+        if (deltaLeft > 0) {
+          this.dummyTarget_.box_.left += deltaLeft;
+        } else {
+          this.dummyTarget_.box_.right += deltaLeft;
+        }
+      }
+      for (var j = 0, target; target = container.containedTargets_[j]; j++) {
+        var box = target.box_;
+        box.top += deltaTop;
+        box.left += deltaLeft;
+        box.bottom += deltaTop;
+        box.right += deltaLeft;
+
+        this.calculateTargetBox_(box);
+      }
+    }
+  }
+  this.dragger_.onScroll_(e);
+};
+
+
+/**
+ * Set a function that provides subtargets. A subtargeting function
+ * returns an arbitrary identifier for each subtarget of an element.
+ * DnD code will generate additional drag over / out events when
+ * switching from subtarget to subtarget. This is useful for instance
+ * if you are interested if you are on the top half or the bottom half
+ * of the element.
+ * The provided function will be given the DragDropItem, box, x, y
+ * box is the current window coordinates occupied by element
+ * x, y is the mouse position in window coordinates
+ *
+ * @param {Function} f The new subtarget function.
+ */
+goog.fx.AbstractDragDrop.prototype.setSubtargetFunction = function(f) {
+  this.subtargetFunction_ = f;
+};
+
+
+/**
+ * Creates an element for the item being dragged.
+ *
+ * @param {Element} sourceEl Drag source element.
+ * @return {Element} The new drag element.
+ */
+goog.fx.AbstractDragDrop.prototype.createDragElement = function(sourceEl) {
+  var dragEl = this.createDragElementInternal(sourceEl);
+  goog.asserts.assert(dragEl);
+  if (this.dragClass_) {
+    goog.dom.classlist.add(dragEl, this.dragClass_);
+  }
+
+  return dragEl;
+};
+
+
+/**
+ * Returns the position for the drag element.
+ *
+ * @param {Element} el Drag source element.
+ * @param {Element} dragEl The dragged element created by createDragElement().
+ * @param {goog.events.BrowserEvent} event Mouse down event for start of drag.
+ * @return {!goog.math.Coordinate} The position for the drag element.
+ */
+goog.fx.AbstractDragDrop.prototype.getDragElementPosition =
+    function(el, dragEl, event) {
+  var pos = goog.style.getPageOffset(el);
+
+  // Subtract margin from drag element position twice, once to adjust the
+  // position given by the original node and once for the drag node.
+  var marginBox = goog.style.getMarginBox(el);
+  pos.x -= (marginBox.left || 0) * 2;
+  pos.y -= (marginBox.top || 0) * 2;
+
+  return pos;
+};
+
+
+/**
+ * Returns the dragger object.
+ *
+ * @return {goog.fx.Dragger} The dragger object used by this drag and drop
+ *     instance.
+ */
+goog.fx.AbstractDragDrop.prototype.getDragger = function() {
+  return this.dragger_;
+};
+
+
+/**
+ * Creates copy of node being dragged.
+ *
+ * @param {Element} sourceEl Element to copy.
+ * @return {!Element} The clone of {@code sourceEl}.
+ * @deprecated Use goog.fx.Dragger.cloneNode().
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.cloneNode_ = function(sourceEl) {
+  return goog.fx.Dragger.cloneNode(sourceEl);
+};
+
+
+/**
+ * Generates an element to follow the cursor during dragging, given a drag
+ * source element.  The default behavior is simply to clone the source element,
+ * but this may be overridden in subclasses.  This method is called by
+ * {@code createDragElement()} before the drag class is added.
+ *
+ * @param {Element} sourceEl Drag source element.
+ * @return {Element} The new drag element.
+ * @protected
+ * @suppress {deprecated}
+ */
+goog.fx.AbstractDragDrop.prototype.createDragElementInternal =
+    function(sourceEl) {
+  return this.cloneNode_(sourceEl);
+};
+
+
+/**
+ * Add possible drop target for current drag operation.
+ *
+ * @param {goog.fx.AbstractDragDrop} target Drag handler.
+ * @param {goog.fx.DragDropItem} item Item that's being dragged.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.addDragTarget_ = function(target, item) {
+
+  // Get all the draggable elements and add each one.
+  var draggableElements = item.getDraggableElements();
+  var targetList = this.targetList_;
+  for (var i = 0; i < draggableElements.length; i++) {
+    var draggableElement = draggableElements[i];
+
+    // Determine target position and dimension
+    var box = this.getElementBox(item, draggableElement);
+
+    targetList.push(
+        new goog.fx.ActiveDropTarget_(box, target, item, draggableElement));
+
+    this.calculateTargetBox_(box);
+  }
+};
+
+
+/**
+ * Calculates the position and dimension of a draggable element.
+ *
+ * @param {goog.fx.DragDropItem} item Item that's being dragged.
+ * @param {Element} element The element to calculate the box.
+ *
+ * @return {!goog.math.Box} Box describing the position and dimension
+ *     of element.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.getElementBox = function(item, element) {
+  var pos = goog.style.getPageOffset(element);
+  var size = goog.style.getSize(element);
+  return new goog.math.Box(pos.y, pos.x + size.width, pos.y + size.height,
+      pos.x);
+};
+
+
+/**
+ * Calculate the outer bounds (the region all targets are inside).
+ *
+ * @param {goog.math.Box} box Box describing the position and dimension
+ *     of a drag target.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.calculateTargetBox_ = function(box) {
+  if (this.targetList_.length == 1) {
+    this.targetBox_ = new goog.math.Box(box.top, box.right,
+                                        box.bottom, box.left);
+  } else {
+    var tb = this.targetBox_;
+    tb.left = Math.min(box.left, tb.left);
+    tb.right = Math.max(box.right, tb.right);
+    tb.top = Math.min(box.top, tb.top);
+    tb.bottom = Math.max(box.bottom, tb.bottom);
+  }
+};
+
+
+/**
+ * Creates a dummy target for the given cursor position. The assumption is to
+ * create as big dummy target box as possible, the only constraints are:
+ * - The dummy target box cannot overlap any of real target boxes.
+ * - The dummy target has to contain a point with current mouse coordinates.
+ *
+ * NOTE: For performance reasons the box construction algorithm is kept simple
+ * and it is not optimal (see example below). Currently it is O(n) in regard to
+ * the number of real drop target boxes, but its result depends on the order
+ * of those boxes being processed (the order in which they're added to the
+ * targetList_ collection).
+ *
+ * The algorithm.
+ * a) Assumptions
+ * - Mouse pointer is in the bounding box of real target boxes.
+ * - None of the boxes have negative coordinate values.
+ * - Mouse pointer is not contained by any of "real target" boxes.
+ * - For targets inside a scrollable container, the box used is the
+ *   intersection of the scrollable container's box and the target's box.
+ *   This is because the part of the target that extends outside the scrollable
+ *   container should not be used in the clipping calculations.
+ *
+ * b) Outline
+ * - Initialize the fake target to the bounding box of real targets.
+ * - For each real target box - clip the fake target box so it does not contain
+ *   that target box, but does contain the mouse pointer.
+ *   -- Project the real target box, mouse pointer and fake target box onto
+ *      both axes and calculate the clipping coordinates.
+ *   -- Only one coordinate is used to clip the fake target box to keep the
+ *      fake target as big as possible.
+ *   -- If the projection of the real target box contains the mouse pointer,
+ *      clipping for a given axis is not possible.
+ *   -- If both clippings are possible, the clipping more distant from the
+ *      mouse pointer is selected to keep bigger fake target area.
+ * - Save the created fake target only if it has a big enough area.
+ *
+ *
+ * c) Example
+ * <pre>
+ *        Input:           Algorithm created box:        Maximum box:
+ * +---------------------+ +---------------------+ +---------------------+
+ * | B1      |        B2 | | B1               B2 | | B1               B2 |
+ * |         |           | |   +-------------+   | |+-------------------+|
+ * |---------x-----------| |   |             |   | ||                   ||
+ * |         |           | |   |             |   | ||                   ||
+ * |         |           | |   |             |   | ||                   ||
+ * |         |           | |   |             |   | ||                   ||
+ * |         |           | |   |             |   | ||                   ||
+ * |         |           | |   +-------------+   | |+-------------------+|
+ * | B4      |        B3 | | B4               B3 | | B4               B3 |
+ * +---------------------+ +---------------------+ +---------------------+
+ * </pre>
+ *
+ * @param {number} x Cursor position on the x-axis.
+ * @param {number} y Cursor position on the y-axis.
+ * @return {goog.fx.ActiveDropTarget_} Dummy drop target.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.maybeCreateDummyTargetForPosition_ =
+    function(x, y) {
+  if (!this.dummyTarget_) {
+    this.dummyTarget_ = new goog.fx.ActiveDropTarget_(this.targetBox_.clone());
+  }
+  var fakeTargetBox = this.dummyTarget_.box_;
+
+  // Initialize the fake target box to the bounding box of DnD targets.
+  fakeTargetBox.top = this.targetBox_.top;
+  fakeTargetBox.right = this.targetBox_.right;
+  fakeTargetBox.bottom = this.targetBox_.bottom;
+  fakeTargetBox.left = this.targetBox_.left;
+
+  // Clip the fake target based on mouse position and DnD target boxes.
+  for (var i = 0, target; target = this.targetList_[i]; i++) {
+    var box = target.box_;
+
+    if (target.scrollableContainer_) {
+      // If the target has a scrollable container, use the intersection of that
+      // container's box and the target's box.
+      var scrollBox = target.scrollableContainer_.box_;
+
+      box = new goog.math.Box(
+          Math.max(box.top, scrollBox.top),
+          Math.min(box.right, scrollBox.right),
+          Math.min(box.bottom, scrollBox.bottom),
+          Math.max(box.left, scrollBox.left));
+    }
+
+    // Calculate clipping coordinates for horizontal and vertical axis.
+    // The clipping coordinate is calculated by projecting fake target box,
+    // the mouse pointer and DnD target box onto an axis and checking how
+    // box projections overlap and if the projected DnD target box contains
+    // mouse pointer. The clipping coordinate cannot be computed and is set to
+    // a negative value if the projected DnD target contains the mouse pointer.
+
+    var horizontalClip = null; // Assume mouse is above or below the DnD box.
+    if (x >= box.right) { // Mouse is to the right of the DnD box.
+      // Clip the fake box only if the DnD box overlaps it.
+      horizontalClip = box.right > fakeTargetBox.left ?
+          box.right : fakeTargetBox.left;
+    } else if (x < box.left) { // Mouse is to the left of the DnD box.
+      // Clip the fake box only if the DnD box overlaps it.
+      horizontalClip = box.left < fakeTargetBox.right ?
+          box.left : fakeTargetBox.right;
+    }
+    var verticalClip = null;
+    if (y >= box.bottom) {
+      verticalClip = box.bottom > fakeTargetBox.top ?
+          box.bottom : fakeTargetBox.top;
+    } else if (y < box.top) {
+      verticalClip = box.top < fakeTargetBox.bottom ?
+          box.top : fakeTargetBox.bottom;
+    }
+
+    // If both clippings are possible, choose one that gives us larger distance
+    // to mouse pointer (mark the shorter clipping as impossible, by setting it
+    // to null).
+    if (!goog.isNull(horizontalClip) && !goog.isNull(verticalClip)) {
+      if (Math.abs(horizontalClip - x) > Math.abs(verticalClip - y)) {
+        verticalClip = null;
+      } else {
+        horizontalClip = null;
+      }
+    }
+
+    // Clip none or one of fake target box sides (at most one clipping
+    // coordinate can be active).
+    if (!goog.isNull(horizontalClip)) {
+      if (horizontalClip <= x) {
+        fakeTargetBox.left = horizontalClip;
+      } else {
+        fakeTargetBox.right = horizontalClip;
+      }
+    } else if (!goog.isNull(verticalClip)) {
+      if (verticalClip <= y) {
+        fakeTargetBox.top = verticalClip;
+      } else {
+        fakeTargetBox.bottom = verticalClip;
+      }
+    }
+  }
+
+  // Only return the new fake target if it is big enough.
+  return (fakeTargetBox.right - fakeTargetBox.left) *
+         (fakeTargetBox.bottom - fakeTargetBox.top) >=
+         goog.fx.AbstractDragDrop.DUMMY_TARGET_MIN_SIZE_ ?
+      this.dummyTarget_ : null;
+};
+
+
+/**
+ * Returns the target for a given cursor position.
+ *
+ * @param {goog.math.Coordinate} position Cursor position.
+ * @return {Object} Target for position or null if no target was defined
+ *     for the given position.
+ * @private
+ */
+goog.fx.AbstractDragDrop.prototype.getTargetFromPosition_ = function(position) {
+  for (var target, i = 0; target = this.targetList_[i]; i++) {
+    if (target.box_.contains(position)) {
+      if (target.scrollableContainer_) {
+        // If we have a scrollable container we will need to make sure
+        // we account for clipping of the scroll area
+        var box = target.scrollableContainer_.box_;
+        if (box.contains(position)) {
+          return target;
+        }
+      } else {
+        return target;
+      }
+    }
+  }
+
+  return null;
+};
+
+
+/**
+ * Checks whatever a given point is inside a given box.
+ *
+ * @param {number} x Cursor position on the x-axis.
+ * @param {number} y Cursor position on the y-axis.
+ * @param {goog.math.Box} box Box to check position against.
+ * @return {boolean} Whether the given point is inside {@code box}.
+ * @protected
+ * @deprecated Use goog.math.Box.contains.
+ */
+goog.fx.AbstractDragDrop.prototype.isInside = function(x, y, box) {
+  return x >= box.left &&
+         x < box.right &&
+         y >= box.top &&
+         y < box.bottom;
+};
+
+
+/**
+ * Gets the scroll distance as a coordinate object, using
+ * the window of the current drag element's dom.
+ * @return {!goog.math.Coordinate} Object with scroll offsets 'x' and 'y'.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.getScrollPos = function() {
+  return goog.dom.getDomHelper(this.dragEl_).getDocumentScroll();
+};
+
+
+/**
+ * Get the position of a drag event.
+ * @param {goog.fx.DragEvent} event Drag event.
+ * @return {!goog.math.Coordinate} Position of the event.
+ * @protected
+ */
+goog.fx.AbstractDragDrop.prototype.getEventPosition = function(event) {
+  var scroll = this.getScrollPos();
+  return new goog.math.Coordinate(event.clientX + scroll.x,
+                                  event.clientY + scroll.y);
+};
+
+
+/** @override */
+goog.fx.AbstractDragDrop.prototype.disposeInternal = function() {
+  goog.fx.AbstractDragDrop.base(this, 'disposeInternal');
+  this.removeItems();
+};
+
+
+
+/**
+ * Object representing a drag and drop event.
+ *
+ * @param {string} type Event type.
+ * @param {goog.fx.AbstractDragDrop} source Source drag drop object.
+ * @param {goog.fx.DragDropItem} sourceItem Source item.
+ * @param {goog.fx.AbstractDragDrop=} opt_target Target drag drop object.
+ * @param {goog.fx.DragDropItem=} opt_targetItem Target item.
+ * @param {Element=} opt_targetElement Target element.
+ * @param {number=} opt_clientX X-Position relative to the screen.
+ * @param {number=} opt_clientY Y-Position relative to the screen.
+ * @param {number=} opt_x X-Position relative to the viewport.
+ * @param {number=} opt_y Y-Position relative to the viewport.
+ * @param {Object=} opt_subtarget The currently active subtarget.
+ * @extends {goog.events.Event}
+ * @constructor
+ */
+goog.fx.DragDropEvent = function(type, source, sourceItem,
+                                 opt_target, opt_targetItem, opt_targetElement,
+                                 opt_clientX, opt_clientY, opt_x, opt_y,
+                                 opt_subtarget) {
+  // TODO(eae): Get rid of all the optional parameters and have the caller set
+  // the fields directly instead.
+  goog.fx.DragDropEvent.base(this, 'constructor', type);
+
+  /**
+   * Reference to the source goog.fx.AbstractDragDrop object.
+   * @type {goog.fx.AbstractDragDrop}
+   */
+  this.dragSource = source;
+
+  /**
+   * Reference to the source goog.fx.DragDropItem object.
+   * @type {goog.fx.DragDropItem}
+   */
+  this.dragSourceItem = sourceItem;
+
+  /**
+   * Reference to the target goog.fx.AbstractDragDrop object.
+   * @type {goog.fx.AbstractDragDrop|undefined}
+   */
+  this.dropTarget = opt_target;
+
+  /**
+   * Reference to the target goog.fx.DragDropItem object.
+   * @type {goog.fx.DragDropItem|undefined}
+   */
+  this.dropTargetItem = opt_targetItem;
+
+  /**
+   * The actual element of the drop target that is the target for this event.
+   * @type {Element|undefined}
+   */
+  this.dropTargetElement = opt_targetElement;
+
+  /**
+   * X-Position relative to the screen.
+   * @type {number|undefined}
+   */
+  this.clientX = opt_clientX;
+
+  /**
+   * Y-Position relative to the screen.
+   * @type {number|undefined}
+   */
+  this.clientY = opt_clientY;
+
+  /**
+   * X-Position relative to the viewport.
+   * @type {number|undefined}
+   */
+  this.viewportX = opt_x;
+
+  /**
+   * Y-Position relative to the viewport.
+   * @type {number|undefined}
+   */
+  this.viewportY = opt_y;
+
+  /**
+   * The subtarget that is currently active if a subtargeting function
+   * is supplied.
+   * @type {Object|undefined}
+   */
+  this.subtarget = opt_subtarget;
+};
+goog.inherits(goog.fx.DragDropEvent, goog.events.Event);
+
+
+/** @override */
+goog.fx.DragDropEvent.prototype.disposeInternal = function() {
+};
+
+
+
+/**
+ * Class representing a source or target element for drag and drop operations.
+ *
+ * @param {Element|string} element Dom Node, or string representation of node
+ *     id, to be used as drag source/drop target.
+ * @param {Object=} opt_data Data associated with the source/target.
+ * @throws Error If no element argument is provided or if the type is invalid
+ * @extends {goog.events.EventTarget}
+ * @constructor
+ */
+goog.fx.DragDropItem = function(element, opt_data) {
+  goog.fx.DragDropItem.base(this, 'constructor');
+
+  /**
+   * Reference to drag source/target element
+   * @type {Element}
+   */
+  this.element = goog.dom.getElement(element);
+
+  /**
+   * Data associated with element.
+   * @type {Object|undefined}
+   */
+  this.data = opt_data;
+
+  /**
+   * Drag object the item belongs to.
+   * @type {goog.fx.AbstractDragDrop?}
+   * @private
+   */
+  this.parent_ = null;
+
+  /**
+   * Event handler for listeners on events that can initiate a drag.
+   * @type {!goog.events.EventHandler.<!goog.fx.DragDropItem>}
+   * @private
+   */
+  this.eventHandler_ = new goog.events.EventHandler(this);
+  this.registerDisposable(this.eventHandler_);
+
+  if (!this.element) {
+    throw Error('Invalid argument');
+  }
+};
+goog.inherits(goog.fx.DragDropItem, goog.events.EventTarget);
+
+
+/**
+ * The current element being dragged. This is needed because a DragDropItem can
+ * have multiple elements that can be dragged.
+ * @type {Element}
+ * @private
+ */
+goog.fx.DragDropItem.prototype.currentDragElement_ = null;
+
+
+/**
+ * Get the data associated with the source/target.
+ * @return {Object|null|undefined} Data associated with the source/target.
+ */
+goog.fx.DragDropItem.prototype.getData = function() {
+  return this.data;
+};
+
+
+/**
+ * Gets the element that is actually draggable given that the given target was
+ * attempted to be dragged. This should be overriden when the element that was
+ * given actually contains many items that can be dragged. From the target, you
+ * can determine what element should actually be dragged.
+ *
+ * @param {Element} target The target that was attempted to be dragged.
+ * @return {Element} The element that is draggable given the target. If
+ *     none are draggable, this will return null.
+ */
+goog.fx.DragDropItem.prototype.getDraggableElement = function(target) {
+  return target;
+};
+
+
+/**
+ * Gets the element that is currently being dragged.
+ *
+ * @return {Element} The element that is currently being dragged.
+ */
+goog.fx.DragDropItem.prototype.getCurrentDragElement = function() {
+  return this.currentDragElement_;
+};
+
+
+/**
+ * Gets all the elements of this item that are potentially draggable/
+ *
+ * @return {!Array.<Element>} The draggable elements.
+ */
+goog.fx.DragDropItem.prototype.getDraggableElements = function() {
+  return [this.element];
+};
+
+
+/**
+ * Event handler for mouse down.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse down event.
+ * @private
+ */
+goog.fx.DragDropItem.prototype.mouseDown_ = function(event) {
+  if (!event.isMouseActionButton()) {
+    return;
+  }
+
+  // Get the draggable element for the target.
+  var element = this.getDraggableElement(/** @type {Element} */ (event.target));
+  if (element) {
+    this.maybeStartDrag_(event, element);
+  }
+};
+
+
+/**
+ * Sets the dragdrop to which this item belongs.
+ * @param {goog.fx.AbstractDragDrop} parent The parent dragdrop.
+ */
+goog.fx.DragDropItem.prototype.setParent = function(parent) {
+  this.parent_ = parent;
+};
+
+
+/**
+ * Adds mouse move, mouse out and mouse up handlers.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse down event.
+ * @param {Element} element Element.
+ * @private
+ */
+goog.fx.DragDropItem.prototype.maybeStartDrag_ = function(event, element) {
+  var eventType = goog.events.EventType;
+  this.eventHandler_.
+      listen(element, eventType.MOUSEMOVE, this.mouseMove_, false).
+      listen(element, eventType.MOUSEOUT, this.mouseMove_, false);
+
+  // Capture the MOUSEUP on the document to ensure that we cancel the start
+  // drag handlers even if the mouse up occurs on some other element. This can
+  // happen for instance when the mouse down changes the geometry of the element
+  // clicked on (e.g. through changes in activation styling) such that the mouse
+  // up occurs outside the original element.
+  var doc = goog.dom.getOwnerDocument(element);
+  this.eventHandler_.listen(doc, eventType.MOUSEUP, this.mouseUp_, true);
+
+  this.currentDragElement_ = element;
+
+  this.startPosition_ = new goog.math.Coordinate(
+      event.clientX, event.clientY);
+
+  event.preventDefault();
+};
+
+
+/**
+ * Event handler for mouse move. Starts drag operation if moved more than the
+ * threshold value.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse move or mouse out event.
+ * @private
+ */
+goog.fx.DragDropItem.prototype.mouseMove_ = function(event) {
+  var distance = Math.abs(event.clientX - this.startPosition_.x) +
+      Math.abs(event.clientY - this.startPosition_.y);
+  // Fire dragStart event if the drag distance exceeds the threshold or if the
+  // mouse leave the dragged element.
+  // TODO(user): Consider using the goog.fx.Dragger to track the distance
+  // even after the mouse leaves the dragged element.
+  var currentDragElement = this.currentDragElement_;
+  var distanceAboveThreshold =
+      distance > goog.fx.AbstractDragDrop.initDragDistanceThreshold;
+  var mouseOutOnDragElement = event.type == goog.events.EventType.MOUSEOUT &&
+      event.target == currentDragElement;
+  if (distanceAboveThreshold || mouseOutOnDragElement) {
+    this.eventHandler_.removeAll();
+    this.parent_.startDrag(event, this);
+  }
+};
+
+
+/**
+ * Event handler for mouse up. Removes mouse move, mouse out and mouse up event
+ * handlers.
+ *
+ * @param {goog.events.BrowserEvent} event Mouse up event.
+ * @private
+ */
+goog.fx.DragDropItem.prototype.mouseUp_ = function(event) {
+  this.eventHandler_.removeAll();
+  delete this.startPosition_;
+  this.currentDragElement_ = null;
+};
+
+
+
+/**
+ * Class representing an active drop target
+ *
+ * @param {goog.math.Box} box Box describing the position and dimension of the
+ *     target item.
+ * @param {goog.fx.AbstractDragDrop=} opt_target Target that contains the item
+       associated with position.
+ * @param {goog.fx.DragDropItem=} opt_item Item associated with position.
+ * @param {Element=} opt_element Element of item associated with position.
+ * @constructor
+ * @private
+ */
+goog.fx.ActiveDropTarget_ = function(box, opt_target, opt_item, opt_element) {
+
+  /**
+   * Box describing the position and dimension of the target item
+   * @type {goog.math.Box}
+   * @private
+   */
+  this.box_ = box;
+
+  /**
+   * Target that contains the item associated with position
+   * @type {goog.fx.AbstractDragDrop|undefined}
+   * @private
+   */
+  this.target_ = opt_target;
+
+  /**
+   * Item associated with position
+   * @type {goog.fx.DragDropItem|undefined}
+   * @private
+   */
+  this.item_ = opt_item;
+
+  /**
+   * The draggable element of the item associated with position.
+   * @type {Element|undefined}
+   * @private
+   */
+  this.element_ = opt_element;
+};
+
+
+/**
+ * If this target is in a scrollable container this is it.
+ * @type {goog.fx.ScrollableContainer_}
+ * @private
+ */
+goog.fx.ActiveDropTarget_.prototype.scrollableContainer_ = null;
+
+
+
+/**
+ * Class for representing a scrollable container
+ * @param {Element} element the scrollable element.
+ * @constructor
+ * @private
+ */
+goog.fx.ScrollableContainer_ = function(element) {
+
+  /**
+   * The targets that lie within this container.
+   * @type {Array.<goog.fx.ActiveDropTarget_>}
+   * @private
+   */
+  this.containedTargets_ = [];
+
+  /**
+   * The element that is this container
+   * @type {Element}
+   * @private
+   */
+  this.element_ = element;
+
+  /**
+   * The saved scroll left location for calculating deltas.
+   * @type {number}
+   * @private
+   */
+  this.savedScrollLeft_ = 0;
+
+  /**
+   * The saved scroll top location for calculating deltas.
+   * @type {number}
+   * @private
+   */
+  this.savedScrollTop_ = 0;
+
+  /**
+   * The space occupied by the container.
+   * @type {goog.math.Box}
+   * @private
+   */
+  this.box_ = null;
+};
+
 // FIXME should possibly show tooltip when dragging?
 
 goog.provide('ol.control.ZoomSlider');
@@ -34339,6 +36385,7 @@ goog.require('goog.dom.TagName');
 goog.require('goog.events');
 goog.require('goog.events.Event');
 goog.require('goog.events.EventType');
+goog.require('goog.fx.DragDropEvent');
 goog.require('goog.fx.Dragger');
 goog.require('goog.fx.Dragger.EventType');
 goog.require('goog.math');
@@ -34669,7 +36716,8 @@ ol.control.ZoomToExtent = function(opt_options) {
     'role' : 'tooltip'
   }, tipLabel);
   var button = goog.dom.createDom(goog.dom.TagName.BUTTON, {
-    'class': 'ol-has-tooltip'
+    'class': 'ol-has-tooltip',
+    'type': 'button'
   });
   goog.dom.appendChild(button, tip);
 
@@ -36190,7 +38238,8 @@ ol.geom.Geometry.prototype.getType = goog.abstractMethod;
 
 
 /**
- * Apply a transform function to the geometry.  Modifies the geometry in place.
+ * Apply a transform function to each coordinate of the geometry.
+ * The geometry is modified in place.
  * If you do not want the geometry modified in place, first clone() it and
  * then use this function on the clone.
  * @function
@@ -36201,8 +38250,19 @@ ol.geom.Geometry.prototype.applyTransform = goog.abstractMethod;
 
 
 /**
- * Transform a geometry from one coordinate reference system to another.
- * Modifies the geometry in place.
+ * Test if the geometry and the passed extent intersect.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} `true` if the geometry and the extent intersect.
+ * @function
+ * @api
+ */
+ol.geom.Geometry.prototype.intersectsExtent = goog.abstractMethod;
+
+
+/**
+ * Transform each coordinate of the geometry from one coordinate reference
+ * system to another. The geometry is modified in place.
+ * For example, a line will be transformed to a line and a circle to a circle.
  * If you do not want the geometry modified in place, first clone() it and
  * then use this function on the clone.
  *
@@ -36387,10 +38447,12 @@ ol.style.ImageOptions;
 
 /**
  * @classdesc
- * Set image style for vector features.
+ * Abstract base class; used for creating subclasses and not instantiated in
+ * apps. Base class for {@link ol.style.Icon} and {@link ol.style.Circle}.
  *
  * @constructor
  * @param {ol.style.ImageOptions} options Options.
+ * @api
  */
 ol.style.Image = function(options) {
 
@@ -36480,6 +38542,7 @@ ol.style.Image.prototype.getAnchor = goog.abstractMethod;
  * @function
  * @param {number} pixelRatio Pixel ratio.
  * @return {HTMLCanvasElement|HTMLVideoElement|Image} Image element.
+ * @api
  */
 ol.style.Image.prototype.getImage = goog.abstractMethod;
 
@@ -36883,7 +38946,8 @@ ol.style.Circle.prototype.getHitDetectionImage = function(pixelRatio) {
 
 
 /**
- * @inheritDoc
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {HTMLCanvasElement} Canvas element.
  * @api
  */
 ol.style.Circle.prototype.getImage = function(pixelRatio) {
@@ -37342,7 +39406,8 @@ goog.require('ol.style.Style');
  *
  * @constructor
  * @extends {ol.Object}
- * @fires change Triggered when the geometry or style of the feature changes.
+ * @fires change Triggered when the id, the geometry or the style of the
+ *     feature changes.
  * @param {ol.geom.Geometry|Object.<string, *>=} opt_geometryOrProperties
  *     You may pass a Geometry object directly, or an object literal
  *     containing properties.  If you pass an object literal, you may
@@ -37466,9 +39531,10 @@ ol.Feature.prototype.getGeometryName = function() {
 
 /**
  * @return {ol.style.Style|Array.<ol.style.Style>|
- *     ol.feature.FeatureStyleFunction} Return the style as set by setStyle in
- *     the same format that it was provided in. If setStyle has not been run,
- *     return `undefined`.
+ *     ol.feature.FeatureStyleFunction} Return the style as set by `setStyle`
+ * in the same format that it was provided in. If `setStyle` has not been
+ * called, or if it was called with `null`, then `getStyle()` will return
+ * `null`.
  * @api stable
  */
 ol.Feature.prototype.getStyle = function() {
@@ -37529,13 +39595,17 @@ goog.exportProperty(
 
 
 /**
+ * Set the style for the feature.  This can be a single style object, an array
+ * of styles, or a function that takes a resolution and returns an array of
+ * styles. If it is `null` the feature has no style (a `null` style).
  * @param {ol.style.Style|Array.<ol.style.Style>|
- *     ol.feature.FeatureStyleFunction} style Set the style for this feature.
+ *     ol.feature.FeatureStyleFunction} style Style for this feature.
  * @api stable
  */
 ol.Feature.prototype.setStyle = function(style) {
   this.style_ = style;
-  this.styleFunction_ = ol.feature.createFeatureStyleFunction(style);
+  this.styleFunction_ = goog.isNull(style) ?
+      undefined : ol.feature.createFeatureStyleFunction(style);
   this.changed();
 };
 
@@ -37585,9 +39655,9 @@ ol.feature.FeatureStyleFunction;
  * Convert the provided object into a feature style function.  Functions passed
  * through unchanged.  Arrays of ol.style.Style or single style objects wrapped
  * in a new feature style function.
- * @param {ol.feature.FeatureStyleFunction|Array.<ol.style.Style>|
- *     ol.style.Style} obj A feature style function, a single style, or an array
- *     of styles.
+ * @param {ol.feature.FeatureStyleFunction|!Array.<ol.style.Style>|
+ *     !ol.style.Style} obj A feature style function, a single style, or an
+ *     array of styles.
  * @return {ol.feature.FeatureStyleFunction} A style function.
  */
 ol.feature.createFeatureStyleFunction = function(obj) {
@@ -38250,6 +40320,7 @@ goog.require('ol.extent');
 goog.require('ol.geom.GeometryType');
 goog.require('ol.geom.SimpleGeometry');
 goog.require('ol.geom.flat.deflate');
+goog.require('ol.proj');
 
 
 
@@ -38444,6 +40515,7 @@ ol.geom.Circle.prototype.setFlatCoordinates =
 
 
 /**
+ * The radius is in the units of the projection.
  * @param {number} radius Radius.
  * @api
  */
@@ -38455,9 +40527,28 @@ ol.geom.Circle.prototype.setRadius = function(radius) {
 
 
 /**
- * @inheritDoc
+ * Transform each coordinate of the circle from one coordinate reference system
+ * to another. The geometry is modified in place.
+ * If you do not want the geometry modified in place, first clone() it and
+ * then use this function on the clone.
+ *
+ * Internally a circle is currently represented by two points: the center of
+ * the circle `[cx, cy]`, and the point to the right of the circle
+ * `[cx + r, cy]`. This `transform` function just transforms these two points.
+ * So the resulting geometry is also a circle, and that circle does not
+ * correspond to the shape that would be obtained by transforming every point
+ * of the original circle.
+ *
+ * @param {ol.proj.ProjectionLike} source The current projection.  Can be a
+ *     string identifier or a {@link ol.proj.Projection} object.
+ * @param {ol.proj.ProjectionLike} destination The desired projection.  Can be a
+ *     string identifier or a {@link ol.proj.Projection} object.
+ * @return {ol.geom.Circle} This geometry.  Note that original geometry is
+ *     modified in place.
+ * @function
+ * @api stable
  */
-ol.geom.Circle.prototype.applyTransform = goog.abstractMethod;
+ol.geom.Circle.prototype.transform;
 
 goog.provide('ol.geom.GeometryCollection');
 
@@ -38676,6 +40767,22 @@ ol.geom.GeometryCollection.prototype.getSimplifiedGeometry =
  */
 ol.geom.GeometryCollection.prototype.getType = function() {
   return ol.geom.GeometryType.GEOMETRY_COLLECTION;
+};
+
+
+/**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.GeometryCollection.prototype.intersectsExtent = function(extent) {
+  var geometries = this.geometries_;
+  var i, ii;
+  for (i = 0, ii = geometries.length; i < ii; ++i) {
+    if (geometries[i].intersectsExtent(extent)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 
@@ -39366,6 +41473,310 @@ ol.geom.flat.lineStringsCoordinateAtM = function(
   return null;
 };
 
+goog.provide('ol.geom.flat.contains');
+
+goog.require('goog.asserts');
+goog.require('ol.extent');
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {number} end End.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} Contains extent.
+ */
+ol.geom.flat.contains.linearRingContainsExtent =
+    function(flatCoordinates, offset, end, stride, extent) {
+  var outside = ol.extent.forEachCorner(extent,
+      /**
+       * @param {ol.Coordinate} coordinate Coordinate.
+       */
+      function(coordinate) {
+        return !ol.geom.flat.contains.linearRingContainsXY(flatCoordinates,
+            offset, end, stride, coordinate[0], coordinate[1]);
+      });
+  return !outside;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {number} end End.
+ * @param {number} stride Stride.
+ * @param {number} x X.
+ * @param {number} y Y.
+ * @return {boolean} Contains (x, y).
+ */
+ol.geom.flat.contains.linearRingContainsXY =
+    function(flatCoordinates, offset, end, stride, x, y) {
+  // http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html
+  var contains = false;
+  var x1 = flatCoordinates[end - stride];
+  var y1 = flatCoordinates[end - stride + 1];
+  for (; offset < end; offset += stride) {
+    var x2 = flatCoordinates[offset];
+    var y2 = flatCoordinates[offset + 1];
+    var intersect = ((y1 > y) != (y2 > y)) &&
+        (x < (x2 - x1) * (y - y1) / (y2 - y1) + x1);
+    if (intersect) {
+      contains = !contains;
+    }
+    x1 = x2;
+    y1 = y2;
+  }
+  return contains;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {Array.<number>} ends Ends.
+ * @param {number} stride Stride.
+ * @param {number} x X.
+ * @param {number} y Y.
+ * @return {boolean} Contains (x, y).
+ */
+ol.geom.flat.contains.linearRingsContainsXY =
+    function(flatCoordinates, offset, ends, stride, x, y) {
+  goog.asserts.assert(ends.length > 0);
+  if (ends.length === 0) {
+    return false;
+  }
+  if (!ol.geom.flat.contains.linearRingContainsXY(
+      flatCoordinates, offset, ends[0], stride, x, y)) {
+    return false;
+  }
+  var i, ii;
+  for (i = 1, ii = ends.length; i < ii; ++i) {
+    if (ol.geom.flat.contains.linearRingContainsXY(
+        flatCoordinates, ends[i - 1], ends[i], stride, x, y)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {Array.<Array.<number>>} endss Endss.
+ * @param {number} stride Stride.
+ * @param {number} x X.
+ * @param {number} y Y.
+ * @return {boolean} Contains (x, y).
+ */
+ol.geom.flat.contains.linearRingssContainsXY =
+    function(flatCoordinates, offset, endss, stride, x, y) {
+  goog.asserts.assert(endss.length > 0);
+  if (endss.length === 0) {
+    return false;
+  }
+  var i, ii;
+  for (i = 0, ii = endss.length; i < ii; ++i) {
+    var ends = endss[i];
+    if (ol.geom.flat.contains.linearRingsContainsXY(
+        flatCoordinates, offset, ends, stride, x, y)) {
+      return true;
+    }
+    offset = ends[ends.length - 1];
+  }
+  return false;
+};
+
+goog.provide('ol.geom.flat.segments');
+
+
+/**
+ * This function calls `callback` for each segment of the flat coordinates
+ * array. If the callback returns a truthy value the function returns that
+ * value immediately. Otherwise the function returns `false`.
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {number} end End.
+ * @param {number} stride Stride.
+ * @param {function(ol.Coordinate, ol.Coordinate): T} callback Function
+ *     called for each segment.
+ * @return {T|boolean} Value.
+ * @template T
+ */
+ol.geom.flat.segments.forEach =
+    function(flatCoordinates, offset, end, stride, callback) {
+  var point1 = [flatCoordinates[offset], flatCoordinates[offset + 1]];
+  var point2 = [];
+  var ret;
+  for (; (offset + stride) < end; offset += stride) {
+    point2[0] = flatCoordinates[offset + stride];
+    point2[1] = flatCoordinates[offset + stride + 1];
+    ret = callback(point1, point2);
+    if (ret) {
+      return ret;
+    }
+    point1[0] = point2[0];
+    point1[1] = point2[1];
+  }
+  return false;
+};
+
+goog.provide('ol.geom.flat.intersectsextent');
+
+goog.require('goog.asserts');
+goog.require('ol.extent');
+goog.require('ol.geom.flat.contains');
+goog.require('ol.geom.flat.segments');
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {number} end End.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} True if the geometry and the extent intersect.
+ */
+ol.geom.flat.intersectsextent.lineString =
+    function(flatCoordinates, offset, end, stride, extent) {
+  var coordinatesExtent = ol.extent.extendFlatCoordinates(
+      ol.extent.createEmpty(), flatCoordinates, offset, end, stride);
+  if (!ol.extent.intersects(extent, coordinatesExtent)) {
+    return false;
+  }
+  if (ol.extent.containsExtent(extent, coordinatesExtent)) {
+    return true;
+  }
+  if (coordinatesExtent[0] >= extent[0] &&
+      coordinatesExtent[2] <= extent[2]) {
+    return true;
+  }
+  if (coordinatesExtent[1] >= extent[1] &&
+      coordinatesExtent[3] <= extent[3]) {
+    return true;
+  }
+  return ol.geom.flat.segments.forEach(flatCoordinates, offset, end, stride,
+      /**
+       * @param {ol.Coordinate} point1 Start point.
+       * @param {ol.Coordinate} point2 End point.
+       * @return {boolean} `true` if the segment and the extent intersect,
+       *     `false` otherwise.
+       */
+      function(point1, point2) {
+        return ol.extent.intersectsSegment(extent, point1, point2);
+      });
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {Array.<number>} ends Ends.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} True if the geometry and the extent intersect.
+ */
+ol.geom.flat.intersectsextent.lineStrings =
+    function(flatCoordinates, offset, ends, stride, extent) {
+  var i, ii;
+  for (i = 0, ii = ends.length; i < ii; ++i) {
+    if (ol.geom.flat.intersectsextent.lineString(
+        flatCoordinates, offset, ends[i], stride, extent)) {
+      return true;
+    }
+    offset = ends[i];
+  }
+  return false;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {number} end End.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} True if the geometry and the extent intersect.
+ */
+ol.geom.flat.intersectsextent.linearRing =
+    function(flatCoordinates, offset, end, stride, extent) {
+  if (ol.geom.flat.intersectsextent.lineString(
+      flatCoordinates, offset, end, stride, extent)) {
+    return true;
+  }
+  if (ol.geom.flat.contains.linearRingContainsXY(
+      flatCoordinates, offset, end, stride, extent[0], extent[1])) {
+    return true;
+  }
+  if (ol.geom.flat.contains.linearRingContainsXY(
+      flatCoordinates, offset, end, stride, extent[0], extent[3])) {
+    return true;
+  }
+  if (ol.geom.flat.contains.linearRingContainsXY(
+      flatCoordinates, offset, end, stride, extent[2], extent[1])) {
+    return true;
+  }
+  if (ol.geom.flat.contains.linearRingContainsXY(
+      flatCoordinates, offset, end, stride, extent[2], extent[3])) {
+    return true;
+  }
+  return false;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {Array.<number>} ends Ends.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} True if the geometry and the extent intersect.
+ */
+ol.geom.flat.intersectsextent.linearRings =
+    function(flatCoordinates, offset, ends, stride, extent) {
+  goog.asserts.assert(ends.length > 0);
+  if (!ol.geom.flat.intersectsextent.linearRing(
+      flatCoordinates, offset, ends[0], stride, extent)) {
+    return false;
+  }
+  if (ends.length === 1) {
+    return true;
+  }
+  var i, ii;
+  for (i = 1, ii = ends.length; i < ii; ++i) {
+    if (ol.geom.flat.contains.linearRingContainsExtent(
+        flatCoordinates, ends[i - 1], ends[i], stride, extent)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+
+/**
+ * @param {Array.<number>} flatCoordinates Flat coordinates.
+ * @param {number} offset Offset.
+ * @param {Array.<Array.<number>>} endss Endss.
+ * @param {number} stride Stride.
+ * @param {ol.Extent} extent Extent.
+ * @return {boolean} True if the geometry and the extent intersect.
+ */
+ol.geom.flat.intersectsextent.linearRingss =
+    function(flatCoordinates, offset, endss, stride, extent) {
+  goog.asserts.assert(endss.length > 0);
+  var i, ii;
+  for (i = 0, ii = endss.length; i < ii; ++i) {
+    var ends = endss[i];
+    if (ol.geom.flat.intersectsextent.linearRings(
+        flatCoordinates, offset, ends, stride, extent)) {
+      return true;
+    }
+    offset = ends[ends.length - 1];
+  }
+  return false;
+};
+
 goog.provide('ol.geom.flat.length');
 
 
@@ -39822,6 +42233,7 @@ goog.require('ol.geom.flat.closest');
 goog.require('ol.geom.flat.deflate');
 goog.require('ol.geom.flat.inflate');
 goog.require('ol.geom.flat.interpolate');
+goog.require('ol.geom.flat.intersectsextent');
 goog.require('ol.geom.flat.length');
 goog.require('ol.geom.flat.simplify');
 
@@ -40004,6 +42416,17 @@ ol.geom.LineString.prototype.getType = function() {
 
 
 /**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.LineString.prototype.intersectsExtent = function(extent) {
+  return ol.geom.flat.intersectsextent.lineString(
+      this.flatCoordinates, 0, this.flatCoordinates.length, this.stride,
+      extent);
+};
+
+
+/**
  * @param {Array.<ol.Coordinate>} coordinates Coordinates.
  * @param {ol.geom.GeometryLayout=} opt_layout Layout.
  * @api stable
@@ -40046,6 +42469,7 @@ goog.require('ol.geom.flat.closest');
 goog.require('ol.geom.flat.deflate');
 goog.require('ol.geom.flat.inflate');
 goog.require('ol.geom.flat.interpolate');
+goog.require('ol.geom.flat.intersectsextent');
 goog.require('ol.geom.flat.simplify');
 
 
@@ -40281,6 +42705,16 @@ ol.geom.MultiLineString.prototype.getType = function() {
 
 
 /**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.MultiLineString.prototype.intersectsExtent = function(extent) {
+  return ol.geom.flat.intersectsextent.lineStrings(
+      this.flatCoordinates, 0, this.ends_, this.stride, extent);
+};
+
+
+/**
  * @param {Array.<Array.<ol.Coordinate>>} coordinates Coordinates.
  * @param {ol.geom.GeometryLayout=} opt_layout Layout.
  * @api stable
@@ -40436,6 +42870,16 @@ ol.geom.Point.prototype.getExtent = function(opt_extent) {
  */
 ol.geom.Point.prototype.getType = function() {
   return ol.geom.GeometryType.POINT;
+};
+
+
+/**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.Point.prototype.intersectsExtent = function(extent) {
+  return ol.extent.containsXY(extent,
+      this.flatCoordinates[0], this.flatCoordinates[1]);
 };
 
 
@@ -40609,6 +43053,25 @@ ol.geom.MultiPoint.prototype.getPoints = function() {
  */
 ol.geom.MultiPoint.prototype.getType = function() {
   return ol.geom.GeometryType.MULTI_POINT;
+};
+
+
+/**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.MultiPoint.prototype.intersectsExtent = function(extent) {
+  var flatCoordinates = this.flatCoordinates;
+  var stride = this.stride;
+  var i, ii, x, y;
+  for (i = 0, ii = flatCoordinates.length; i < ii; i += stride) {
+    x = flatCoordinates[i];
+    y = flatCoordinates[i + 1];
+    if (ol.extent.containsXY(extent, x, y)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 
@@ -40863,98 +43326,6 @@ ol.geom.LinearRing.prototype.setFlatCoordinates =
   this.changed();
 };
 
-goog.provide('ol.geom.flat.contains');
-
-goog.require('goog.asserts');
-
-
-/**
- * @param {Array.<number>} flatCoordinates Flat coordinates.
- * @param {number} offset Offset.
- * @param {number} end End.
- * @param {number} stride Stride.
- * @param {number} x X.
- * @param {number} y Y.
- * @return {boolean} Contains (x, y).
- */
-ol.geom.flat.contains.linearRingContainsXY =
-    function(flatCoordinates, offset, end, stride, x, y) {
-  // http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html
-  var contains = false;
-  var x1 = flatCoordinates[end - stride];
-  var y1 = flatCoordinates[end - stride + 1];
-  for (; offset < end; offset += stride) {
-    var x2 = flatCoordinates[offset];
-    var y2 = flatCoordinates[offset + 1];
-    var intersect = ((y1 > y) != (y2 > y)) &&
-        (x < (x2 - x1) * (y - y1) / (y2 - y1) + x1);
-    if (intersect) {
-      contains = !contains;
-    }
-    x1 = x2;
-    y1 = y2;
-  }
-  return contains;
-};
-
-
-/**
- * @param {Array.<number>} flatCoordinates Flat coordinates.
- * @param {number} offset Offset.
- * @param {Array.<number>} ends Ends.
- * @param {number} stride Stride.
- * @param {number} x X.
- * @param {number} y Y.
- * @return {boolean} Contains (x, y).
- */
-ol.geom.flat.contains.linearRingsContainsXY =
-    function(flatCoordinates, offset, ends, stride, x, y) {
-  goog.asserts.assert(ends.length > 0);
-  if (ends.length === 0) {
-    return false;
-  }
-  if (!ol.geom.flat.contains.linearRingContainsXY(
-      flatCoordinates, offset, ends[0], stride, x, y)) {
-    return false;
-  }
-  var i, ii;
-  for (i = 1, ii = ends.length; i < ii; ++i) {
-    if (ol.geom.flat.contains.linearRingContainsXY(
-        flatCoordinates, ends[i - 1], ends[i], stride, x, y)) {
-      return false;
-    }
-  }
-  return true;
-};
-
-
-/**
- * @param {Array.<number>} flatCoordinates Flat coordinates.
- * @param {number} offset Offset.
- * @param {Array.<Array.<number>>} endss Endss.
- * @param {number} stride Stride.
- * @param {number} x X.
- * @param {number} y Y.
- * @return {boolean} Contains (x, y).
- */
-ol.geom.flat.contains.linearRingssContainsXY =
-    function(flatCoordinates, offset, endss, stride, x, y) {
-  goog.asserts.assert(endss.length > 0);
-  if (endss.length === 0) {
-    return false;
-  }
-  var i, ii;
-  for (i = 0, ii = endss.length; i < ii; ++i) {
-    var ends = endss[i];
-    if (ol.geom.flat.contains.linearRingsContainsXY(
-        flatCoordinates, offset, ends, stride, x, y)) {
-      return true;
-    }
-    offset = ends[ends.length - 1];
-  }
-  return false;
-};
-
 goog.provide('ol.geom.flat.interiorpoint');
 
 goog.require('goog.asserts');
@@ -41203,6 +43574,7 @@ goog.require('ol.geom.flat.contains');
 goog.require('ol.geom.flat.deflate');
 goog.require('ol.geom.flat.inflate');
 goog.require('ol.geom.flat.interiorpoint');
+goog.require('ol.geom.flat.intersectsextent');
 goog.require('ol.geom.flat.orient');
 goog.require('ol.geom.flat.simplify');
 
@@ -41486,6 +43858,16 @@ ol.geom.Polygon.prototype.getType = function() {
 
 
 /**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.Polygon.prototype.intersectsExtent = function(extent) {
+  return ol.geom.flat.intersectsextent.linearRings(
+      this.getOrientedFlatCoordinates(), 0, this.ends_, this.stride, extent);
+};
+
+
+/**
  * @param {Array.<Array.<ol.Coordinate>>} coordinates Coordinates.
  * @param {ol.geom.GeometryLayout=} opt_layout Layout.
  * @api stable
@@ -41529,10 +43911,12 @@ ol.geom.Polygon.prototype.setFlatCoordinates =
 /**
  * Create an approximation of a circle on the surface of a sphere.
  * @param {ol.Sphere} sphere The sphere.
- * @param {ol.Coordinate} center Center.
- * @param {number} radius Radius.
- * @param {number=} opt_n Optional number of points.  Default is `32`.
- * @return {ol.geom.Polygon} Circle geometry.
+ * @param {ol.Coordinate} center Center (`[lon, lat]` in degrees).
+ * @param {number} radius The great-circle distance from the center to
+ *     the polygon vertices.
+ * @param {number=} opt_n Optional number of vertices for the resulting
+ *     polygon. Default is `32`.
+ * @return {ol.geom.Polygon} The "circular" polygon.
  * @api stable
  */
 ol.geom.Polygon.circular = function(sphere, center, radius, opt_n) {
@@ -41594,6 +43978,7 @@ goog.require('ol.geom.flat.contains');
 goog.require('ol.geom.flat.deflate');
 goog.require('ol.geom.flat.inflate');
 goog.require('ol.geom.flat.interiorpoint');
+goog.require('ol.geom.flat.intersectsextent');
 goog.require('ol.geom.flat.orient');
 goog.require('ol.geom.flat.simplify');
 
@@ -41892,6 +44277,16 @@ ol.geom.MultiPolygon.prototype.getPolygons = function() {
  */
 ol.geom.MultiPolygon.prototype.getType = function() {
   return ol.geom.GeometryType.MULTI_POLYGON;
+};
+
+
+/**
+ * @inheritDoc
+ * @api
+ */
+ol.geom.MultiPolygon.prototype.intersectsExtent = function(extent) {
+  return ol.geom.flat.intersectsextent.linearRingss(
+      this.getOrientedFlatCoordinates(), 0, this.endss_, this.stride, extent);
 };
 
 
@@ -46185,7 +48580,7 @@ ol.format.GML.readFlatCoordinatesFromNode_ = function(node, objectStack) {
  */
 ol.format.GML.readFlatPos_ = function(node, objectStack) {
   var s = ol.xml.getAllTextContent(node, false);
-  var re = /^\s*([+\-]?\d*\.?\d+(?:e[+\-]?\d+)?)\s*/;
+  var re = /^\s*([+\-]?\d*\.?\d+(?:[eE][+\-]?\d+)?)\s*/;
   /** @type {Array.<number>} */
   var flatCoordinates = [];
   var m;
@@ -51120,11 +53515,17 @@ goog.uri.utils.phishingProtection_ = function() {
 
 /**
  * @param {?string} uri A possibly null string.
+ * @param {boolean=} opt_preserveReserved If true, percent-encoding of RFC-3986
+ *     reserved characters will not be removed.
  * @return {?string} The string URI-decoded, or null if uri is null.
  * @private
  */
-goog.uri.utils.decodeIfPossible_ = function(uri) {
-  return uri && decodeURIComponent(uri);
+goog.uri.utils.decodeIfPossible_ = function(uri, opt_preserveReserved) {
+  if (!uri) {
+    return uri;
+  }
+
+  return opt_preserveReserved ? decodeURI(uri) : decodeURIComponent(uri);
 };
 
 
@@ -51210,7 +53611,8 @@ goog.uri.utils.getDomainEncoded = function(uri) {
  * @return {?string} The decoded domain, or null if none.
  */
 goog.uri.utils.getDomain = function(uri) {
-  return goog.uri.utils.decodeIfPossible_(goog.uri.utils.getDomainEncoded(uri));
+  return goog.uri.utils.decodeIfPossible_(
+      goog.uri.utils.getDomainEncoded(uri), true /* opt_preserveReserved */);
 };
 
 
@@ -51245,7 +53647,8 @@ goog.uri.utils.getPathEncoded = function(uri) {
  *     slash, if any.
  */
 goog.uri.utils.getPath = function(uri) {
-  return goog.uri.utils.decodeIfPossible_(goog.uri.utils.getPathEncoded(uri));
+  return goog.uri.utils.decodeIfPossible_(
+      goog.uri.utils.getPathEncoded(uri), true /* opt_preserveReserved */);
 };
 
 
@@ -51344,7 +53747,7 @@ goog.uri.utils.removeFragment = function(uri) {
  *
  * @param {string} uri1 The first URI.
  * @param {string} uri2 The second URI.
- * @return {boolean} Whether they have the same domain and port.
+ * @return {boolean} Whether they have the same scheme, domain and port.
  */
 goog.uri.utils.haveSameDomain = function(uri1, uri2) {
   var pieces1 = goog.uri.utils.split(uri1);
@@ -51947,6 +54350,12 @@ goog.require('goog.uri.utils.StandardQueryParam');
  * -- so<code>goog.Uri.parse('/foo%20bar').getPath()</code> will return the
  * decoded path, <code>/foo bar</code>.
  *
+ * Reserved characters (see RFC 3986 section 2.2) can be present in
+ * their percent-encoded form in scheme, domain, and path URI components and
+ * will not be auto-decoded. For example:
+ * <code>goog.Uri.parse('rel%61tive/path%2fto/resource').getPath()</code> will
+ * return <code>relative/path%2fto/resource</code>.
+ *
  * The constructor accepts an optional unparsed, raw URI string.  The parser
  * is relaxed, so special characters that aren't escaped but don't cause
  * ambiguities will not cause parse failures.
@@ -52101,7 +54510,7 @@ goog.Uri.prototype.toString = function() {
   var scheme = this.getScheme();
   if (scheme) {
     out.push(goog.Uri.encodeSpecialChars_(
-        scheme, goog.Uri.reDisallowedInSchemeOrUserInfo_), ':');
+        scheme, goog.Uri.reDisallowedInSchemeOrUserInfo_, true), ':');
   }
 
   var domain = this.getDomain();
@@ -52111,10 +54520,10 @@ goog.Uri.prototype.toString = function() {
     var userInfo = this.getUserInfo();
     if (userInfo) {
       out.push(goog.Uri.encodeSpecialChars_(
-          userInfo, goog.Uri.reDisallowedInSchemeOrUserInfo_), '@');
+          userInfo, goog.Uri.reDisallowedInSchemeOrUserInfo_, true), '@');
     }
 
-    out.push(goog.string.urlEncode(domain));
+    out.push(goog.Uri.removeDoubleEncoding_(goog.string.urlEncode(domain)));
 
     var port = this.getPort();
     if (port != null) {
@@ -52131,7 +54540,8 @@ goog.Uri.prototype.toString = function() {
         path,
         path.charAt(0) == '/' ?
             goog.Uri.reDisallowedInAbsolutePath_ :
-            goog.Uri.reDisallowedInRelativePath_));
+            goog.Uri.reDisallowedInRelativePath_,
+        true));
   }
 
   var query = this.getEncodedQuery();
@@ -52261,7 +54671,8 @@ goog.Uri.prototype.getScheme = function() {
  */
 goog.Uri.prototype.setScheme = function(newScheme, opt_decode) {
   this.enforceReadOnly();
-  this.scheme_ = opt_decode ? goog.Uri.decodeOrEmpty_(newScheme) : newScheme;
+  this.scheme_ = opt_decode ? goog.Uri.decodeOrEmpty_(newScheme, true) :
+      newScheme;
 
   // remove an : at the end of the scheme so somebody can pass in
   // window.location.protocol
@@ -52326,7 +54737,8 @@ goog.Uri.prototype.getDomain = function() {
  */
 goog.Uri.prototype.setDomain = function(newDomain, opt_decode) {
   this.enforceReadOnly();
-  this.domain_ = opt_decode ? goog.Uri.decodeOrEmpty_(newDomain) : newDomain;
+  this.domain_ = opt_decode ? goog.Uri.decodeOrEmpty_(newDomain, true) :
+      newDomain;
   return this;
 };
 
@@ -52393,7 +54805,7 @@ goog.Uri.prototype.getPath = function() {
  */
 goog.Uri.prototype.setPath = function(newPath, opt_decode) {
   this.enforceReadOnly();
-  this.path_ = opt_decode ? goog.Uri.decodeOrEmpty_(newPath) : newPath;
+  this.path_ = opt_decode ? goog.Uri.decodeOrEmpty_(newPath, true) : newPath;
   return this;
 };
 
@@ -52807,12 +55219,18 @@ goog.Uri.removeDotSegments = function(path) {
 /**
  * Decodes a value or returns the empty string if it isn't defined or empty.
  * @param {string|undefined} val Value to decode.
+ * @param {boolean=} opt_preserveReserved If true, restricted characters will
+ *     not be decoded.
  * @return {string} Decoded value.
  * @private
  */
-goog.Uri.decodeOrEmpty_ = function(val) {
+goog.Uri.decodeOrEmpty_ = function(val, opt_preserveReserved) {
   // Don't use UrlDecode() here because val is not a query parameter.
-  return val ? decodeURIComponent(val) : '';
+  if (!val) {
+    return '';
+  }
+
+  return opt_preserveReserved ? decodeURI(val) : decodeURIComponent(val);
 };
 
 
@@ -52823,12 +55241,22 @@ goog.Uri.decodeOrEmpty_ = function(val) {
  *
  * @param {*} unescapedPart The string to encode.
  * @param {RegExp} extra A character set of characters in [\01-\177].
+ * @param {boolean=} opt_removeDoubleEncoding If true, remove double percent
+ *     encoding.
  * @return {?string} null iff unescapedPart == null.
  * @private
  */
-goog.Uri.encodeSpecialChars_ = function(unescapedPart, extra) {
+goog.Uri.encodeSpecialChars_ = function(unescapedPart, extra,
+    opt_removeDoubleEncoding) {
   if (goog.isString(unescapedPart)) {
-    return encodeURI(unescapedPart).replace(extra, goog.Uri.encodeChar_);
+    var encoded = encodeURI(unescapedPart).
+        replace(extra, goog.Uri.encodeChar_);
+    if (opt_removeDoubleEncoding) {
+      // encodeURI double-escapes %XX sequences used to represent restricted
+      // characters in some URI components, remove the double escaping here.
+      encoded = goog.Uri.removeDoubleEncoding_(encoded);
+    }
+    return encoded;
   }
   return null;
 };
@@ -52847,6 +55275,17 @@ goog.Uri.encodeChar_ = function(ch) {
 
 
 /**
+ * Removes double percent-encoding from a string.
+ * @param  {string} doubleEncodedString String
+ * @return {string} String with double encoding removed.
+ * @private
+ */
+goog.Uri.removeDoubleEncoding_ = function(doubleEncodedString) {
+  return doubleEncodedString.replace(/%25([0-9a-fA-F]{2})/g, '%$1');
+};
+
+
+/**
  * Regular expression for characters that are disallowed in the scheme or
  * userInfo part of the URI.
  * @type {RegExp}
@@ -52857,6 +55296,7 @@ goog.Uri.reDisallowedInSchemeOrUserInfo_ = /[#\/\?@]/g;
 
 /**
  * Regular expression for characters that are disallowed in a relative path.
+ * Colon is included due to RFC 3986 3.3.
  * @type {RegExp}
  * @private
  */
@@ -53629,7 +56069,8 @@ ol.style.Icon.prototype.getAnchor = function() {
 
 
 /**
- * @inheritDoc
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {Image} Image element.
  * @api
  */
 ol.style.Icon.prototype.getImage = function(pixelRatio) {
@@ -60444,6 +62885,7 @@ ol.format.WMSCapabilities.readLayer_ = function(node, objectStack) {
     if (goog.isDef(parentValue)) {
       var childValue = goog.object.setIfUndefined(layerObject, key, []);
       childValue = childValue.concat(parentValue);
+      goog.object.set(layerObject, key, childValue);
     }
   });
 
@@ -61006,7 +63448,7 @@ ol.GeolocationProperty = {
  *
  *     var geolocation = new ol.Geolocation({
  *       // take the projection to use from the map's view
- *       projection: view.getprojection()
+ *       projection: view.getProjection()
  *     });
  *     // listen to changes in position
  *     geolocation.on('change', function(evt) {
@@ -62649,12 +65091,21 @@ ol.ImageUrlFunction.nullImageUrlFunction =
 // FIXME factor out key precondition (shift et. al)
 
 goog.provide('ol.interaction.Interaction');
+goog.provide('ol.interaction.InteractionProperty');
 
 goog.require('goog.asserts');
 goog.require('ol.MapBrowserEvent');
-goog.require('ol.Observable');
+goog.require('ol.Object');
 goog.require('ol.animation');
 goog.require('ol.easing');
+
+
+/**
+ * @enum {string}
+ */
+ol.interaction.InteractionProperty = {
+  ACTIVE: 'active'
+};
 
 
 
@@ -62671,9 +65122,11 @@ goog.require('ol.easing');
  * vectors and so are visible on the screen.
  *
  * @constructor
- * @extends {ol.Observable}
+ * @extends {ol.Object}
+ * @api
  */
 ol.interaction.Interaction = function() {
+
   goog.base(this);
 
   /**
@@ -62682,8 +65135,25 @@ ol.interaction.Interaction = function() {
    */
   this.map_ = null;
 
+  this.setActive(true);
+
 };
-goog.inherits(ol.interaction.Interaction, ol.Observable);
+goog.inherits(ol.interaction.Interaction, ol.Object);
+
+
+/**
+ * @return {boolean} `true` if the interaction is active, `false` otherwise.
+ * @observable
+ * @api
+ */
+ol.interaction.Interaction.prototype.getActive = function() {
+  return /** @type {boolean} */ (
+      this.get(ol.interaction.InteractionProperty.ACTIVE));
+};
+goog.exportProperty(
+    ol.interaction.Interaction.prototype,
+    'getActive',
+    ol.interaction.Interaction.prototype.getActive);
 
 
 /**
@@ -62703,6 +65173,21 @@ ol.interaction.Interaction.prototype.getMap = function() {
  */
 ol.interaction.Interaction.prototype.handleMapBrowserEvent =
     goog.abstractMethod;
+
+
+/**
+ * Activate or deactivate the interaction.
+ * @param {boolean} active Active.
+ * @observable
+ * @api
+ */
+ol.interaction.Interaction.prototype.setActive = function(active) {
+  this.set(ol.interaction.InteractionProperty.ACTIVE, active);
+};
+goog.exportProperty(
+    ol.interaction.Interaction.prototype,
+    'setActive',
+    ol.interaction.Interaction.prototype.setActive);
 
 
 /**
@@ -62912,7 +65397,7 @@ ol.interaction.DoubleClickZoom.prototype.handleMapBrowserEvent =
     var anchor = mapBrowserEvent.coordinate;
     var delta = browserEvent.shiftKey ? -this.delta_ : this.delta_;
     var view = map.getView();
-    goog.asserts.assert(goog.isDef(view));
+    goog.asserts.assert(!goog.isNull(view));
     ol.interaction.Interaction.zoomByDelta(
         map, view, delta, anchor, this.duration_);
     mapBrowserEvent.preventDefault();
@@ -65716,6 +68201,7 @@ goog.provide('goog.async.throwException');
 
 goog.require('goog.debug.entryPointRegistry');
 goog.require('goog.functions');
+goog.require('goog.labs.userAgent.browser');
 
 
 /**
@@ -65733,8 +68219,8 @@ goog.async.throwException = function(exception) {
 
 /**
  * Fires the provided callbacks as soon as possible after the current JS
- * execution context. setTimeout(…, 0) always takes at least 5ms for legacy
- * reasons.
+ * execution context. setTimeout(…, 0) takes at least 4ms when called from
+ * within another setTimeout(…, 0) for legacy reasons.
  *
  * This will not schedule the callback as a microtask (i.e. a task that can
  * preempt user input or networking callbacks). It is meant to emulate what
@@ -65752,8 +68238,17 @@ goog.async.nextTick = function(callback, opt_context) {
     cb = goog.bind(callback, opt_context);
   }
   cb = goog.async.nextTick.wrapCallback_(cb);
-  // Introduced and currently only supported by IE10.
-  if (goog.isFunction(goog.global.setImmediate)) {
+  // window.setImmediate was introduced and currently only supported by IE10+,
+  // but due to a bug in the implementation it is not guaranteed that
+  // setImmediate is faster than setTimeout nor that setImmediate N is before
+  // setImmediate N+1. That is why we do not use the native version if
+  // available. We do, however, call setImmediate if it is a normal function
+  // because that indicates that it has been replaced by goog.testing.MockClock
+  // which we do want to support.
+  // See
+  // http://connect.microsoft.com/IE/feedback/details/801823/setimmediate-and-messagechannel-are-broken-in-ie10
+  if (goog.isFunction(goog.global.setImmediate) && (!goog.global.Window ||
+      goog.global.Window.prototype.setImmediate != goog.global.setImmediate)) {
     goog.global.setImmediate(cb);
     return;
   }
@@ -65828,7 +68323,13 @@ goog.async.nextTick.getSetImmediateEmulator_ = function() {
       };
     };
   }
-  if (typeof Channel !== 'undefined') {
+  if (typeof Channel !== 'undefined' &&
+      // Exclude all of IE due to
+      // http://codeforhire.com/2013/09/21/setimmediate-and-messagechannel-broken-on-internet-explorer-10/
+      // which allows starving postMessage with a busy setTimeout loop.
+      // This currently affects IE10 and IE11 which would otherwise be able
+      // to use the postMessage based fallbacks.
+      !goog.labs.userAgent.browser.isIE()) {
     var channel = new Channel();
     // Use a fifo linked list to call callbacks in the right order.
     var head = {};
@@ -65847,7 +68348,7 @@ goog.async.nextTick.getSetImmediateEmulator_ = function() {
       channel['port2'].postMessage(0);
     };
   }
-  // Implementation for IE6-8: Script elements fire an asynchronous
+  // Implementation for IE6+: Script elements fire an asynchronous
   // onreadystatechange event when inserted into the DOM.
   if (typeof document !== 'undefined' && 'onreadystatechange' in
       document.createElement('script')) {
@@ -66297,6 +68798,21 @@ goog.Promise = function(resolver, opt_context) {
           self.resolve_(goog.Promise.State_.FULFILLED, value);
         },
         function(reason) {
+          if (goog.DEBUG &&
+              !(reason instanceof goog.Promise.CancellationError)) {
+            try {
+              // Promise was rejected. Step up one call frame to see why.
+              if (reason instanceof Error) {
+                throw reason;
+              } else {
+                throw new Error('Promise rejected.');
+              }
+            } catch (e) {
+              // Only thrown so browser dev tools can catch rejections of
+              // promises when the option to break on caught exceptions is
+              // activated.
+            }
+          }
           self.resolve_(goog.Promise.State_.REJECTED, reason);
         });
   } catch (e) {
@@ -68635,8 +71151,8 @@ ol.interaction.DragAndDrop = function(opt_options) {
    * @private
    * @type {ol.proj.Projection}
    */
-  this.reprojectTo_ = goog.isDef(options.reprojectTo) ?
-      ol.proj.get(options.reprojectTo) : null;
+  this.projection_ = goog.isDef(options.projection) ?
+      ol.proj.get(options.projection) : null;
 
   /**
    * @private
@@ -68690,10 +71206,10 @@ ol.interaction.DragAndDrop.prototype.handleDrop_ = function(event) {
 ol.interaction.DragAndDrop.prototype.handleResult_ = function(file, result) {
   var map = this.getMap();
   goog.asserts.assert(!goog.isNull(map));
-  var projection = this.reprojectTo_;
+  var projection = this.projection_;
   if (goog.isNull(projection)) {
     var view = map.getView();
-    goog.asserts.assert(goog.isDef(view));
+    goog.asserts.assert(!goog.isNull(view));
     projection = view.getProjection();
     goog.asserts.assert(goog.isDef(projection));
   }
@@ -69286,7 +71802,7 @@ ol.interaction.DragBox.prototype.handlePointerDrag = function(mapBrowserEvent) {
 
 /**
  * Returns geometry of last drawn box.
- * @return {ol.geom.Geometry} Geometry.
+ * @return {ol.geom.Polygon} Geometry.
  * @api stable
  */
 ol.interaction.DragBox.prototype.getGeometry = function() {
@@ -70270,7 +72786,7 @@ goog.inherits(ol.interaction.DragZoom, ol.interaction.DragBox);
 ol.interaction.DragZoom.prototype.onBoxEnd = function() {
   var map = this.getMap();
   var view = map.getView();
-  goog.asserts.assert(goog.isDef(view));
+  goog.asserts.assert(!goog.isNull(view));
   var extent = this.getGeometry().getExtent();
   var center = ol.extent.getCenter(extent);
   var size = map.getSize();
@@ -72368,6 +74884,7 @@ goog.require('goog.dom');
 goog.require('goog.events');
 goog.require('goog.events.BrowserEvent');
 goog.require('goog.events.EventTarget');
+goog.require('goog.events.EventType');
 goog.require('goog.math');
 goog.require('goog.style');
 goog.require('goog.userAgent');
@@ -72405,7 +74922,7 @@ goog.events.MouseWheelHandler = function(element, opt_capture) {
    */
   this.isRtl_ = !!rtlElement && goog.style.isRightToLeft(rtlElement);
 
-  var type = goog.userAgent.GECKO ? 'DOMMouseScroll' : 'mousewheel';
+  var type = goog.events.EventType.MOUSEWHEEL;
 
   /**
    * The key returned from the goog.events.listen.
@@ -72669,6 +75186,7 @@ ol.source.SourceOptions;
  * @extends {ol.Observable}
  * @fires change Triggered when the state of the source changes.
  * @param {ol.source.SourceOptions} options Source options.
+ * @api stable
  */
 ol.source.Source = function(options) {
 
@@ -72848,6 +75366,7 @@ ol.layer.LayerState;
  * @constructor
  * @extends {ol.Object}
  * @param {olx.layer.BaseOptions} options Layer options.
+ * @api stable
  */
 ol.layer.Base = function(options) {
 
@@ -73288,7 +75807,7 @@ ol.layer.Layer.visibleAtResolution = function(layerState, resolution) {
  * @inheritDoc
  */
 ol.layer.Layer.prototype.getLayersArray = function(opt_array) {
-  var array = (goog.isDef(opt_array)) ? opt_array : [];
+  var array = goog.isDef(opt_array) ? opt_array : [];
   array.push(this);
   return array;
 };
@@ -73298,7 +75817,7 @@ ol.layer.Layer.prototype.getLayersArray = function(opt_array) {
  * @inheritDoc
  */
 ol.layer.Layer.prototype.getLayerStatesArray = function(opt_states) {
-  var states = (goog.isDef(opt_states)) ? opt_states : [];
+  var states = goog.isDef(opt_states) ? opt_states : [];
   states.push(this.getLayerState());
   return states;
 };
@@ -73862,6 +76381,7 @@ ol.source.TileOptions;
  * @constructor
  * @extends {ol.source.Source}
  * @param {ol.source.TileOptions} options Tile source options.
+ * @api
  */
 ol.source.Tile = function(options) {
 
@@ -75165,7 +77685,7 @@ ol.interaction.KeyboardPan.prototype.handleMapBrowserEvent =
         keyCode == goog.events.KeyCodes.UP)) {
       var map = mapBrowserEvent.map;
       var view = map.getView();
-      goog.asserts.assert(goog.isDef(view));
+      goog.asserts.assert(!goog.isNull(view));
       var viewState = view.getState();
       var mapUnitsDelta = viewState.resolution * this.pixelDelta_;
       var deltaX = 0, deltaY = 0;
@@ -75261,7 +77781,7 @@ ol.interaction.KeyboardZoom.prototype.handleMapBrowserEvent =
       var delta = (charCode == '+'.charCodeAt(0)) ? this.delta_ : -this.delta_;
       map.render();
       var view = map.getView();
-      goog.asserts.assert(goog.isDef(view));
+      goog.asserts.assert(!goog.isNull(view));
       ol.interaction.Interaction.zoomByDelta(
           map, view, delta, undefined, this.duration_);
       mapBrowserEvent.preventDefault();
@@ -75374,7 +77894,7 @@ ol.interaction.MouseWheelZoom.prototype.doZoom_ = function(map) {
   var delta = goog.math.clamp(this.delta_, -maxDelta, maxDelta);
 
   var view = map.getView();
-  goog.asserts.assert(goog.isDef(view));
+  goog.asserts.assert(!goog.isNull(view));
 
   map.render();
   ol.interaction.Interaction.zoomByDelta(map, view, -delta, this.lastAnchor_,
@@ -75978,7 +78498,7 @@ goog.exportProperty(
  * @inheritDoc
  */
 ol.layer.Group.prototype.getLayersArray = function(opt_array) {
-  var array = (goog.isDef(opt_array)) ? opt_array : [];
+  var array = goog.isDef(opt_array) ? opt_array : [];
   this.getLayers().forEach(function(layer) {
     layer.getLayersArray(array);
   });
@@ -75990,7 +78510,7 @@ ol.layer.Group.prototype.getLayersArray = function(opt_array) {
  * @inheritDoc
  */
 ol.layer.Group.prototype.getLayerStatesArray = function(opt_states) {
-  var states = (goog.isDef(opt_states)) ? opt_states : [];
+  var states = goog.isDef(opt_states) ? opt_states : [];
 
   var pos = states.length;
 
@@ -87220,8 +89740,7 @@ ol.Map = function(options) {
     goog.events.EventType.TOUCHSTART,
     goog.events.EventType.MSPOINTERDOWN,
     ol.MapBrowserEvent.EventType.POINTERDOWN,
-    // see https://github.com/google/closure-library/pull/308
-    goog.userAgent.GECKO ? 'DOMMouseScroll' : 'mousewheel'
+    goog.events.EventType.MOUSEWHEEL
   ], goog.events.Event.stopPropagation);
   goog.dom.appendChild(this.viewport_, this.overlayContainerStopEvent_);
 
@@ -87709,7 +90228,7 @@ goog.exportProperty(
 /**
  * Get the view associated with this map. A view manages properties such as
  * center and resolution.
- * @return {ol.View|undefined} The view that controls this map.
+ * @return {ol.View} The view that controls this map.
  * @observable
  * @api stable
  */
@@ -87814,6 +90333,9 @@ ol.Map.prototype.handleMapBrowserEvent = function(mapBrowserEvent) {
   if (this.dispatchEvent(mapBrowserEvent) !== false) {
     for (i = interactionsArray.length - 1; i >= 0; i--) {
       var interaction = interactionsArray[i];
+      if (!interaction.getActive()) {
+        continue;
+      }
       var cont = interaction.handleMapBrowserEvent(mapBrowserEvent);
       if (!cont) {
         break;
@@ -87944,7 +90466,7 @@ ol.Map.prototype.handleViewChanged_ = function() {
     this.viewPropertyListenerKey_ = null;
   }
   var view = this.getView();
-  if (goog.isDefAndNotNull(view)) {
+  if (!goog.isNull(view)) {
     this.viewPropertyListenerKey_ = goog.events.listen(
         view, ol.ObjectEventType.PROPERTYCHANGE,
         this.handleViewPropertyChanged_, false, this);
@@ -88017,7 +90539,7 @@ ol.Map.prototype.isDef = function() {
     return false;
   }
   var view = this.getView();
-  if (!goog.isDef(view) || !view.isDef()) {
+  if (goog.isNull(view) || !view.isDef()) {
     return false;
   }
   return true;
@@ -88145,7 +90667,7 @@ ol.Map.prototype.renderFrame_ = function(time) {
   /** @type {?olx.FrameState} */
   var frameState = null;
   if (goog.isDef(size) && hasArea(size) &&
-      goog.isDef(view) && view.isDef()) {
+      !goog.isNull(view) && view.isDef()) {
     var viewHints = view.getHints();
     var layerStatesArray = this.getLayerGroup().getLayerStatesArray();
     var layerStates = {};
@@ -88177,17 +90699,17 @@ ol.Map.prototype.renderFrame_ = function(time) {
     });
   }
 
-  var preRenderFunctions = this.preRenderFunctions_;
-  var n = 0, preRenderFunction;
-  for (i = 0, ii = preRenderFunctions.length; i < ii; ++i) {
-    preRenderFunction = preRenderFunctions[i];
-    if (preRenderFunction(this, frameState)) {
-      preRenderFunctions[n++] = preRenderFunction;
-    }
-  }
-  preRenderFunctions.length = n;
-
   if (!goog.isNull(frameState)) {
+    var preRenderFunctions = this.preRenderFunctions_;
+    var n = 0, preRenderFunction;
+    for (i = 0, ii = preRenderFunctions.length; i < ii; ++i) {
+      preRenderFunction = preRenderFunctions[i];
+      if (preRenderFunction(this, frameState)) {
+        preRenderFunctions[n++] = preRenderFunction;
+      }
+    }
+    preRenderFunctions.length = n;
+
     frameState.extent = ol.extent.getForViewAndSize(viewState.center,
         viewState.resolution, viewState.rotation, frameState.size);
   }
@@ -89003,29 +91525,6 @@ ol.structs.RBush.prototype.forEachInExtent_ =
 
 
 /**
- * @param {function(this: S, ol.structs.RBushNode.<T>): *} callback Callback.
- * @param {S=} opt_this The object to use as `this` in `callback`.
- * @return {*} Callback return value.
- * @template S
- */
-ol.structs.RBush.prototype.forEachNode = function(callback, opt_this) {
-  /** @type {Array.<ol.structs.RBushNode.<T>>} */
-  var toVisit = [this.root_];
-  while (toVisit.length > 0) {
-    var node = toVisit.pop();
-    var result = callback.call(opt_this, node);
-    if (result) {
-      return result;
-    }
-    if (!node.isLeaf()) {
-      toVisit.push.apply(toVisit, node.children);
-    }
-  }
-  return undefined;
-};
-
-
-/**
  * @return {Array.<T>} All.
  */
 ol.structs.RBush.prototype.getAll = function() {
@@ -89251,6 +91750,14 @@ ol.source.VectorEventType = {
    * @api stable
    */
   ADDFEATURE: 'addfeature',
+
+  /**
+   * Triggered when a feature is updated.
+   * @event ol.source.VectorEvent#changefeature
+   * @api
+   */
+  CHANGEFEATURE: 'changefeature',
+
   /**
    * Triggered when a feature is removed from the source.
    * @event ol.source.VectorEvent#removefeature
@@ -89471,6 +91978,39 @@ ol.source.Vector.prototype.forEachFeatureInExtentAtResolution =
 
 
 /**
+ * This function executes the `callback` function once for each feature
+ * intersecting the `extent` until `callback` returns a truthy value. When
+ * `callback` returns a truthy value the function immediately returns that
+ * value. Otherwise the function returns `undefined`.
+ * @param {ol.Extent} extent Extent.
+ * @param {function(this: T, ol.Feature): S} f Callback.
+ * @param {T=} opt_this The object to use as `this` in `f`.
+ * @return {S|undefined}
+ * @template T,S
+ * @api
+ */
+ol.source.Vector.prototype.forEachFeatureIntersectingExtent =
+    function(extent, f, opt_this) {
+  return this.forEachFeatureInExtent(extent,
+      /**
+       * @param {ol.Feature} feature Feature.
+       * @return {S|undefined}
+       * @template S
+       */
+      function(feature) {
+        var geometry = feature.getGeometry();
+        goog.asserts.assert(goog.isDefAndNotNull(geometry));
+        if (geometry.intersectsExtent(extent)) {
+          var result = f.call(opt_this, feature);
+          if (result) {
+            return result;
+          }
+        }
+      });
+};
+
+
+/**
  * @return {Array.<ol.Feature>} Features.
  * @api stable
  */
@@ -89627,6 +92167,8 @@ ol.source.Vector.prototype.handleFeatureChange_ = function(event) {
     }
   }
   this.changed();
+  this.dispatchEvent(new ol.source.VectorEvent(
+      ol.source.VectorEventType.CHANGEFEATURE, feature));
 };
 
 
@@ -90444,7 +92986,7 @@ ol.interaction.Modify = function(options) {
    * @private
    */
   this.overlay_ = new ol.FeatureOverlay({
-    style: (goog.isDef(options.style)) ? options.style :
+    style: goog.isDef(options.style) ? options.style :
         ol.interaction.Modify.getDefaultStyleFunction()
   });
 
@@ -90732,14 +93274,9 @@ ol.interaction.Modify.prototype.handlePointerDown = function(evt) {
     var vertex = geometry.getCoordinates();
     var vertexExtent = ol.extent.boundingExtent([vertex]);
     var segmentDataMatches = this.rBush_.getInExtent(vertexExtent);
-    var distinctFeatures = {};
     for (var i = 0, ii = segmentDataMatches.length; i < ii; ++i) {
       var segmentDataMatch = segmentDataMatches[i];
       var segment = segmentDataMatch.segment;
-      if (!(goog.getUid(segmentDataMatch.feature) in distinctFeatures)) {
-        var feature = segmentDataMatch.feature;
-        distinctFeatures[goog.getUid(feature)] = true;
-      }
       if (ol.coordinate.equals(segment[0], vertex)) {
         this.dragSegments_.push([segmentDataMatch, 0]);
       } else if (ol.coordinate.equals(segment[1], vertex)) {
@@ -91202,7 +93739,7 @@ ol.interaction.Select = function(opt_options) {
    * @type {ol.FeatureOverlay}
    */
   this.featureOverlay_ = new ol.FeatureOverlay({
-    style: (goog.isDef(options.style)) ? options.style :
+    style: goog.isDef(options.style) ? options.style :
         ol.interaction.Select.getDefaultStyleFunction()
   });
 
@@ -91766,8 +94303,7 @@ ol.Overlay = function(options) {
       this.handlePositionChanged, false, this);
 
   goog.events.listen(
-      this,
-      ol.Object.getChangeEventType(ol.OverlayProperty.POSITIONING),
+      this, ol.Object.getChangeEventType(ol.OverlayProperty.POSITIONING),
       this.handlePositioningChanged, false, this);
 
   if (goog.isDef(options.element)) {
@@ -93320,9 +95856,11 @@ ol.tilegrid.XYZ.prototype.createTileCoordTransform = function(opt_options) {
 ol.tilegrid.XYZ.prototype.getTileCoordChildTileRange =
     function(tileCoord, opt_tileRange) {
   if (tileCoord[0] < this.maxZoom) {
+    var doubleX = 2 * tileCoord[1];
+    var doubleY = 2 * tileCoord[2];
     return ol.TileRange.createOrUpdate(
-        2 * tileCoord[1], 2 * (tileCoord[1] + 1),
-        2 * tileCoord[2], 2 * (tileCoord[2] + 1),
+        doubleX, doubleX + 1,
+        doubleY, doubleY + 1,
         opt_tileRange);
   } else {
     return null;
@@ -93392,6 +95930,12 @@ ol.source.BingMaps = function(options) {
    */
   this.culture_ = goog.isDef(options.culture) ? options.culture : 'en-us';
 
+  /**
+   * @private
+   * @type {number}
+   */
+  this.maxZoom_ = goog.isDef(options.maxZoom) ? options.maxZoom : -1;
+
   var protocol = ol.IS_HTTPS ? 'https:' : 'http:';
   var uri = new goog.Uri(
       protocol + '//dev.virtualearth.net/REST/v1/Imagery/Metadata/' +
@@ -93413,7 +95957,7 @@ goog.inherits(ol.source.BingMaps, ol.source.TileImage);
  * @api
  */
 ol.source.BingMaps.TOS_ATTRIBUTION = new ol.Attribution({
-  html: '<a class="ol-attribution-bing-tos" target="_blank" ' +
+  html: '<a class="ol-attribution-bing-tos" ' +
       'href="http://www.microsoft.com/maps/product/terms.html">' +
       'Terms of Use</a>'
 });
@@ -93437,13 +95981,14 @@ ol.source.BingMaps.prototype.handleImageryMetadataResponse =
   var brandLogoUri = response.brandLogoUri;
   //var copyright = response.copyright;  // FIXME do we need to display this?
   var resource = response.resourceSets[0].resources[0];
-
   goog.asserts.assert(resource.imageWidth == resource.imageHeight);
+  var maxZoom = this.maxZoom_ == -1 ? resource.zoomMax : this.maxZoom_;
+
   var sourceProjection = this.getProjection();
   var tileGrid = new ol.tilegrid.XYZ({
     extent: ol.tilegrid.extentFromProjection(sourceProjection),
     minZoom: resource.zoomMin,
-    maxZoom: resource.zoomMax,
+    maxZoom: maxZoom,
     tileSize: resource.imageWidth
   });
   this.tileGrid = tileGrid;
@@ -93491,7 +96036,7 @@ ol.source.BingMaps.prototype.handleImageryMetadataResponse =
               imageryProvider.coverageAreas,
               function(coverageArea) {
                 var minZ = coverageArea.zoomMin;
-                var maxZ = coverageArea.zoomMax;
+                var maxZ = Math.min(coverageArea.zoomMax, maxZoom);
                 var bbox = coverageArea.bbox;
                 var epsg4326Extent = [bbox[1], bbox[0], bbox[3], bbox[2]];
                 var extent = ol.extent.applyTransform(
@@ -93733,6 +96278,7 @@ goog.net.EventType = {
 
 goog.provide('goog.Timer');
 
+goog.require('goog.Promise');
 goog.require('goog.events.EventTarget');
 
 
@@ -93800,6 +96346,17 @@ goog.inherits(goog.Timer, goog.events.EventTarget);
  * @private
  */
 goog.Timer.MAX_TIMEOUT_ = 2147483647;
+
+
+/**
+ * A timer ID that cannot be returned by any known implmentation of
+ * Window.setTimeout.  Passing this value to window.clearTimeout should
+ * therefore be a no-op.
+ *
+ * @const {number}
+ * @private
+ */
+goog.Timer.INVALID_TIMEOUT_ID_ = -1;
 
 
 /**
@@ -93987,7 +96544,7 @@ goog.Timer.callOnce = function(listener, opt_delay, opt_handler) {
     // Timeouts greater than MAX_INT return immediately due to integer
     // overflow in many browsers.  Since MAX_INT is 24.8 days, just don't
     // schedule anything at all.
-    return -1;
+    return goog.Timer.INVALID_TIMEOUT_ID_;
   } else {
     return goog.Timer.defaultTimerObject.setTimeout(
         listener, opt_delay || 0);
@@ -94001,6 +96558,31 @@ goog.Timer.callOnce = function(listener, opt_delay, opt_handler) {
  */
 goog.Timer.clear = function(timerId) {
   goog.Timer.defaultTimerObject.clearTimeout(timerId);
+};
+
+
+/**
+ * @param {number} delay Milliseconds to wait.
+ * @param {(RESULT|goog.Thenable.<RESULT>|Thenable)=} opt_result The value
+ *     with which the promise will be resolved.
+ * @return {!goog.Promise.<RESULT>} A promise that will be resolved after
+ *     the specified delay, unless it is canceled first.
+ * @template RESULT
+ */
+goog.Timer.promise = function(delay, opt_result) {
+  var timerKey = null;
+  return new goog.Promise(function(resolve, reject) {
+    timerKey = goog.Timer.callOnce(function() {
+      resolve(opt_result);
+    }, delay);
+    if (timerKey == goog.Timer.INVALID_TIMEOUT_ID_) {
+      reject(new Error('Failed to schedule timer.'));
+    }
+  }).thenCatch(function(error) {
+    // Clear the timer. The most likely reason is "cancel" signal.
+    goog.Timer.clear(timerKey);
+    throw error;
+  });
 };
 
 // Copyright 2007 The Closure Library Authors. All Rights Reserved.
@@ -94156,8 +96738,9 @@ goog.provide('goog.net.HttpStatus');
 
 
 /**
- * HTTP Status Codes defined in RFC 2616.
+ * HTTP Status Codes defined in RFC 2616 and RFC 6585.
  * @see http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+ * @see http://tools.ietf.org/html/rfc6585
  * @enum {number}
  */
 goog.net.HttpStatus = {
@@ -94202,6 +96785,9 @@ goog.net.HttpStatus = {
   UNSUPPORTED_MEDIA_TYPE: 415,
   REQUEST_RANGE_NOT_SATISFIABLE: 416,
   EXPECTATION_FAILED: 417,
+  PRECONDITION_REQUIRED: 428,
+  TOO_MANY_REQUESTS: 429,
+  REQUEST_HEADER_FIELDS_TOO_LARGE: 431,
 
   // Server Error 5xx
   INTERNAL_SERVER_ERROR: 500,
@@ -94210,6 +96796,7 @@ goog.net.HttpStatus = {
   SERVICE_UNAVAILABLE: 503,
   GATEWAY_TIMEOUT: 504,
   HTTP_VERSION_NOT_SUPPORTED: 505,
+  NETWORK_AUTHENTICATION_REQUIRED: 511,
 
   /*
    * IE returns this code for 204 due to its use of URLMon, which returns this
@@ -96321,6 +98908,7 @@ ol.source.ImageOptions;
  * @constructor
  * @extends {ol.source.Source}
  * @param {ol.source.ImageOptions} options Single image source options.
+ * @api
  */
 ol.source.Image = function(options) {
 
@@ -96853,6 +99441,8 @@ ol.source.ImageVector.prototype.canvasFunctionInternal_ =
   var replayGroup = new ol.render.canvas.ReplayGroup(
       ol.renderer.vector.getTolerance(resolution, pixelRatio), extent,
       resolution);
+
+  this.source_.loadFeatures(extent, resolution, projection);
 
   var loading = false;
   this.source_.forEachFeatureInExtentAtResolution(extent, resolution,
@@ -97615,8 +100205,7 @@ goog.inherits(ol.source.MapQuest, ol.source.XYZ);
  * @type {ol.Attribution}
  */
 ol.source.MapQuest.TILE_ATTRIBUTION = new ol.Attribution({
-  html: 'Tiles Courtesy of ' +
-      '<a href="http://www.mapquest.com/" target="_blank">MapQuest</a>'
+  html: 'Tiles Courtesy of <a href="http://www.mapquest.com/">MapQuest</a>'
 });
 
 
@@ -97678,7 +100267,6 @@ ol.source.OSMXML = function(opt_options) {
     logo: options.logo,
     node: options.node,
     projection: options.projection,
-    reprojectTo: options.reprojectTo,
     text: options.text,
     url: options.url,
     urls: options.urls
@@ -99624,1352 +102212,9 @@ goog.addDependency('demos/editor/helloworld.js', ['goog.demos.editor.HelloWorld'
 goog.addDependency('demos/editor/helloworlddialog.js', ['goog.demos.editor.HelloWorldDialog', 'goog.demos.editor.HelloWorldDialog.OkEvent'], ['goog.dom.TagName', 'goog.events.Event', 'goog.string', 'goog.ui.editor.AbstractDialog', 'goog.ui.editor.AbstractDialog.Builder', 'goog.ui.editor.AbstractDialog.EventType']);
 goog.addDependency('demos/editor/helloworlddialogplugin.js', ['goog.demos.editor.HelloWorldDialogPlugin', 'goog.demos.editor.HelloWorldDialogPlugin.Command'], ['goog.demos.editor.HelloWorldDialog', 'goog.dom.TagName', 'goog.editor.plugins.AbstractDialogPlugin', 'goog.editor.range', 'goog.functions', 'goog.ui.editor.AbstractDialog.EventType']);
 
-// Copyright 2014 The Closure Library Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS-IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// This file has been auto-generated by GenJsDeps, please do not edit.
-
-goog.addDependency('../../third_party/closure/goog/caja/string/html/htmlparser.js', ['goog.string.html.HtmlParser', 'goog.string.html.HtmlParser.EFlags', 'goog.string.html.HtmlParser.Elements', 'goog.string.html.HtmlParser.Entities', 'goog.string.html.HtmlSaxHandler'], []);
-goog.addDependency('../../third_party/closure/goog/caja/string/html/htmlsanitizer.js', ['goog.string.html.HtmlSanitizer', 'goog.string.html.HtmlSanitizer.AttributeType', 'goog.string.html.HtmlSanitizer.Attributes', 'goog.string.html.htmlSanitize'], ['goog.string.StringBuffer', 'goog.string.html.HtmlParser', 'goog.string.html.HtmlParser.EFlags', 'goog.string.html.HtmlParser.Elements', 'goog.string.html.HtmlSaxHandler']);
-goog.addDependency('../../third_party/closure/goog/dojo/dom/query.js', ['goog.dom.query'], ['goog.array', 'goog.dom', 'goog.functions', 'goog.string', 'goog.userAgent']);
-goog.addDependency('../../third_party/closure/goog/jpeg_encoder/jpeg_encoder_basic.js', ['goog.crypt.JpegEncoder'], ['goog.crypt.base64']);
-goog.addDependency('../../third_party/closure/goog/loremipsum/text/loremipsum.js', ['goog.text.LoremIpsum'], ['goog.array', 'goog.math', 'goog.string', 'goog.structs.Map', 'goog.structs.Set']);
-goog.addDependency('../../third_party/closure/goog/mochikit/async/deferred.js', ['goog.async.Deferred', 'goog.async.Deferred.AlreadyCalledError', 'goog.async.Deferred.CanceledError'], ['goog.Promise', 'goog.Thenable', 'goog.array', 'goog.asserts', 'goog.debug.Error']);
-goog.addDependency('../../third_party/closure/goog/mochikit/async/deferredlist.js', ['goog.async.DeferredList'], ['goog.async.Deferred']);
-goog.addDependency('../../third_party/closure/goog/osapi/osapi.js', ['goog.osapi'], []);
-goog.addDependency('../../third_party/closure/goog/svgpan/svgpan.js', ['svgpan.SvgPan'], ['goog.Disposable', 'goog.events', 'goog.events.EventType', 'goog.events.MouseWheelHandler']);
-goog.addDependency('a11y/aria/announcer.js', ['goog.a11y.aria.Announcer'], ['goog.Disposable', 'goog.a11y.aria', 'goog.a11y.aria.LivePriority', 'goog.a11y.aria.State', 'goog.dom', 'goog.object']);
-goog.addDependency('a11y/aria/announcer_test.js', ['goog.a11y.aria.AnnouncerTest'], ['goog.a11y.aria', 'goog.a11y.aria.Announcer', 'goog.a11y.aria.LivePriority', 'goog.a11y.aria.State', 'goog.array', 'goog.dom', 'goog.dom.iframe', 'goog.testing.jsunit']);
-goog.addDependency('a11y/aria/aria.js', ['goog.a11y.aria'], ['goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.a11y.aria.datatables', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.object']);
-goog.addDependency('a11y/aria/aria_test.js', ['goog.a11y.ariaTest'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.dom', 'goog.dom.TagName', 'goog.testing.jsunit']);
-goog.addDependency('a11y/aria/attributes.js', ['goog.a11y.aria.AutoCompleteValues', 'goog.a11y.aria.CheckedValues', 'goog.a11y.aria.DropEffectValues', 'goog.a11y.aria.ExpandedValues', 'goog.a11y.aria.GrabbedValues', 'goog.a11y.aria.InvalidValues', 'goog.a11y.aria.LivePriority', 'goog.a11y.aria.OrientationValues', 'goog.a11y.aria.PressedValues', 'goog.a11y.aria.RelevantValues', 'goog.a11y.aria.SelectedValues', 'goog.a11y.aria.SortValues', 'goog.a11y.aria.State'], []);
-goog.addDependency('a11y/aria/datatables.js', ['goog.a11y.aria.datatables'], ['goog.a11y.aria.State', 'goog.object']);
-goog.addDependency('a11y/aria/roles.js', ['goog.a11y.aria.Role'], []);
-goog.addDependency('array/array.js', ['goog.array', 'goog.array.ArrayLike'], ['goog.asserts']);
-goog.addDependency('array/array_test.js', ['goog.arrayTest'], ['goog.array', 'goog.dom', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('asserts/asserts.js', ['goog.asserts', 'goog.asserts.AssertionError'], ['goog.debug.Error', 'goog.dom.NodeType', 'goog.string']);
-goog.addDependency('asserts/asserts_test.js', ['goog.assertsTest'], ['goog.asserts', 'goog.asserts.AssertionError', 'goog.dom', 'goog.string', 'goog.testing.jsunit']);
-goog.addDependency('async/animationdelay.js', ['goog.async.AnimationDelay'], ['goog.Disposable', 'goog.events', 'goog.functions']);
-goog.addDependency('async/animationdelay_test.js', ['goog.async.AnimationDelayTest'], ['goog.async.AnimationDelay', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('async/conditionaldelay.js', ['goog.async.ConditionalDelay'], ['goog.Disposable', 'goog.async.Delay']);
-goog.addDependency('async/conditionaldelay_test.js', ['goog.async.ConditionalDelayTest'], ['goog.async.ConditionalDelay', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('async/delay.js', ['goog.Delay', 'goog.async.Delay'], ['goog.Disposable', 'goog.Timer']);
-goog.addDependency('async/delay_test.js', ['goog.async.DelayTest'], ['goog.async.Delay', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('async/nexttick.js', ['goog.async.nextTick', 'goog.async.throwException'], ['goog.debug.entryPointRegistry', 'goog.functions']);
-goog.addDependency('async/nexttick_test.js', ['goog.async.nextTickTest'], ['goog.async.nextTick', 'goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('async/run.js', ['goog.async.run'], ['goog.async.nextTick', 'goog.async.throwException', 'goog.testing.watchers']);
-goog.addDependency('async/run_test.js', ['goog.async.runTest'], ['goog.async.run', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('async/throttle.js', ['goog.Throttle', 'goog.async.Throttle'], ['goog.Disposable', 'goog.Timer']);
-goog.addDependency('async/throttle_test.js', ['goog.async.ThrottleTest'], ['goog.async.Throttle', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('base.js', ['goog'], []);
-goog.addDependency('base_test.js', ['an.existing.path', 'dup.base', 'far.out', 'goog.baseTest', 'goog.explicit', 'goog.implicit.explicit', 'goog.test', 'goog.test.name', 'goog.test.name.space', 'goog.xy', 'goog.xy.z', 'ns', 'testDep.bar'], ['goog.Timer', 'goog.functions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('color/alpha.js', ['goog.color.alpha'], ['goog.color']);
-goog.addDependency('color/alpha_test.js', ['goog.color.alphaTest'], ['goog.array', 'goog.color', 'goog.color.alpha', 'goog.testing.jsunit']);
-goog.addDependency('color/color.js', ['goog.color', 'goog.color.Hsl', 'goog.color.Hsv', 'goog.color.Rgb'], ['goog.color.names', 'goog.math']);
-goog.addDependency('color/color_test.js', ['goog.colorTest'], ['goog.array', 'goog.color', 'goog.color.names', 'goog.testing.jsunit']);
-goog.addDependency('color/names.js', ['goog.color.names'], []);
-goog.addDependency('crypt/aes.js', ['goog.crypt.Aes'], ['goog.asserts', 'goog.crypt.BlockCipher']);
-goog.addDependency('crypt/aes_test.js', ['goog.crypt.AesTest'], ['goog.crypt', 'goog.crypt.Aes', 'goog.testing.jsunit']);
-goog.addDependency('crypt/arc4.js', ['goog.crypt.Arc4'], ['goog.asserts']);
-goog.addDependency('crypt/arc4_test.js', ['goog.crypt.Arc4Test'], ['goog.array', 'goog.crypt.Arc4', 'goog.testing.jsunit']);
-goog.addDependency('crypt/base64.js', ['goog.crypt.base64'], ['goog.crypt', 'goog.userAgent']);
-goog.addDependency('crypt/base64_test.js', ['goog.crypt.base64Test'], ['goog.crypt', 'goog.crypt.base64', 'goog.testing.jsunit']);
-goog.addDependency('crypt/basen.js', ['goog.crypt.baseN'], []);
-goog.addDependency('crypt/basen_test.js', ['goog.crypt.baseNTest'], ['goog.crypt.baseN', 'goog.testing.jsunit']);
-goog.addDependency('crypt/blobhasher.js', ['goog.crypt.BlobHasher', 'goog.crypt.BlobHasher.EventType'], ['goog.asserts', 'goog.crypt', 'goog.crypt.Hash', 'goog.events.EventTarget', 'goog.fs', 'goog.log']);
-goog.addDependency('crypt/blobhasher_test.js', ['goog.crypt.BlobHasherTest'], ['goog.crypt', 'goog.crypt.BlobHasher', 'goog.crypt.Md5', 'goog.events', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('crypt/blockcipher.js', ['goog.crypt.BlockCipher'], []);
-goog.addDependency('crypt/bytestring_perf.js', ['goog.crypt.byteArrayToStringPerf'], ['goog.array', 'goog.dom', 'goog.testing.PerformanceTable']);
-goog.addDependency('crypt/cbc.js', ['goog.crypt.Cbc'], ['goog.array', 'goog.asserts', 'goog.crypt']);
-goog.addDependency('crypt/cbc_test.js', ['goog.crypt.CbcTest'], ['goog.crypt', 'goog.crypt.Aes', 'goog.crypt.Cbc', 'goog.testing.jsunit']);
-goog.addDependency('crypt/crypt.js', ['goog.crypt'], ['goog.array', 'goog.asserts']);
-goog.addDependency('crypt/crypt_test.js', ['goog.cryptTest'], ['goog.crypt', 'goog.string', 'goog.testing.jsunit']);
-goog.addDependency('crypt/hash.js', ['goog.crypt.Hash'], []);
-goog.addDependency('crypt/hash32.js', ['goog.crypt.hash32'], ['goog.crypt']);
-goog.addDependency('crypt/hash32_test.js', ['goog.crypt.hash32Test'], ['goog.crypt.hash32', 'goog.testing.TestCase', 'goog.testing.jsunit']);
-goog.addDependency('crypt/hashtester.js', ['goog.crypt.hashTester'], ['goog.array', 'goog.crypt', 'goog.testing.PerformanceTable', 'goog.testing.PseudoRandom', 'goog.testing.asserts']);
-goog.addDependency('crypt/hmac.js', ['goog.crypt.Hmac'], ['goog.crypt.Hash']);
-goog.addDependency('crypt/hmac_test.js', ['goog.crypt.HmacTest'], ['goog.crypt.Hmac', 'goog.crypt.Sha1', 'goog.crypt.hashTester', 'goog.testing.jsunit']);
-goog.addDependency('crypt/md5.js', ['goog.crypt.Md5'], ['goog.crypt.Hash']);
-goog.addDependency('crypt/md5_test.js', ['goog.crypt.Md5Test'], ['goog.crypt', 'goog.crypt.Md5', 'goog.crypt.hashTester', 'goog.testing.jsunit']);
-goog.addDependency('crypt/pbkdf2.js', ['goog.crypt.pbkdf2'], ['goog.asserts', 'goog.crypt', 'goog.crypt.Hmac', 'goog.crypt.Sha1']);
-goog.addDependency('crypt/pbkdf2_test.js', ['goog.crypt.pbkdf2Test'], ['goog.crypt', 'goog.crypt.pbkdf2', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('crypt/sha1.js', ['goog.crypt.Sha1'], ['goog.crypt.Hash']);
-goog.addDependency('crypt/sha1_test.js', ['goog.crypt.Sha1Test'], ['goog.crypt', 'goog.crypt.Sha1', 'goog.crypt.hashTester', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('crypt/sha2.js', ['goog.crypt.Sha2'], ['goog.array', 'goog.asserts', 'goog.crypt.Hash']);
-goog.addDependency('crypt/sha224.js', ['goog.crypt.Sha224'], ['goog.crypt.Sha2']);
-goog.addDependency('crypt/sha224_test.js', ['goog.crypt.Sha224Test'], ['goog.crypt', 'goog.crypt.Sha224', 'goog.crypt.hashTester', 'goog.testing.jsunit']);
-goog.addDependency('crypt/sha256.js', ['goog.crypt.Sha256'], ['goog.crypt.Sha2']);
-goog.addDependency('crypt/sha256_test.js', ['goog.crypt.Sha256Test'], ['goog.crypt', 'goog.crypt.Sha256', 'goog.crypt.hashTester', 'goog.testing.jsunit']);
-goog.addDependency('crypt/sha2_64bit.js', ['goog.crypt.Sha2_64bit'], ['goog.array', 'goog.asserts', 'goog.crypt.Hash', 'goog.math.Long']);
-goog.addDependency('crypt/sha2_64bit_test.js', ['goog.crypt.Sha2_64bit_test'], ['goog.array', 'goog.crypt', 'goog.crypt.Sha384', 'goog.crypt.Sha512', 'goog.crypt.Sha512_256', 'goog.crypt.hashTester', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('crypt/sha384.js', ['goog.crypt.Sha384'], ['goog.crypt.Sha2_64bit']);
-goog.addDependency('crypt/sha512.js', ['goog.crypt.Sha512'], ['goog.crypt.Sha2_64bit']);
-goog.addDependency('crypt/sha512_256.js', ['goog.crypt.Sha512_256'], ['goog.crypt.Sha2_64bit']);
-goog.addDependency('cssom/cssom.js', ['goog.cssom', 'goog.cssom.CssRuleType'], ['goog.array', 'goog.dom']);
-goog.addDependency('cssom/cssom_test.js', ['goog.cssomTest'], ['goog.array', 'goog.cssom', 'goog.cssom.CssRuleType', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('cssom/iframe/style.js', ['goog.cssom.iframe.style'], ['goog.asserts', 'goog.cssom', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.string', 'goog.style', 'goog.userAgent']);
-goog.addDependency('cssom/iframe/style_test.js', ['goog.cssom.iframe.styleTest'], ['goog.cssom', 'goog.cssom.iframe.style', 'goog.dom', 'goog.dom.DomHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('datasource/datamanager.js', ['goog.ds.DataManager'], ['goog.ds.BasicNodeList', 'goog.ds.DataNode', 'goog.ds.Expr', 'goog.object', 'goog.string', 'goog.structs', 'goog.structs.Map']);
-goog.addDependency('datasource/datasource.js', ['goog.ds.BaseDataNode', 'goog.ds.BasicNodeList', 'goog.ds.DataNode', 'goog.ds.DataNodeList', 'goog.ds.EmptyNodeList', 'goog.ds.LoadState', 'goog.ds.SortedNodeList', 'goog.ds.Util', 'goog.ds.logger'], ['goog.array', 'goog.log']);
-goog.addDependency('datasource/datasource_test.js', ['goog.ds.JsDataSourceTest'], ['goog.dom.xml', 'goog.ds.DataManager', 'goog.ds.JsDataSource', 'goog.ds.SortedNodeList', 'goog.ds.XmlDataSource', 'goog.testing.jsunit']);
-goog.addDependency('datasource/expr.js', ['goog.ds.Expr'], ['goog.ds.BasicNodeList', 'goog.ds.EmptyNodeList', 'goog.string']);
-goog.addDependency('datasource/expr_test.js', ['goog.ds.ExprTest'], ['goog.ds.DataManager', 'goog.ds.Expr', 'goog.ds.JsDataSource', 'goog.testing.jsunit']);
-goog.addDependency('datasource/fastdatanode.js', ['goog.ds.AbstractFastDataNode', 'goog.ds.FastDataNode', 'goog.ds.FastListNode', 'goog.ds.PrimitiveFastDataNode'], ['goog.ds.DataManager', 'goog.ds.EmptyNodeList', 'goog.string']);
-goog.addDependency('datasource/fastdatanode_test.js', ['goog.ds.FastDataNodeTest'], ['goog.array', 'goog.ds.DataManager', 'goog.ds.Expr', 'goog.ds.FastDataNode', 'goog.testing.jsunit']);
-goog.addDependency('datasource/jsdatasource.js', ['goog.ds.JsDataSource', 'goog.ds.JsPropertyDataSource'], ['goog.ds.BaseDataNode', 'goog.ds.BasicNodeList', 'goog.ds.DataManager', 'goog.ds.EmptyNodeList', 'goog.ds.LoadState']);
-goog.addDependency('datasource/jsondatasource.js', ['goog.ds.JsonDataSource'], ['goog.Uri', 'goog.dom', 'goog.ds.DataManager', 'goog.ds.JsDataSource', 'goog.ds.LoadState', 'goog.ds.logger']);
-goog.addDependency('datasource/jsxmlhttpdatasource.js', ['goog.ds.JsXmlHttpDataSource'], ['goog.Uri', 'goog.ds.DataManager', 'goog.ds.FastDataNode', 'goog.ds.LoadState', 'goog.ds.logger', 'goog.events', 'goog.log', 'goog.net.EventType', 'goog.net.XhrIo']);
-goog.addDependency('datasource/jsxmlhttpdatasource_test.js', ['goog.ds.JsXmlHttpDataSourceTest'], ['goog.ds.JsXmlHttpDataSource', 'goog.testing.TestQueue', 'goog.testing.jsunit', 'goog.testing.net.XhrIo']);
-goog.addDependency('datasource/xmldatasource.js', ['goog.ds.XmlDataSource', 'goog.ds.XmlHttpDataSource'], ['goog.Uri', 'goog.dom.NodeType', 'goog.dom.xml', 'goog.ds.BasicNodeList', 'goog.ds.DataManager', 'goog.ds.LoadState', 'goog.ds.logger', 'goog.net.XhrIo', 'goog.string']);
-goog.addDependency('date/date.js', ['goog.date', 'goog.date.Date', 'goog.date.DateTime', 'goog.date.Interval', 'goog.date.month', 'goog.date.weekDay'], ['goog.asserts', 'goog.date.DateLike', 'goog.i18n.DateTimeSymbols', 'goog.string']);
-goog.addDependency('date/date_test.js', ['goog.dateTest'], ['goog.array', 'goog.date', 'goog.date.Date', 'goog.date.DateTime', 'goog.date.Interval', 'goog.date.month', 'goog.date.weekDay', 'goog.i18n.DateTimeSymbols', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.platform', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('date/datelike.js', ['goog.date.DateLike'], []);
-goog.addDependency('date/daterange.js', ['goog.date.DateRange', 'goog.date.DateRange.Iterator', 'goog.date.DateRange.StandardDateRangeKeys'], ['goog.date.Date', 'goog.date.Interval', 'goog.iter.Iterator', 'goog.iter.StopIteration']);
-goog.addDependency('date/daterange_test.js', ['goog.date.DateRangeTest'], ['goog.date.Date', 'goog.date.DateRange', 'goog.date.Interval', 'goog.i18n.DateTimeSymbols', 'goog.testing.jsunit']);
-goog.addDependency('date/duration.js', ['goog.date.duration'], ['goog.i18n.DateTimeFormat', 'goog.i18n.MessageFormat']);
-goog.addDependency('date/duration_test.js', ['goog.date.durationTest'], ['goog.date.duration', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimeSymbols', 'goog.i18n.DateTimeSymbols_bn', 'goog.i18n.DateTimeSymbols_en', 'goog.i18n.DateTimeSymbols_fa', 'goog.testing.jsunit']);
-goog.addDependency('date/relative.js', ['goog.date.relative', 'goog.date.relative.TimeDeltaFormatter', 'goog.date.relative.Unit'], ['goog.i18n.DateTimeFormat']);
-goog.addDependency('date/relative_test.js', ['goog.date.relativeTest'], ['goog.date.DateTime', 'goog.date.relative', 'goog.i18n.DateTimeFormat', 'goog.testing.jsunit']);
-goog.addDependency('date/relativewithplurals.js', ['goog.date.relativeWithPlurals'], ['goog.date.relative', 'goog.date.relative.Unit', 'goog.i18n.MessageFormat']);
-goog.addDependency('date/relativewithplurals_test.js', ['goog.date.relativeWithPluralsTest'], ['goog.date.relative', 'goog.date.relativeTest', 'goog.date.relativeWithPlurals', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimeSymbols', 'goog.i18n.DateTimeSymbols_bn', 'goog.i18n.DateTimeSymbols_en', 'goog.i18n.DateTimeSymbols_fa', 'goog.i18n.NumberFormatSymbols', 'goog.i18n.NumberFormatSymbols_bn', 'goog.i18n.NumberFormatSymbols_en', 'goog.i18n.NumberFormatSymbols_fa']);
-goog.addDependency('date/utcdatetime.js', ['goog.date.UtcDateTime'], ['goog.date', 'goog.date.Date', 'goog.date.DateTime', 'goog.date.Interval']);
-goog.addDependency('date/utcdatetime_test.js', ['goog.date.UtcDateTimeTest'], ['goog.date.Interval', 'goog.date.UtcDateTime', 'goog.date.month', 'goog.date.weekDay', 'goog.testing.jsunit']);
-goog.addDependency('db/cursor.js', ['goog.db.Cursor'], ['goog.async.Deferred', 'goog.db.Error', 'goog.debug', 'goog.events.EventTarget']);
-goog.addDependency('db/db.js', ['goog.db'], ['goog.async.Deferred', 'goog.db.Error', 'goog.db.IndexedDb', 'goog.db.Transaction']);
-goog.addDependency('db/db_test.js', ['goog.dbTest'], ['goog.Disposable', 'goog.array', 'goog.async.Deferred', 'goog.async.DeferredList', 'goog.db', 'goog.db.Cursor', 'goog.db.Error', 'goog.db.IndexedDb', 'goog.db.KeyRange', 'goog.db.Transaction', 'goog.events', 'goog.object', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('db/error.js', ['goog.db.Error', 'goog.db.Error.ErrorCode', 'goog.db.Error.ErrorName', 'goog.db.Error.VersionChangeBlockedError'], ['goog.debug.Error']);
-goog.addDependency('db/index.js', ['goog.db.Index'], ['goog.async.Deferred', 'goog.db.Cursor', 'goog.db.Error', 'goog.debug']);
-goog.addDependency('db/indexeddb.js', ['goog.db.IndexedDb'], ['goog.async.Deferred', 'goog.db.Error', 'goog.db.ObjectStore', 'goog.db.Transaction', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget']);
-goog.addDependency('db/keyrange.js', ['goog.db.KeyRange'], []);
-goog.addDependency('db/objectstore.js', ['goog.db.ObjectStore'], ['goog.async.Deferred', 'goog.db.Cursor', 'goog.db.Error', 'goog.db.Index', 'goog.debug', 'goog.events']);
-goog.addDependency('db/old_db_test.js', ['goog.oldDbTest'], ['goog.async.Deferred', 'goog.db', 'goog.db.Cursor', 'goog.db.Error', 'goog.db.IndexedDb', 'goog.db.KeyRange', 'goog.db.Transaction', 'goog.events', 'goog.testing.AsyncTestCase', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('db/transaction.js', ['goog.db.Transaction', 'goog.db.Transaction.TransactionMode'], ['goog.async.Deferred', 'goog.db.Error', 'goog.db.ObjectStore', 'goog.events.EventHandler', 'goog.events.EventTarget']);
-goog.addDependency('debug/console.js', ['goog.debug.Console'], ['goog.debug.LogManager', 'goog.debug.Logger.Level', 'goog.debug.TextFormatter']);
-goog.addDependency('debug/console_test.js', ['goog.debug.ConsoleTest'], ['goog.debug.Console', 'goog.debug.LogRecord', 'goog.debug.Logger', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('debug/debug.js', ['goog.debug'], ['goog.array', 'goog.string', 'goog.structs.Set', 'goog.userAgent']);
-goog.addDependency('debug/debug_test.js', ['goog.debugTest'], ['goog.debug', 'goog.structs.Set', 'goog.testing.jsunit']);
-goog.addDependency('debug/debugwindow.js', ['goog.debug.DebugWindow'], ['goog.debug.HtmlFormatter', 'goog.debug.LogManager', 'goog.debug.Logger', 'goog.structs.CircularBuffer', 'goog.userAgent']);
-goog.addDependency('debug/debugwindow_test.js', ['goog.debug.DebugWindowTest'], ['goog.debug.DebugWindow', 'goog.testing.jsunit']);
-goog.addDependency('debug/devcss/devcss.js', ['goog.debug.DevCss', 'goog.debug.DevCss.UserAgent'], ['goog.asserts', 'goog.cssom', 'goog.dom.classlist', 'goog.events', 'goog.events.EventType', 'goog.string', 'goog.userAgent']);
-goog.addDependency('debug/devcss/devcss_test.js', ['goog.debug.DevCssTest'], ['goog.debug.DevCss', 'goog.style', 'goog.testing.jsunit']);
-goog.addDependency('debug/devcss/devcssrunner.js', ['goog.debug.devCssRunner'], ['goog.debug.DevCss']);
-goog.addDependency('debug/divconsole.js', ['goog.debug.DivConsole'], ['goog.debug.HtmlFormatter', 'goog.debug.LogManager', 'goog.style']);
-goog.addDependency('debug/enhanceerror_test.js', ['goog.debugEnhanceErrorTest'], ['goog.debug', 'goog.testing.jsunit']);
-goog.addDependency('debug/entrypointregistry.js', ['goog.debug.EntryPointMonitor', 'goog.debug.entryPointRegistry'], ['goog.asserts']);
-goog.addDependency('debug/entrypointregistry_test.js', ['goog.debug.entryPointRegistryTest'], ['goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.testing.jsunit']);
-goog.addDependency('debug/error.js', ['goog.debug.Error'], []);
-goog.addDependency('debug/error_test.js', ['goog.debug.ErrorTest'], ['goog.debug.Error', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('debug/errorhandler.js', ['goog.debug.ErrorHandler', 'goog.debug.ErrorHandler.ProtectedFunctionError'], ['goog.asserts', 'goog.debug', 'goog.debug.EntryPointMonitor', 'goog.debug.Trace']);
-goog.addDependency('debug/errorhandler_async_test.js', ['goog.debug.ErrorHandlerAsyncTest'], ['goog.debug.ErrorHandler', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('debug/errorhandler_test.js', ['goog.debug.ErrorHandlerTest'], ['goog.debug.ErrorHandler', 'goog.testing.MockControl', 'goog.testing.jsunit']);
-goog.addDependency('debug/errorhandlerweakdep.js', ['goog.debug.errorHandlerWeakDep'], []);
-goog.addDependency('debug/errorreporter.js', ['goog.debug.ErrorReporter', 'goog.debug.ErrorReporter.ExceptionEvent'], ['goog.asserts', 'goog.debug', 'goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.log', 'goog.net.XhrIo', 'goog.object', 'goog.string', 'goog.uri.utils', 'goog.userAgent']);
-goog.addDependency('debug/errorreporter_test.js', ['goog.debug.ErrorReporterTest'], ['goog.debug.ErrorReporter', 'goog.events', 'goog.functions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('debug/fancywindow.js', ['goog.debug.FancyWindow'], ['goog.array', 'goog.debug.DebugWindow', 'goog.debug.LogManager', 'goog.debug.Logger', 'goog.dom.DomHelper', 'goog.dom.safe', 'goog.html.SafeHtml', 'goog.object', 'goog.string', 'goog.userAgent']);
-goog.addDependency('debug/formatter.js', ['goog.debug.Formatter', 'goog.debug.HtmlFormatter', 'goog.debug.TextFormatter'], ['goog.debug.RelativeTimeProvider', 'goog.string']);
-goog.addDependency('debug/fpsdisplay.js', ['goog.debug.FpsDisplay'], ['goog.asserts', 'goog.async.AnimationDelay', 'goog.ui.Component']);
-goog.addDependency('debug/fpsdisplay_test.js', ['goog.debug.FpsDisplayTest'], ['goog.debug.FpsDisplay', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('debug/gcdiagnostics.js', ['goog.debug.GcDiagnostics'], ['goog.debug.Trace', 'goog.log', 'goog.userAgent']);
-goog.addDependency('debug/logbuffer.js', ['goog.debug.LogBuffer'], ['goog.asserts', 'goog.debug.LogRecord']);
-goog.addDependency('debug/logbuffer_test.js', ['goog.debug.LogBufferTest'], ['goog.debug.LogBuffer', 'goog.debug.Logger', 'goog.testing.jsunit']);
-goog.addDependency('debug/logger.js', ['goog.debug.LogManager', 'goog.debug.Loggable', 'goog.debug.Logger', 'goog.debug.Logger.Level'], ['goog.array', 'goog.asserts', 'goog.debug', 'goog.debug.LogBuffer', 'goog.debug.LogRecord']);
-goog.addDependency('debug/logger_test.js', ['goog.debug.LoggerTest'], ['goog.debug.LogManager', 'goog.debug.Logger', 'goog.testing.jsunit']);
-goog.addDependency('debug/logrecord.js', ['goog.debug.LogRecord'], []);
-goog.addDependency('debug/logrecordserializer.js', ['goog.debug.logRecordSerializer'], ['goog.debug.LogRecord', 'goog.debug.Logger.Level', 'goog.json', 'goog.object']);
-goog.addDependency('debug/logrecordserializer_test.js', ['goog.debug.logRecordSerializerTest'], ['goog.debug.LogRecord', 'goog.debug.Logger', 'goog.debug.logRecordSerializer', 'goog.testing.jsunit']);
-goog.addDependency('debug/relativetimeprovider.js', ['goog.debug.RelativeTimeProvider'], []);
-goog.addDependency('debug/tracer.js', ['goog.debug.Trace'], ['goog.array', 'goog.iter', 'goog.log', 'goog.structs.Map', 'goog.structs.SimplePool']);
-goog.addDependency('debug/tracer_test.js', ['goog.debug.TraceTest'], ['goog.debug.Trace', 'goog.testing.jsunit']);
-goog.addDependency('defineclass_test.js', ['goog.defineClassTest'], ['goog.testing.jsunit']);
-goog.addDependency('disposable/disposable.js', ['goog.Disposable', 'goog.dispose', 'goog.disposeAll'], ['goog.disposable.IDisposable']);
-goog.addDependency('disposable/disposable_test.js', ['goog.DisposableTest'], ['goog.Disposable', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('disposable/idisposable.js', ['goog.disposable.IDisposable'], []);
-goog.addDependency('dom/abstractmultirange.js', ['goog.dom.AbstractMultiRange'], ['goog.array', 'goog.dom', 'goog.dom.AbstractRange']);
-goog.addDependency('dom/abstractrange.js', ['goog.dom.AbstractRange', 'goog.dom.RangeIterator', 'goog.dom.RangeType'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.SavedCaretRange', 'goog.dom.TagIterator', 'goog.userAgent']);
-goog.addDependency('dom/abstractrange_test.js', ['goog.dom.AbstractRangeTest'], ['goog.dom', 'goog.dom.AbstractRange', 'goog.dom.Range', 'goog.testing.jsunit']);
-goog.addDependency('dom/animationframe/animationframe.js', ['goog.dom.animationFrame', 'goog.dom.animationFrame.Spec', 'goog.dom.animationFrame.State'], ['goog.dom.animationFrame.polyfill']);
-goog.addDependency('dom/animationframe/polyfill.js', ['goog.dom.animationFrame.polyfill'], []);
-goog.addDependency('dom/annotate.js', ['goog.dom.annotate', 'goog.dom.annotate.AnnotateFn'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.safe', 'goog.html.SafeHtml']);
-goog.addDependency('dom/annotate_test.js', ['goog.dom.annotateTest'], ['goog.dom', 'goog.dom.annotate', 'goog.html.SafeHtml', 'goog.testing.jsunit']);
-goog.addDependency('dom/browserfeature.js', ['goog.dom.BrowserFeature'], ['goog.userAgent']);
-goog.addDependency('dom/browserrange/abstractrange.js', ['goog.dom.browserrange.AbstractRange'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.RangeEndpoint', 'goog.dom.TagName', 'goog.dom.TextRangeIterator', 'goog.iter', 'goog.math.Coordinate', 'goog.string', 'goog.string.StringBuffer', 'goog.userAgent']);
-goog.addDependency('dom/browserrange/browserrange.js', ['goog.dom.browserrange', 'goog.dom.browserrange.Error'], ['goog.dom', 'goog.dom.BrowserFeature', 'goog.dom.NodeType', 'goog.dom.browserrange.GeckoRange', 'goog.dom.browserrange.IeRange', 'goog.dom.browserrange.OperaRange', 'goog.dom.browserrange.W3cRange', 'goog.dom.browserrange.WebKitRange', 'goog.userAgent']);
-goog.addDependency('dom/browserrange/browserrange_test.js', ['goog.dom.browserrangeTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.RangeEndpoint', 'goog.dom.TagName', 'goog.dom.browserrange', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/browserrange/geckorange.js', ['goog.dom.browserrange.GeckoRange'], ['goog.dom.browserrange.W3cRange']);
-goog.addDependency('dom/browserrange/ierange.js', ['goog.dom.browserrange.IeRange'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.RangeEndpoint', 'goog.dom.TagName', 'goog.dom.browserrange.AbstractRange', 'goog.log', 'goog.string']);
-goog.addDependency('dom/browserrange/operarange.js', ['goog.dom.browserrange.OperaRange'], ['goog.dom.browserrange.W3cRange']);
-goog.addDependency('dom/browserrange/w3crange.js', ['goog.dom.browserrange.W3cRange'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.RangeEndpoint', 'goog.dom.browserrange.AbstractRange', 'goog.string']);
-goog.addDependency('dom/browserrange/webkitrange.js', ['goog.dom.browserrange.WebKitRange'], ['goog.dom.RangeEndpoint', 'goog.dom.browserrange.W3cRange', 'goog.userAgent']);
-goog.addDependency('dom/bufferedviewportsizemonitor.js', ['goog.dom.BufferedViewportSizeMonitor'], ['goog.asserts', 'goog.async.Delay', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType']);
-goog.addDependency('dom/bufferedviewportsizemonitor_test.js', ['goog.dom.BufferedViewportSizeMonitorTest'], ['goog.dom.BufferedViewportSizeMonitor', 'goog.dom.ViewportSizeMonitor', 'goog.events', 'goog.events.EventType', 'goog.math.Size', 'goog.testing.MockClock', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit']);
-goog.addDependency('dom/classes.js', ['goog.dom.classes'], ['goog.array']);
-goog.addDependency('dom/classes_test.js', ['goog.dom.classes_test'], ['goog.dom', 'goog.dom.classes', 'goog.testing.jsunit']);
-goog.addDependency('dom/classlist.js', ['goog.dom.classlist'], ['goog.array']);
-goog.addDependency('dom/classlist_test.js', ['goog.dom.classlist_test'], ['goog.dom', 'goog.dom.classlist', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit']);
-goog.addDependency('dom/controlrange.js', ['goog.dom.ControlRange', 'goog.dom.ControlRangeIterator'], ['goog.array', 'goog.dom', 'goog.dom.AbstractMultiRange', 'goog.dom.AbstractRange', 'goog.dom.RangeIterator', 'goog.dom.RangeType', 'goog.dom.SavedRange', 'goog.dom.TagWalkType', 'goog.dom.TextRange', 'goog.iter.StopIteration', 'goog.userAgent']);
-goog.addDependency('dom/controlrange_test.js', ['goog.dom.ControlRangeTest'], ['goog.dom', 'goog.dom.ControlRange', 'goog.dom.RangeType', 'goog.dom.TagName', 'goog.dom.TextRange', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/dataset.js', ['goog.dom.dataset'], ['goog.string']);
-goog.addDependency('dom/dataset_test.js', ['goog.dom.datasetTest'], ['goog.dom', 'goog.dom.dataset', 'goog.testing.jsunit']);
-goog.addDependency('dom/dom.js', ['goog.dom', 'goog.dom.Appendable', 'goog.dom.DomHelper'], ['goog.array', 'goog.asserts', 'goog.dom.BrowserFeature', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.functions', 'goog.math.Coordinate', 'goog.math.Size', 'goog.object', 'goog.string', 'goog.userAgent']);
-goog.addDependency('dom/dom_test.js', ['goog.dom.dom_test'], ['goog.dom', 'goog.dom.BrowserFeature', 'goog.dom.DomHelper', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.functions', 'goog.object', 'goog.string.Unicode', 'goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.userAgent', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('dom/fontsizemonitor.js', ['goog.dom.FontSizeMonitor', 'goog.dom.FontSizeMonitor.EventType'], ['goog.dom', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.userAgent']);
-goog.addDependency('dom/fontsizemonitor_test.js', ['goog.dom.FontSizeMonitorTest'], ['goog.dom', 'goog.dom.FontSizeMonitor', 'goog.events', 'goog.events.Event', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/forms.js', ['goog.dom.forms'], ['goog.structs.Map']);
-goog.addDependency('dom/forms_test.js', ['goog.dom.formsTest'], ['goog.dom', 'goog.dom.forms', 'goog.testing.jsunit']);
-goog.addDependency('dom/fullscreen.js', ['goog.dom.fullscreen', 'goog.dom.fullscreen.EventType'], ['goog.dom', 'goog.userAgent']);
-goog.addDependency('dom/iframe.js', ['goog.dom.iframe'], ['goog.dom', 'goog.userAgent']);
-goog.addDependency('dom/iframe_test.js', ['goog.dom.iframeTest'], ['goog.dom', 'goog.dom.iframe', 'goog.testing.jsunit']);
-goog.addDependency('dom/iter.js', ['goog.dom.iter.AncestorIterator', 'goog.dom.iter.ChildIterator', 'goog.dom.iter.SiblingIterator'], ['goog.iter.Iterator', 'goog.iter.StopIteration']);
-goog.addDependency('dom/iter_test.js', ['goog.dom.iterTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.iter.AncestorIterator', 'goog.dom.iter.ChildIterator', 'goog.dom.iter.SiblingIterator', 'goog.testing.dom', 'goog.testing.jsunit']);
-goog.addDependency('dom/multirange.js', ['goog.dom.MultiRange', 'goog.dom.MultiRangeIterator'], ['goog.array', 'goog.dom.AbstractMultiRange', 'goog.dom.AbstractRange', 'goog.dom.RangeIterator', 'goog.dom.RangeType', 'goog.dom.SavedRange', 'goog.dom.TextRange', 'goog.iter.StopIteration', 'goog.log']);
-goog.addDependency('dom/multirange_test.js', ['goog.dom.MultiRangeTest'], ['goog.dom', 'goog.dom.MultiRange', 'goog.dom.Range', 'goog.iter', 'goog.testing.jsunit']);
-goog.addDependency('dom/nodeiterator.js', ['goog.dom.NodeIterator'], ['goog.dom.TagIterator']);
-goog.addDependency('dom/nodeiterator_test.js', ['goog.dom.NodeIteratorTest'], ['goog.dom', 'goog.dom.NodeIterator', 'goog.testing.dom', 'goog.testing.jsunit']);
-goog.addDependency('dom/nodeoffset.js', ['goog.dom.NodeOffset'], ['goog.Disposable', 'goog.dom.TagName']);
-goog.addDependency('dom/nodeoffset_test.js', ['goog.dom.NodeOffsetTest'], ['goog.dom', 'goog.dom.NodeOffset', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.testing.jsunit']);
-goog.addDependency('dom/nodetype.js', ['goog.dom.NodeType'], []);
-goog.addDependency('dom/pattern/abstractpattern.js', ['goog.dom.pattern.AbstractPattern'], ['goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/allchildren.js', ['goog.dom.pattern.AllChildren'], ['goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/callback/callback.js', ['goog.dom.pattern.callback'], ['goog.dom', 'goog.dom.TagWalkType', 'goog.iter']);
-goog.addDependency('dom/pattern/callback/counter.js', ['goog.dom.pattern.callback.Counter'], []);
-goog.addDependency('dom/pattern/callback/test.js', ['goog.dom.pattern.callback.Test'], ['goog.iter.StopIteration']);
-goog.addDependency('dom/pattern/childmatches.js', ['goog.dom.pattern.ChildMatches'], ['goog.dom.pattern.AllChildren', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/endtag.js', ['goog.dom.pattern.EndTag'], ['goog.dom.TagWalkType', 'goog.dom.pattern.Tag']);
-goog.addDependency('dom/pattern/fulltag.js', ['goog.dom.pattern.FullTag'], ['goog.dom.pattern.MatchType', 'goog.dom.pattern.StartTag', 'goog.dom.pattern.Tag']);
-goog.addDependency('dom/pattern/matcher.js', ['goog.dom.pattern.Matcher'], ['goog.dom.TagIterator', 'goog.dom.pattern.MatchType', 'goog.iter']);
-goog.addDependency('dom/pattern/matcher_test.js', ['goog.dom.pattern.matcherTest'], ['goog.dom', 'goog.dom.pattern.EndTag', 'goog.dom.pattern.FullTag', 'goog.dom.pattern.Matcher', 'goog.dom.pattern.Repeat', 'goog.dom.pattern.Sequence', 'goog.dom.pattern.StartTag', 'goog.dom.pattern.callback.Counter', 'goog.dom.pattern.callback.Test', 'goog.iter.StopIteration', 'goog.testing.jsunit']);
-goog.addDependency('dom/pattern/nodetype.js', ['goog.dom.pattern.NodeType'], ['goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/pattern.js', ['goog.dom.pattern', 'goog.dom.pattern.MatchType'], []);
-goog.addDependency('dom/pattern/pattern_test.js', ['goog.dom.patternTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.TagWalkType', 'goog.dom.pattern.AllChildren', 'goog.dom.pattern.ChildMatches', 'goog.dom.pattern.EndTag', 'goog.dom.pattern.FullTag', 'goog.dom.pattern.MatchType', 'goog.dom.pattern.NodeType', 'goog.dom.pattern.Repeat', 'goog.dom.pattern.Sequence', 'goog.dom.pattern.StartTag', 'goog.dom.pattern.Text', 'goog.testing.jsunit']);
-goog.addDependency('dom/pattern/repeat.js', ['goog.dom.pattern.Repeat'], ['goog.dom.NodeType', 'goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/sequence.js', ['goog.dom.pattern.Sequence'], ['goog.dom.NodeType', 'goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/pattern/starttag.js', ['goog.dom.pattern.StartTag'], ['goog.dom.TagWalkType', 'goog.dom.pattern.Tag']);
-goog.addDependency('dom/pattern/tag.js', ['goog.dom.pattern.Tag'], ['goog.dom.pattern', 'goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType', 'goog.object']);
-goog.addDependency('dom/pattern/text.js', ['goog.dom.pattern.Text'], ['goog.dom.NodeType', 'goog.dom.pattern', 'goog.dom.pattern.AbstractPattern', 'goog.dom.pattern.MatchType']);
-goog.addDependency('dom/range.js', ['goog.dom.Range'], ['goog.dom', 'goog.dom.AbstractRange', 'goog.dom.BrowserFeature', 'goog.dom.ControlRange', 'goog.dom.MultiRange', 'goog.dom.NodeType', 'goog.dom.TextRange', 'goog.userAgent']);
-goog.addDependency('dom/range_test.js', ['goog.dom.RangeTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.RangeType', 'goog.dom.TagName', 'goog.dom.TextRange', 'goog.dom.browserrange', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/rangeendpoint.js', ['goog.dom.RangeEndpoint'], []);
-goog.addDependency('dom/safe.js', ['goog.dom.safe'], ['goog.html.SafeHtml', 'goog.html.SafeUrl']);
-goog.addDependency('dom/safe_test.js', ['goog.dom.safeTest'], ['goog.dom.safe', 'goog.html.SafeUrl', 'goog.html.testing', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('dom/savedcaretrange.js', ['goog.dom.SavedCaretRange'], ['goog.array', 'goog.dom', 'goog.dom.SavedRange', 'goog.dom.TagName', 'goog.string']);
-goog.addDependency('dom/savedcaretrange_test.js', ['goog.dom.SavedCaretRangeTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.SavedCaretRange', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/savedrange.js', ['goog.dom.SavedRange'], ['goog.Disposable', 'goog.log']);
-goog.addDependency('dom/savedrange_test.js', ['goog.dom.SavedRangeTest'], ['goog.dom', 'goog.dom.Range', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/selection.js', ['goog.dom.selection'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('dom/selection_test.js', ['goog.dom.selectionTest'], ['goog.dom', 'goog.dom.selection', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/tagiterator.js', ['goog.dom.TagIterator', 'goog.dom.TagWalkType'], ['goog.dom', 'goog.dom.NodeType', 'goog.iter.Iterator', 'goog.iter.StopIteration']);
-goog.addDependency('dom/tagiterator_test.js', ['goog.dom.TagIteratorTest'], ['goog.dom', 'goog.dom.TagIterator', 'goog.dom.TagWalkType', 'goog.iter', 'goog.iter.StopIteration', 'goog.testing.dom', 'goog.testing.jsunit']);
-goog.addDependency('dom/tagname.js', ['goog.dom.TagName'], []);
-goog.addDependency('dom/tagname_test.js', ['goog.dom.TagNameTest'], ['goog.dom.TagName', 'goog.object', 'goog.testing.jsunit']);
-goog.addDependency('dom/tags.js', ['goog.dom.tags'], ['goog.object']);
-goog.addDependency('dom/tags_test.js', ['goog.dom.tagsTest'], ['goog.dom.tags', 'goog.testing.jsunit']);
-goog.addDependency('dom/textrange.js', ['goog.dom.TextRange'], ['goog.array', 'goog.dom', 'goog.dom.AbstractRange', 'goog.dom.RangeType', 'goog.dom.SavedRange', 'goog.dom.TagName', 'goog.dom.TextRangeIterator', 'goog.dom.browserrange', 'goog.string', 'goog.userAgent']);
-goog.addDependency('dom/textrange_test.js', ['goog.dom.TextRangeTest'], ['goog.dom', 'goog.dom.ControlRange', 'goog.dom.Range', 'goog.dom.TextRange', 'goog.math.Coordinate', 'goog.style', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('dom/textrangeiterator.js', ['goog.dom.TextRangeIterator'], ['goog.array', 'goog.dom.NodeType', 'goog.dom.RangeIterator', 'goog.dom.TagName', 'goog.iter.StopIteration']);
-goog.addDependency('dom/textrangeiterator_test.js', ['goog.dom.TextRangeIteratorTest'], ['goog.dom', 'goog.dom.TagName', 'goog.dom.TextRangeIterator', 'goog.iter.StopIteration', 'goog.testing.dom', 'goog.testing.jsunit']);
-goog.addDependency('dom/vendor.js', ['goog.dom.vendor'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('dom/vendor_test.js', ['goog.dom.vendorTest'], ['goog.array', 'goog.dom.vendor', 'goog.labs.userAgent.util', 'goog.testing.MockUserAgent', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgentTestUtil']);
-goog.addDependency('dom/viewportsizemonitor.js', ['goog.dom.ViewportSizeMonitor'], ['goog.dom', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.math.Size']);
-goog.addDependency('dom/viewportsizemonitor_test.js', ['goog.dom.ViewportSizeMonitorTest'], ['goog.dom.ViewportSizeMonitor', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.math.Size', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('dom/xml.js', ['goog.dom.xml'], ['goog.dom', 'goog.dom.NodeType']);
-goog.addDependency('dom/xml_test.js', ['goog.dom.xmlTest'], ['goog.dom.xml', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/browserfeature.js', ['goog.editor.BrowserFeature'], ['goog.editor.defines', 'goog.userAgent', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('editor/browserfeature_test.js', ['goog.editor.BrowserFeatureTest'], ['goog.dom', 'goog.dom.Range', 'goog.editor.BrowserFeature', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit']);
-goog.addDependency('editor/clicktoeditwrapper.js', ['goog.editor.ClickToEditWrapper'], ['goog.Disposable', 'goog.asserts', 'goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Field.EventType', 'goog.editor.range', 'goog.events.BrowserEvent.MouseButton', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.log']);
-goog.addDependency('editor/clicktoeditwrapper_test.js', ['goog.editor.ClickToEditWrapperTest'], ['goog.dom', 'goog.dom.Range', 'goog.editor.ClickToEditWrapper', 'goog.editor.SeamlessField', 'goog.testing.MockClock', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('editor/command.js', ['goog.editor.Command'], []);
-goog.addDependency('editor/contenteditablefield.js', ['goog.editor.ContentEditableField'], ['goog.asserts', 'goog.editor.Field', 'goog.log']);
-goog.addDependency('editor/contenteditablefield_test.js', ['goog.editor.ContentEditableFieldTest'], ['goog.dom', 'goog.editor.ContentEditableField', 'goog.editor.field_test', 'goog.testing.jsunit']);
-goog.addDependency('editor/defines.js', ['goog.editor.defines'], []);
-goog.addDependency('editor/field.js', ['goog.editor.Field', 'goog.editor.Field.EventType'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.array', 'goog.asserts', 'goog.async.Delay', 'goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Plugin', 'goog.editor.icontent', 'goog.editor.icontent.FieldFormatInfo', 'goog.editor.icontent.FieldStyleInfo', 'goog.editor.node', 'goog.editor.range', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.functions', 'goog.log', 'goog.log.Level', 'goog.string', 'goog.string.Unicode', 'goog.style', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('editor/field_test.js', ['goog.editor.field_test'], ['goog.dom', 'goog.dom.Range', 'goog.editor.BrowserFeature', 'goog.editor.Field', 'goog.editor.Plugin', 'goog.editor.range', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.functions', 'goog.testing.LooseMock', 'goog.testing.MockClock', 'goog.testing.dom', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('editor/focus.js', ['goog.editor.focus'], ['goog.dom.selection']);
-goog.addDependency('editor/focus_test.js', ['goog.editor.focusTest'], ['goog.dom.selection', 'goog.editor.BrowserFeature', 'goog.editor.focus', 'goog.testing.jsunit']);
-goog.addDependency('editor/icontent.js', ['goog.editor.icontent', 'goog.editor.icontent.FieldFormatInfo', 'goog.editor.icontent.FieldStyleInfo'], ['goog.editor.BrowserFeature', 'goog.style', 'goog.userAgent']);
-goog.addDependency('editor/icontent_test.js', ['goog.editor.icontentTest'], ['goog.dom', 'goog.editor.BrowserFeature', 'goog.editor.icontent', 'goog.editor.icontent.FieldFormatInfo', 'goog.editor.icontent.FieldStyleInfo', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/link.js', ['goog.editor.Link'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.node', 'goog.editor.range', 'goog.string', 'goog.string.Unicode', 'goog.uri.utils', 'goog.uri.utils.ComponentIndex']);
-goog.addDependency('editor/link_test.js', ['goog.editor.LinkTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.Link', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/node.js', ['goog.editor.node'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.dom.iter.ChildIterator', 'goog.dom.iter.SiblingIterator', 'goog.iter', 'goog.object', 'goog.string', 'goog.string.Unicode', 'goog.userAgent']);
-goog.addDependency('editor/node_test.js', ['goog.editor.nodeTest'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.editor.node', 'goog.style', 'goog.testing.ExpectedFailures', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugin.js', ['goog.editor.Plugin'], ['goog.editor.Command', 'goog.events.EventTarget', 'goog.functions', 'goog.log', 'goog.object', 'goog.reflect']);
-goog.addDependency('editor/plugin_test.js', ['goog.editor.PluginTest'], ['goog.editor.Field', 'goog.editor.Plugin', 'goog.functions', 'goog.testing.StrictMock', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/abstractbubbleplugin.js', ['goog.editor.plugins.AbstractBubblePlugin'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.editor.Plugin', 'goog.editor.style', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.actionEventWrapper', 'goog.functions', 'goog.string.Unicode', 'goog.ui.Component', 'goog.ui.editor.Bubble', 'goog.userAgent']);
-goog.addDependency('editor/plugins/abstractbubbleplugin_test.js', ['goog.editor.plugins.AbstractBubblePluginTest'], ['goog.dom', 'goog.editor.plugins.AbstractBubblePlugin', 'goog.events.BrowserEvent', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.functions', 'goog.style', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit', 'goog.ui.editor.Bubble', 'goog.userAgent']);
-goog.addDependency('editor/plugins/abstractdialogplugin.js', ['goog.editor.plugins.AbstractDialogPlugin', 'goog.editor.plugins.AbstractDialogPlugin.EventType'], ['goog.dom', 'goog.dom.Range', 'goog.editor.Field.EventType', 'goog.editor.Plugin', 'goog.editor.range', 'goog.events', 'goog.ui.editor.AbstractDialog.EventType']);
-goog.addDependency('editor/plugins/abstractdialogplugin_test.js', ['goog.editor.plugins.AbstractDialogPluginTest'], ['goog.dom.SavedRange', 'goog.editor.Field', 'goog.editor.plugins.AbstractDialogPlugin', 'goog.events.Event', 'goog.events.EventHandler', 'goog.functions', 'goog.testing.MockClock', 'goog.testing.MockControl', 'goog.testing.PropertyReplacer', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.jsunit', 'goog.testing.mockmatchers.ArgumentMatcher', 'goog.ui.editor.AbstractDialog', 'goog.userAgent']);
-goog.addDependency('editor/plugins/abstracttabhandler.js', ['goog.editor.plugins.AbstractTabHandler'], ['goog.editor.Plugin', 'goog.events.KeyCodes']);
-goog.addDependency('editor/plugins/abstracttabhandler_test.js', ['goog.editor.plugins.AbstractTabHandlerTest'], ['goog.editor.Field', 'goog.editor.plugins.AbstractTabHandler', 'goog.events.BrowserEvent', 'goog.events.KeyCodes', 'goog.testing.StrictMock', 'goog.testing.editor.FieldMock', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/basictextformatter.js', ['goog.editor.plugins.BasicTextFormatter', 'goog.editor.plugins.BasicTextFormatter.COMMAND'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Link', 'goog.editor.Plugin', 'goog.editor.node', 'goog.editor.range', 'goog.editor.style', 'goog.iter', 'goog.iter.StopIteration', 'goog.log', 'goog.object', 'goog.string', 'goog.string.Unicode', 'goog.style', 'goog.ui.editor.messages', 'goog.userAgent']);
-goog.addDependency('editor/plugins/basictextformatter_test.js', ['goog.editor.plugins.BasicTextFormatterTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Field', 'goog.editor.Plugin', 'goog.editor.plugins.BasicTextFormatter', 'goog.object', 'goog.style', 'goog.testing.ExpectedFailures', 'goog.testing.LooseMock', 'goog.testing.PropertyReplacer', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.testing.mockmatchers', 'goog.userAgent']);
-goog.addDependency('editor/plugins/blockquote.js', ['goog.editor.plugins.Blockquote'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Plugin', 'goog.editor.node', 'goog.functions', 'goog.log']);
-goog.addDependency('editor/plugins/blockquote_test.js', ['goog.editor.plugins.BlockquoteTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.plugins.Blockquote', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/emoticons.js', ['goog.editor.plugins.Emoticons'], ['goog.dom.TagName', 'goog.editor.Plugin', 'goog.editor.range', 'goog.functions', 'goog.ui.emoji.Emoji', 'goog.userAgent']);
-goog.addDependency('editor/plugins/emoticons_test.js', ['goog.editor.plugins.EmoticonsTest'], ['goog.Uri', 'goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.editor.Field', 'goog.editor.plugins.Emoticons', 'goog.testing.jsunit', 'goog.ui.emoji.Emoji', 'goog.userAgent']);
-goog.addDependency('editor/plugins/enterhandler.js', ['goog.editor.plugins.EnterHandler'], ['goog.dom', 'goog.dom.NodeOffset', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Plugin', 'goog.editor.node', 'goog.editor.plugins.Blockquote', 'goog.editor.range', 'goog.editor.style', 'goog.events.KeyCodes', 'goog.functions', 'goog.object', 'goog.string', 'goog.userAgent']);
-goog.addDependency('editor/plugins/enterhandler_test.js', ['goog.editor.plugins.EnterHandlerTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Field', 'goog.editor.Plugin', 'goog.editor.plugins.Blockquote', 'goog.editor.plugins.EnterHandler', 'goog.editor.range', 'goog.events', 'goog.events.KeyCodes', 'goog.testing.ExpectedFailures', 'goog.testing.MockClock', 'goog.testing.dom', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/equationeditorbubble.js', ['goog.editor.plugins.equation.EquationBubble'], ['goog.dom', 'goog.dom.TagName', 'goog.editor.Command', 'goog.editor.plugins.AbstractBubblePlugin', 'goog.string.Unicode', 'goog.ui.editor.Bubble', 'goog.ui.equation.ImageRenderer']);
-goog.addDependency('editor/plugins/equationeditorplugin.js', ['goog.editor.plugins.EquationEditorPlugin'], ['goog.dom', 'goog.editor.Command', 'goog.editor.plugins.AbstractDialogPlugin', 'goog.editor.range', 'goog.events', 'goog.events.EventType', 'goog.functions', 'goog.log', 'goog.ui.editor.AbstractDialog', 'goog.ui.editor.EquationEditorDialog', 'goog.ui.equation.ImageRenderer', 'goog.ui.equation.PaletteManager']);
-goog.addDependency('editor/plugins/equationeditorplugin_test.js', ['goog.editor.plugins.EquationEditorPluginTest'], ['goog.dom', 'goog.dom.DomHelper', 'goog.dom.TagName', 'goog.editor.plugins.EquationEditorPlugin', 'goog.testing.MockControl', 'goog.testing.MockRange', 'goog.testing.PropertyReplacer', 'goog.testing.editor.FieldMock', 'goog.testing.jsunit', 'goog.testing.mockmatchers.ArgumentMatcher', 'goog.ui.editor.EquationEditorOkEvent']);
-goog.addDependency('editor/plugins/firststrong.js', ['goog.editor.plugins.FirstStrong'], ['goog.dom.NodeType', 'goog.dom.TagIterator', 'goog.dom.TagName', 'goog.editor.Command', 'goog.editor.Plugin', 'goog.editor.node', 'goog.editor.range', 'goog.i18n.bidi', 'goog.i18n.uChar', 'goog.iter', 'goog.userAgent']);
-goog.addDependency('editor/plugins/firststrong_test.js', ['goog.editor.plugins.FirstStrongTest'], ['goog.dom.Range', 'goog.editor.Command', 'goog.editor.Field', 'goog.editor.plugins.FirstStrong', 'goog.editor.range', 'goog.events.KeyCodes', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/headerformatter.js', ['goog.editor.plugins.HeaderFormatter'], ['goog.editor.Command', 'goog.editor.Plugin', 'goog.userAgent']);
-goog.addDependency('editor/plugins/headerformatter_test.js', ['goog.editor.plugins.HeaderFormatterTest'], ['goog.dom', 'goog.editor.Command', 'goog.editor.plugins.BasicTextFormatter', 'goog.editor.plugins.HeaderFormatter', 'goog.events.BrowserEvent', 'goog.testing.LooseMock', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/linkbubble.js', ['goog.editor.plugins.LinkBubble', 'goog.editor.plugins.LinkBubble.Action'], ['goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.editor.Command', 'goog.editor.Link', 'goog.editor.plugins.AbstractBubblePlugin', 'goog.editor.range', 'goog.functions', 'goog.string', 'goog.style', 'goog.ui.editor.messages', 'goog.uri.utils', 'goog.window']);
-goog.addDependency('editor/plugins/linkbubble_test.js', ['goog.editor.plugins.LinkBubbleTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.Command', 'goog.editor.Link', 'goog.editor.plugins.LinkBubble', 'goog.events.BrowserEvent', 'goog.events.Event', 'goog.events.EventType', 'goog.string', 'goog.style', 'goog.testing.FunctionMock', 'goog.testing.PropertyReplacer', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/linkdialogplugin.js', ['goog.editor.plugins.LinkDialogPlugin'], ['goog.array', 'goog.dom', 'goog.editor.Command', 'goog.editor.plugins.AbstractDialogPlugin', 'goog.events.EventHandler', 'goog.functions', 'goog.ui.editor.AbstractDialog.EventType', 'goog.ui.editor.LinkDialog', 'goog.ui.editor.LinkDialog.EventType', 'goog.ui.editor.LinkDialog.OkEvent', 'goog.uri.utils']);
-goog.addDependency('editor/plugins/linkdialogplugin_test.js', ['goog.ui.editor.LinkDialogTest'], ['goog.dom', 'goog.dom.DomHelper', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Field', 'goog.editor.Link', 'goog.editor.plugins.LinkDialogPlugin', 'goog.string', 'goog.string.Unicode', 'goog.testing.MockControl', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.editor.dom', 'goog.testing.events', 'goog.testing.jsunit', 'goog.testing.mockmatchers', 'goog.ui.editor.AbstractDialog', 'goog.ui.editor.LinkDialog', 'goog.userAgent']);
-goog.addDependency('editor/plugins/linkshortcutplugin.js', ['goog.editor.plugins.LinkShortcutPlugin'], ['goog.editor.Command', 'goog.editor.Link', 'goog.editor.Plugin', 'goog.string']);
-goog.addDependency('editor/plugins/linkshortcutplugin_test.js', ['goog.editor.plugins.LinkShortcutPluginTest'], ['goog.dom', 'goog.editor.Field', 'goog.editor.plugins.BasicTextFormatter', 'goog.editor.plugins.LinkBubble', 'goog.editor.plugins.LinkShortcutPlugin', 'goog.events.KeyCodes', 'goog.testing.PropertyReplacer', 'goog.testing.dom', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('editor/plugins/listtabhandler.js', ['goog.editor.plugins.ListTabHandler'], ['goog.dom.TagName', 'goog.editor.Command', 'goog.editor.plugins.AbstractTabHandler']);
-goog.addDependency('editor/plugins/listtabhandler_test.js', ['goog.editor.plugins.ListTabHandlerTest'], ['goog.dom', 'goog.editor.Command', 'goog.editor.plugins.ListTabHandler', 'goog.events.BrowserEvent', 'goog.events.KeyCodes', 'goog.functions', 'goog.testing.StrictMock', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit']);
-goog.addDependency('editor/plugins/loremipsum.js', ['goog.editor.plugins.LoremIpsum'], ['goog.asserts', 'goog.dom', 'goog.editor.Command', 'goog.editor.Plugin', 'goog.editor.node', 'goog.functions']);
-goog.addDependency('editor/plugins/loremipsum_test.js', ['goog.editor.plugins.LoremIpsumTest'], ['goog.dom', 'goog.editor.Command', 'goog.editor.Field', 'goog.editor.plugins.LoremIpsum', 'goog.string.Unicode', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/removeformatting.js', ['goog.editor.plugins.RemoveFormatting'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Plugin', 'goog.editor.node', 'goog.editor.range', 'goog.string', 'goog.userAgent']);
-goog.addDependency('editor/plugins/removeformatting_test.js', ['goog.editor.plugins.RemoveFormattingTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.plugins.RemoveFormatting', 'goog.string', 'goog.testing.ExpectedFailures', 'goog.testing.dom', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/spacestabhandler.js', ['goog.editor.plugins.SpacesTabHandler'], ['goog.dom', 'goog.dom.TagName', 'goog.editor.plugins.AbstractTabHandler', 'goog.editor.range']);
-goog.addDependency('editor/plugins/spacestabhandler_test.js', ['goog.editor.plugins.SpacesTabHandlerTest'], ['goog.dom', 'goog.dom.Range', 'goog.editor.plugins.SpacesTabHandler', 'goog.events.BrowserEvent', 'goog.events.KeyCodes', 'goog.functions', 'goog.testing.StrictMock', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit']);
-goog.addDependency('editor/plugins/tableeditor.js', ['goog.editor.plugins.TableEditor'], ['goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.editor.Plugin', 'goog.editor.Table', 'goog.editor.node', 'goog.editor.range', 'goog.object']);
-goog.addDependency('editor/plugins/tableeditor_test.js', ['goog.editor.plugins.TableEditorTest'], ['goog.dom', 'goog.dom.Range', 'goog.editor.plugins.TableEditor', 'goog.object', 'goog.string', 'goog.testing.ExpectedFailures', 'goog.testing.JsUnitException', 'goog.testing.editor.FieldMock', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/tagonenterhandler.js', ['goog.editor.plugins.TagOnEnterHandler'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.Command', 'goog.editor.node', 'goog.editor.plugins.EnterHandler', 'goog.editor.range', 'goog.editor.style', 'goog.events.KeyCodes', 'goog.string', 'goog.style', 'goog.userAgent']);
-goog.addDependency('editor/plugins/tagonenterhandler_test.js', ['goog.editor.plugins.TagOnEnterHandlerTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Field', 'goog.editor.Plugin', 'goog.editor.plugins.TagOnEnterHandler', 'goog.events.KeyCodes', 'goog.string.Unicode', 'goog.testing.dom', 'goog.testing.editor.TestHelper', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/plugins/undoredo.js', ['goog.editor.plugins.UndoRedo'], ['goog.dom', 'goog.dom.NodeOffset', 'goog.dom.Range', 'goog.editor.BrowserFeature', 'goog.editor.Command', 'goog.editor.Field.EventType', 'goog.editor.Plugin', 'goog.editor.node', 'goog.editor.plugins.UndoRedoManager', 'goog.editor.plugins.UndoRedoState', 'goog.events', 'goog.events.EventHandler', 'goog.log']);
-goog.addDependency('editor/plugins/undoredo_test.js', ['goog.editor.plugins.UndoRedoTest'], ['goog.array', 'goog.dom', 'goog.dom.browserrange', 'goog.editor.Field', 'goog.editor.plugins.LoremIpsum', 'goog.editor.plugins.UndoRedo', 'goog.events', 'goog.functions', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.StrictMock', 'goog.testing.jsunit']);
-goog.addDependency('editor/plugins/undoredomanager.js', ['goog.editor.plugins.UndoRedoManager', 'goog.editor.plugins.UndoRedoManager.EventType'], ['goog.editor.plugins.UndoRedoState', 'goog.events.EventTarget']);
-goog.addDependency('editor/plugins/undoredomanager_test.js', ['goog.editor.plugins.UndoRedoManagerTest'], ['goog.editor.plugins.UndoRedoManager', 'goog.editor.plugins.UndoRedoState', 'goog.events', 'goog.testing.StrictMock', 'goog.testing.jsunit']);
-goog.addDependency('editor/plugins/undoredostate.js', ['goog.editor.plugins.UndoRedoState'], ['goog.events.EventTarget']);
-goog.addDependency('editor/plugins/undoredostate_test.js', ['goog.editor.plugins.UndoRedoStateTest'], ['goog.editor.plugins.UndoRedoState', 'goog.testing.jsunit']);
-goog.addDependency('editor/range.js', ['goog.editor.range', 'goog.editor.range.Point'], ['goog.array', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.dom.RangeEndpoint', 'goog.dom.SavedCaretRange', 'goog.editor.node', 'goog.editor.style', 'goog.iter', 'goog.userAgent']);
-goog.addDependency('editor/range_test.js', ['goog.editor.rangeTest'], ['goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.range', 'goog.editor.range.Point', 'goog.string', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('editor/seamlessfield.js', ['goog.editor.SeamlessField'], ['goog.cssom.iframe.style', 'goog.dom', 'goog.dom.Range', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.Field', 'goog.editor.icontent', 'goog.editor.icontent.FieldFormatInfo', 'goog.editor.icontent.FieldStyleInfo', 'goog.editor.node', 'goog.events', 'goog.events.EventType', 'goog.log', 'goog.style']);
-goog.addDependency('editor/seamlessfield_test.js', ['goog.editor.seamlessfield_test'], ['goog.dom', 'goog.dom.DomHelper', 'goog.dom.Range', 'goog.editor.BrowserFeature', 'goog.editor.Field', 'goog.editor.SeamlessField', 'goog.events', 'goog.functions', 'goog.style', 'goog.testing.MockClock', 'goog.testing.MockRange', 'goog.testing.jsunit']);
-goog.addDependency('editor/style.js', ['goog.editor.style'], ['goog.dom', 'goog.dom.NodeType', 'goog.editor.BrowserFeature', 'goog.events.EventType', 'goog.object', 'goog.style', 'goog.userAgent']);
-goog.addDependency('editor/style_test.js', ['goog.editor.styleTest'], ['goog.dom', 'goog.dom.TagName', 'goog.editor.BrowserFeature', 'goog.editor.style', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.style', 'goog.testing.LooseMock', 'goog.testing.jsunit', 'goog.testing.mockmatchers']);
-goog.addDependency('editor/table.js', ['goog.editor.Table', 'goog.editor.TableCell', 'goog.editor.TableRow'], ['goog.dom', 'goog.dom.DomHelper', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.log', 'goog.string.Unicode', 'goog.style']);
-goog.addDependency('editor/table_test.js', ['goog.editor.TableTest'], ['goog.dom', 'goog.editor.Table', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/actioneventwrapper.js', ['goog.events.actionEventWrapper'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.EventWrapper', 'goog.events.KeyCodes', 'goog.userAgent']);
-goog.addDependency('events/actioneventwrapper_test.js', ['goog.events.actionEventWrapperTest'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.events', 'goog.events.EventHandler', 'goog.events.KeyCodes', 'goog.events.actionEventWrapper', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('events/actionhandler.js', ['goog.events.ActionEvent', 'goog.events.ActionHandler', 'goog.events.ActionHandler.EventType', 'goog.events.BeforeActionEvent'], ['goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.userAgent']);
-goog.addDependency('events/actionhandler_test.js', ['goog.events.ActionHandlerTest'], ['goog.dom', 'goog.events', 'goog.events.ActionHandler', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('events/browserevent.js', ['goog.events.BrowserEvent', 'goog.events.BrowserEvent.MouseButton'], ['goog.events.BrowserFeature', 'goog.events.Event', 'goog.events.EventType', 'goog.reflect', 'goog.userAgent']);
-goog.addDependency('events/browserevent_test.js', ['goog.events.BrowserEventTest'], ['goog.events.BrowserEvent', 'goog.events.BrowserFeature', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/browserfeature.js', ['goog.events.BrowserFeature'], ['goog.userAgent']);
-goog.addDependency('events/event.js', ['goog.events.Event', 'goog.events.EventLike'], ['goog.Disposable', 'goog.events.EventId']);
-goog.addDependency('events/event_test.js', ['goog.events.EventTest'], ['goog.events.Event', 'goog.events.EventId', 'goog.events.EventTarget', 'goog.testing.jsunit']);
-goog.addDependency('events/eventhandler.js', ['goog.events.EventHandler'], ['goog.Disposable', 'goog.events', 'goog.object']);
-goog.addDependency('events/eventhandler_test.js', ['goog.events.EventHandlerTest'], ['goog.events', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('events/eventid.js', ['goog.events.EventId'], []);
-goog.addDependency('events/events.js', ['goog.events', 'goog.events.CaptureSimulationMode', 'goog.events.Key', 'goog.events.ListenableType'], ['goog.asserts', 'goog.debug.entryPointRegistry', 'goog.events.BrowserEvent', 'goog.events.BrowserFeature', 'goog.events.Listenable', 'goog.events.ListenerMap']);
-goog.addDependency('events/events_test.js', ['goog.eventsTest'], ['goog.asserts.AssertionError', 'goog.debug.EntryPointMonitor', 'goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.dom', 'goog.events', 'goog.events.BrowserFeature', 'goog.events.CaptureSimulationMode', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.Listener', 'goog.functions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('events/eventtarget.js', ['goog.events.EventTarget'], ['goog.Disposable', 'goog.asserts', 'goog.events', 'goog.events.Event', 'goog.events.Listenable', 'goog.events.ListenerMap', 'goog.object']);
-goog.addDependency('events/eventtarget_test.js', ['goog.events.EventTargetTest'], ['goog.events.EventTarget', 'goog.events.Listenable', 'goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType', 'goog.testing.jsunit']);
-goog.addDependency('events/eventtarget_via_googevents_test.js', ['goog.events.EventTargetGoogEventsTest'], ['goog.events', 'goog.events.EventTarget', 'goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType', 'goog.object', 'goog.testing', 'goog.testing.jsunit']);
-goog.addDependency('events/eventtarget_via_w3cinterface_test.js', ['goog.events.EventTargetW3CTest'], ['goog.events.EventTarget', 'goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType', 'goog.testing.jsunit']);
-goog.addDependency('events/eventtargettester.js', ['goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType'], ['goog.array', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.testing.asserts', 'goog.testing.recordFunction']);
-goog.addDependency('events/eventtype.js', ['goog.events.EventType'], ['goog.userAgent']);
-goog.addDependency('events/eventwrapper.js', ['goog.events.EventWrapper'], []);
-goog.addDependency('events/filedrophandler.js', ['goog.events.FileDropHandler', 'goog.events.FileDropHandler.EventType'], ['goog.array', 'goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.log']);
-goog.addDependency('events/filedrophandler_test.js', ['goog.events.FileDropHandlerTest'], ['goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.FileDropHandler', 'goog.testing.jsunit']);
-goog.addDependency('events/focushandler.js', ['goog.events.FocusHandler', 'goog.events.FocusHandler.EventType'], ['goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.userAgent']);
-goog.addDependency('events/imehandler.js', ['goog.events.ImeHandler', 'goog.events.ImeHandler.Event', 'goog.events.ImeHandler.EventType'], ['goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.userAgent']);
-goog.addDependency('events/imehandler_test.js', ['goog.events.ImeHandlerTest'], ['goog.array', 'goog.dom', 'goog.events', 'goog.events.ImeHandler', 'goog.events.KeyCodes', 'goog.object', 'goog.string', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/inputhandler.js', ['goog.events.InputHandler', 'goog.events.InputHandler.EventType'], ['goog.Timer', 'goog.dom', 'goog.events.BrowserEvent', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.KeyCodes', 'goog.userAgent']);
-goog.addDependency('events/inputhandler_test.js', ['goog.events.InputHandlerTest'], ['goog.dom', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.events.KeyCodes', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('events/keycodes.js', ['goog.events.KeyCodes'], ['goog.userAgent']);
-goog.addDependency('events/keycodes_test.js', ['goog.events.KeyCodesTest'], ['goog.events.BrowserEvent', 'goog.events.KeyCodes', 'goog.object', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/keyhandler.js', ['goog.events.KeyEvent', 'goog.events.KeyHandler', 'goog.events.KeyHandler.EventType'], ['goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.userAgent']);
-goog.addDependency('events/keyhandler_test.js', ['goog.events.KeyEventTest'], ['goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/keynames.js', ['goog.events.KeyNames'], []);
-goog.addDependency('events/listenable.js', ['goog.events.Listenable', 'goog.events.ListenableKey'], ['goog.events.EventId']);
-goog.addDependency('events/listenable_test.js', ['goog.events.ListenableTest'], ['goog.events.Listenable', 'goog.testing.jsunit']);
-goog.addDependency('events/listener.js', ['goog.events.Listener'], ['goog.events.ListenableKey']);
-goog.addDependency('events/listenermap.js', ['goog.events.ListenerMap'], ['goog.array', 'goog.events.Listener', 'goog.object']);
-goog.addDependency('events/listenermap_test.js', ['goog.events.ListenerMapTest'], ['goog.dispose', 'goog.events', 'goog.events.EventId', 'goog.events.EventTarget', 'goog.events.ListenerMap', 'goog.testing.jsunit']);
-goog.addDependency('events/mousewheelhandler.js', ['goog.events.MouseWheelEvent', 'goog.events.MouseWheelHandler', 'goog.events.MouseWheelHandler.EventType'], ['goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.math', 'goog.style', 'goog.userAgent']);
-goog.addDependency('events/mousewheelhandler_test.js', ['goog.events.MouseWheelHandlerTest'], ['goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.MouseWheelEvent', 'goog.events.MouseWheelHandler', 'goog.functions', 'goog.string', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('events/onlinehandler.js', ['goog.events.OnlineHandler', 'goog.events.OnlineHandler.EventType'], ['goog.Timer', 'goog.events.BrowserFeature', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.net.NetworkStatusMonitor', 'goog.userAgent']);
-goog.addDependency('events/onlinelistener_test.js', ['goog.events.OnlineHandlerTest'], ['goog.events', 'goog.events.BrowserFeature', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.OnlineHandler', 'goog.net.NetworkStatusMonitor', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('events/pastehandler.js', ['goog.events.PasteHandler', 'goog.events.PasteHandler.EventType', 'goog.events.PasteHandler.State'], ['goog.Timer', 'goog.async.ConditionalDelay', 'goog.events.BrowserEvent', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.log', 'goog.userAgent']);
-goog.addDependency('events/pastehandler_test.js', ['goog.events.PasteHandlerTest'], ['goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.PasteHandler', 'goog.testing.MockClock', 'goog.testing.MockUserAgent', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('format/emailaddress.js', ['goog.format.EmailAddress'], ['goog.string']);
-goog.addDependency('format/emailaddress_test.js', ['goog.format.EmailAddressTest'], ['goog.array', 'goog.format.EmailAddress', 'goog.testing.jsunit']);
-goog.addDependency('format/format.js', ['goog.format'], ['goog.i18n.GraphemeBreak', 'goog.string', 'goog.userAgent']);
-goog.addDependency('format/format_test.js', ['goog.formatTest'], ['goog.dom', 'goog.format', 'goog.string', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('format/htmlprettyprinter.js', ['goog.format.HtmlPrettyPrinter', 'goog.format.HtmlPrettyPrinter.Buffer'], ['goog.object', 'goog.string.StringBuffer']);
-goog.addDependency('format/htmlprettyprinter_test.js', ['goog.format.HtmlPrettyPrinterTest'], ['goog.format.HtmlPrettyPrinter', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('format/internationalizedemailaddress.js', ['goog.format.InternationalizedEmailAddress'], ['goog.format.EmailAddress']);
-goog.addDependency('format/internationalizedemailaddress_test.js', ['goog.format.InternationalizedEmailAddressTest'], ['goog.array', 'goog.format.InternationalizedEmailAddress', 'goog.testing.jsunit']);
-goog.addDependency('format/jsonprettyprinter.js', ['goog.format.JsonPrettyPrinter', 'goog.format.JsonPrettyPrinter.HtmlDelimiters', 'goog.format.JsonPrettyPrinter.TextDelimiters'], ['goog.json', 'goog.json.Serializer', 'goog.string', 'goog.string.StringBuffer', 'goog.string.format']);
-goog.addDependency('format/jsonprettyprinter_test.js', ['goog.format.JsonPrettyPrinterTest'], ['goog.format.JsonPrettyPrinter', 'goog.testing.jsunit']);
-goog.addDependency('fs/entry.js', ['goog.fs.DirectoryEntry', 'goog.fs.DirectoryEntry.Behavior', 'goog.fs.Entry', 'goog.fs.FileEntry'], []);
-goog.addDependency('fs/entryimpl.js', ['goog.fs.DirectoryEntryImpl', 'goog.fs.EntryImpl', 'goog.fs.FileEntryImpl'], ['goog.array', 'goog.async.Deferred', 'goog.fs.DirectoryEntry', 'goog.fs.Entry', 'goog.fs.Error', 'goog.fs.FileEntry', 'goog.fs.FileWriter', 'goog.functions', 'goog.string']);
-goog.addDependency('fs/error.js', ['goog.fs.Error', 'goog.fs.Error.ErrorCode'], ['goog.debug.Error', 'goog.object', 'goog.string']);
-goog.addDependency('fs/filereader.js', ['goog.fs.FileReader', 'goog.fs.FileReader.EventType', 'goog.fs.FileReader.ReadyState'], ['goog.async.Deferred', 'goog.events.EventTarget', 'goog.fs.Error', 'goog.fs.ProgressEvent']);
-goog.addDependency('fs/filesaver.js', ['goog.fs.FileSaver', 'goog.fs.FileSaver.EventType', 'goog.fs.FileSaver.ProgressEvent', 'goog.fs.FileSaver.ReadyState'], ['goog.events.EventTarget', 'goog.fs.Error', 'goog.fs.ProgressEvent']);
-goog.addDependency('fs/filesystem.js', ['goog.fs.FileSystem'], []);
-goog.addDependency('fs/filesystemimpl.js', ['goog.fs.FileSystemImpl'], ['goog.fs.DirectoryEntryImpl', 'goog.fs.FileSystem']);
-goog.addDependency('fs/filewriter.js', ['goog.fs.FileWriter'], ['goog.fs.Error', 'goog.fs.FileSaver']);
-goog.addDependency('fs/fs.js', ['goog.fs'], ['goog.array', 'goog.async.Deferred', 'goog.fs.Error', 'goog.fs.FileReader', 'goog.fs.FileSystemImpl', 'goog.userAgent']);
-goog.addDependency('fs/fs_test.js', ['goog.fsTest'], ['goog.array', 'goog.async.Deferred', 'goog.async.DeferredList', 'goog.dom', 'goog.events', 'goog.fs', 'goog.fs.DirectoryEntry', 'goog.fs.Error', 'goog.fs.FileReader', 'goog.fs.FileSaver', 'goog.string', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('fs/progressevent.js', ['goog.fs.ProgressEvent'], ['goog.events.Event']);
-goog.addDependency('functions/functions.js', ['goog.functions'], []);
-goog.addDependency('functions/functions_test.js', ['goog.functionsTest'], ['goog.functions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('fx/abstractdragdrop.js', ['goog.fx.AbstractDragDrop', 'goog.fx.AbstractDragDrop.EventType', 'goog.fx.DragDropEvent', 'goog.fx.DragDropItem'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.fx.Dragger', 'goog.math.Box', 'goog.math.Coordinate', 'goog.style']);
-goog.addDependency('fx/abstractdragdrop_test.js', ['goog.fx.AbstractDragDropTest'], ['goog.array', 'goog.events.EventType', 'goog.functions', 'goog.fx.AbstractDragDrop', 'goog.fx.DragDropItem', 'goog.math.Box', 'goog.math.Coordinate', 'goog.style', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('fx/anim/anim.js', ['goog.fx.anim', 'goog.fx.anim.Animated'], ['goog.async.AnimationDelay', 'goog.async.Delay', 'goog.object']);
-goog.addDependency('fx/anim/anim_test.js', ['goog.fx.animTest'], ['goog.async.AnimationDelay', 'goog.async.Delay', 'goog.events', 'goog.functions', 'goog.fx.Animation', 'goog.fx.anim', 'goog.object', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('fx/animation.js', ['goog.fx.Animation', 'goog.fx.Animation.EventType', 'goog.fx.Animation.State', 'goog.fx.AnimationEvent'], ['goog.array', 'goog.events.Event', 'goog.fx.Transition', 'goog.fx.Transition.EventType', 'goog.fx.TransitionBase.State', 'goog.fx.anim', 'goog.fx.anim.Animated']);
-goog.addDependency('fx/animation_test.js', ['goog.fx.AnimationTest'], ['goog.events', 'goog.fx.Animation', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('fx/animationqueue.js', ['goog.fx.AnimationParallelQueue', 'goog.fx.AnimationQueue', 'goog.fx.AnimationSerialQueue'], ['goog.array', 'goog.asserts', 'goog.events.EventHandler', 'goog.fx.Transition.EventType', 'goog.fx.TransitionBase', 'goog.fx.TransitionBase.State']);
-goog.addDependency('fx/animationqueue_test.js', ['goog.fx.AnimationQueueTest'], ['goog.events', 'goog.fx.Animation', 'goog.fx.AnimationParallelQueue', 'goog.fx.AnimationSerialQueue', 'goog.fx.Transition', 'goog.fx.anim', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('fx/css3/fx.js', ['goog.fx.css3'], ['goog.fx.css3.Transition']);
-goog.addDependency('fx/css3/transition.js', ['goog.fx.css3.Transition'], ['goog.Timer', 'goog.fx.TransitionBase', 'goog.style', 'goog.style.transition']);
-goog.addDependency('fx/css3/transition_test.js', ['goog.fx.css3.TransitionTest'], ['goog.dispose', 'goog.dom', 'goog.events', 'goog.fx.Transition', 'goog.fx.css3.Transition', 'goog.style.transition', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('fx/cssspriteanimation.js', ['goog.fx.CssSpriteAnimation'], ['goog.fx.Animation']);
-goog.addDependency('fx/cssspriteanimation_test.js', ['goog.fx.CssSpriteAnimationTest'], ['goog.fx.CssSpriteAnimation', 'goog.math.Box', 'goog.math.Size', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('fx/dom.js', ['goog.fx.dom', 'goog.fx.dom.BgColorTransform', 'goog.fx.dom.ColorTransform', 'goog.fx.dom.Fade', 'goog.fx.dom.FadeIn', 'goog.fx.dom.FadeInAndShow', 'goog.fx.dom.FadeOut', 'goog.fx.dom.FadeOutAndHide', 'goog.fx.dom.PredefinedEffect', 'goog.fx.dom.Resize', 'goog.fx.dom.ResizeHeight', 'goog.fx.dom.ResizeWidth', 'goog.fx.dom.Scroll', 'goog.fx.dom.Slide', 'goog.fx.dom.SlideFrom', 'goog.fx.dom.Swipe'], ['goog.color', 'goog.events', 'goog.fx.Animation', 'goog.fx.Transition', 'goog.style', 'goog.style.bidi']);
-goog.addDependency('fx/dragdrop.js', ['goog.fx.DragDrop'], ['goog.fx.AbstractDragDrop', 'goog.fx.DragDropItem']);
-goog.addDependency('fx/dragdropgroup.js', ['goog.fx.DragDropGroup'], ['goog.dom', 'goog.fx.AbstractDragDrop', 'goog.fx.DragDropItem']);
-goog.addDependency('fx/dragdropgroup_test.js', ['goog.fx.DragDropGroupTest'], ['goog.events', 'goog.fx.DragDropGroup', 'goog.testing.jsunit']);
-goog.addDependency('fx/dragger.js', ['goog.fx.DragEvent', 'goog.fx.Dragger', 'goog.fx.Dragger.EventType'], ['goog.dom', 'goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.math.Coordinate', 'goog.math.Rect', 'goog.style', 'goog.style.bidi', 'goog.userAgent']);
-goog.addDependency('fx/dragger_test.js', ['goog.fx.DraggerTest'], ['goog.dom', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.Event', 'goog.events.EventType', 'goog.fx.Dragger', 'goog.math.Rect', 'goog.style.bidi', 'goog.testing.StrictMock', 'goog.testing.events', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('fx/draglistgroup.js', ['goog.fx.DragListDirection', 'goog.fx.DragListGroup', 'goog.fx.DragListGroup.EventType', 'goog.fx.DragListGroupEvent'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.fx.Dragger', 'goog.math.Coordinate', 'goog.string', 'goog.style']);
-goog.addDependency('fx/draglistgroup_test.js', ['goog.fx.DragListGroupTest'], ['goog.array', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.BrowserFeature', 'goog.events.Event', 'goog.events.EventType', 'goog.fx.DragEvent', 'goog.fx.DragListDirection', 'goog.fx.DragListGroup', 'goog.fx.Dragger', 'goog.math.Coordinate', 'goog.object', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('fx/dragscrollsupport.js', ['goog.fx.DragScrollSupport'], ['goog.Disposable', 'goog.Timer', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.math.Coordinate', 'goog.style']);
-goog.addDependency('fx/dragscrollsupport_test.js', ['goog.fx.DragScrollSupportTest'], ['goog.fx.DragScrollSupport', 'goog.math.Coordinate', 'goog.testing.MockClock', 'goog.testing.events', 'goog.testing.jsunit']);
-goog.addDependency('fx/easing.js', ['goog.fx.easing'], []);
-goog.addDependency('fx/easing_test.js', ['goog.fx.easingTest'], ['goog.fx.easing', 'goog.testing.jsunit']);
-goog.addDependency('fx/fx.js', ['goog.fx'], ['goog.asserts', 'goog.fx.Animation', 'goog.fx.Animation.EventType', 'goog.fx.Animation.State', 'goog.fx.AnimationEvent', 'goog.fx.Transition.EventType', 'goog.fx.easing']);
-goog.addDependency('fx/fx_test.js', ['goog.fxTest'], ['goog.fx.Animation', 'goog.object', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('fx/transition.js', ['goog.fx.Transition', 'goog.fx.Transition.EventType'], []);
-goog.addDependency('fx/transitionbase.js', ['goog.fx.TransitionBase', 'goog.fx.TransitionBase.State'], ['goog.events.EventTarget', 'goog.fx.Transition', 'goog.fx.Transition.EventType']);
-goog.addDependency('graphics/abstractgraphics.js', ['goog.graphics.AbstractGraphics'], ['goog.dom', 'goog.graphics.Path', 'goog.math.Coordinate', 'goog.math.Size', 'goog.style', 'goog.ui.Component']);
-goog.addDependency('graphics/affinetransform.js', ['goog.graphics.AffineTransform'], ['goog.math']);
-goog.addDependency('graphics/canvaselement.js', ['goog.graphics.CanvasEllipseElement', 'goog.graphics.CanvasGroupElement', 'goog.graphics.CanvasImageElement', 'goog.graphics.CanvasPathElement', 'goog.graphics.CanvasRectElement', 'goog.graphics.CanvasTextElement'], ['goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.graphics.EllipseElement', 'goog.graphics.GroupElement', 'goog.graphics.ImageElement', 'goog.graphics.Path', 'goog.graphics.PathElement', 'goog.graphics.RectElement', 'goog.graphics.TextElement', 'goog.math', 'goog.string']);
-goog.addDependency('graphics/canvasgraphics.js', ['goog.graphics.CanvasGraphics'], ['goog.events.EventType', 'goog.graphics.AbstractGraphics', 'goog.graphics.CanvasEllipseElement', 'goog.graphics.CanvasGroupElement', 'goog.graphics.CanvasImageElement', 'goog.graphics.CanvasPathElement', 'goog.graphics.CanvasRectElement', 'goog.graphics.CanvasTextElement', 'goog.graphics.SolidFill', 'goog.math.Size', 'goog.style']);
-goog.addDependency('graphics/element.js', ['goog.graphics.Element'], ['goog.asserts', 'goog.events', 'goog.events.EventTarget', 'goog.events.Listenable', 'goog.graphics.AffineTransform', 'goog.math']);
-goog.addDependency('graphics/ellipseelement.js', ['goog.graphics.EllipseElement'], ['goog.graphics.StrokeAndFillElement']);
-goog.addDependency('graphics/ext/coordinates.js', ['goog.graphics.ext.coordinates'], ['goog.string']);
-goog.addDependency('graphics/ext/element.js', ['goog.graphics.ext.Element'], ['goog.events.EventTarget', 'goog.functions', 'goog.graphics.ext.coordinates']);
-goog.addDependency('graphics/ext/ellipse.js', ['goog.graphics.ext.Ellipse'], ['goog.graphics.ext.StrokeAndFillElement']);
-goog.addDependency('graphics/ext/ext.js', ['goog.graphics.ext'], ['goog.graphics.ext.Ellipse', 'goog.graphics.ext.Graphics', 'goog.graphics.ext.Group', 'goog.graphics.ext.Image', 'goog.graphics.ext.Rectangle', 'goog.graphics.ext.Shape', 'goog.graphics.ext.coordinates']);
-goog.addDependency('graphics/ext/graphics.js', ['goog.graphics.ext.Graphics'], ['goog.events.EventType', 'goog.graphics.ext.Group']);
-goog.addDependency('graphics/ext/group.js', ['goog.graphics.ext.Group'], ['goog.array', 'goog.graphics.ext.Element']);
-goog.addDependency('graphics/ext/image.js', ['goog.graphics.ext.Image'], ['goog.graphics.ext.Element']);
-goog.addDependency('graphics/ext/path.js', ['goog.graphics.ext.Path'], ['goog.graphics.AffineTransform', 'goog.graphics.Path', 'goog.math', 'goog.math.Rect']);
-goog.addDependency('graphics/ext/rectangle.js', ['goog.graphics.ext.Rectangle'], ['goog.graphics.ext.StrokeAndFillElement']);
-goog.addDependency('graphics/ext/shape.js', ['goog.graphics.ext.Shape'], ['goog.graphics.ext.Path', 'goog.graphics.ext.StrokeAndFillElement', 'goog.math.Rect']);
-goog.addDependency('graphics/ext/strokeandfillelement.js', ['goog.graphics.ext.StrokeAndFillElement'], ['goog.graphics.ext.Element']);
-goog.addDependency('graphics/fill.js', ['goog.graphics.Fill'], []);
-goog.addDependency('graphics/font.js', ['goog.graphics.Font'], []);
-goog.addDependency('graphics/graphics.js', ['goog.graphics'], ['goog.dom', 'goog.graphics.CanvasGraphics', 'goog.graphics.SvgGraphics', 'goog.graphics.VmlGraphics', 'goog.userAgent']);
-goog.addDependency('graphics/groupelement.js', ['goog.graphics.GroupElement'], ['goog.graphics.Element']);
-goog.addDependency('graphics/imageelement.js', ['goog.graphics.ImageElement'], ['goog.graphics.Element']);
-goog.addDependency('graphics/lineargradient.js', ['goog.graphics.LinearGradient'], ['goog.asserts', 'goog.graphics.Fill']);
-goog.addDependency('graphics/path.js', ['goog.graphics.Path', 'goog.graphics.Path.Segment'], ['goog.array', 'goog.math']);
-goog.addDependency('graphics/pathelement.js', ['goog.graphics.PathElement'], ['goog.graphics.StrokeAndFillElement']);
-goog.addDependency('graphics/paths.js', ['goog.graphics.paths'], ['goog.graphics.Path', 'goog.math.Coordinate']);
-goog.addDependency('graphics/rectelement.js', ['goog.graphics.RectElement'], ['goog.graphics.StrokeAndFillElement']);
-goog.addDependency('graphics/solidfill.js', ['goog.graphics.SolidFill'], ['goog.graphics.Fill']);
-goog.addDependency('graphics/stroke.js', ['goog.graphics.Stroke'], []);
-goog.addDependency('graphics/strokeandfillelement.js', ['goog.graphics.StrokeAndFillElement'], ['goog.graphics.Element']);
-goog.addDependency('graphics/svgelement.js', ['goog.graphics.SvgEllipseElement', 'goog.graphics.SvgGroupElement', 'goog.graphics.SvgImageElement', 'goog.graphics.SvgPathElement', 'goog.graphics.SvgRectElement', 'goog.graphics.SvgTextElement'], ['goog.dom', 'goog.graphics.EllipseElement', 'goog.graphics.GroupElement', 'goog.graphics.ImageElement', 'goog.graphics.PathElement', 'goog.graphics.RectElement', 'goog.graphics.TextElement']);
-goog.addDependency('graphics/svggraphics.js', ['goog.graphics.SvgGraphics'], ['goog.Timer', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.graphics.AbstractGraphics', 'goog.graphics.LinearGradient', 'goog.graphics.Path', 'goog.graphics.SolidFill', 'goog.graphics.Stroke', 'goog.graphics.SvgEllipseElement', 'goog.graphics.SvgGroupElement', 'goog.graphics.SvgImageElement', 'goog.graphics.SvgPathElement', 'goog.graphics.SvgRectElement', 'goog.graphics.SvgTextElement', 'goog.math', 'goog.math.Size', 'goog.style', 'goog.userAgent']);
-goog.addDependency('graphics/textelement.js', ['goog.graphics.TextElement'], ['goog.graphics.StrokeAndFillElement']);
-goog.addDependency('graphics/vmlelement.js', ['goog.graphics.VmlEllipseElement', 'goog.graphics.VmlGroupElement', 'goog.graphics.VmlImageElement', 'goog.graphics.VmlPathElement', 'goog.graphics.VmlRectElement', 'goog.graphics.VmlTextElement'], ['goog.dom', 'goog.graphics.EllipseElement', 'goog.graphics.GroupElement', 'goog.graphics.ImageElement', 'goog.graphics.PathElement', 'goog.graphics.RectElement', 'goog.graphics.TextElement']);
-goog.addDependency('graphics/vmlgraphics.js', ['goog.graphics.VmlGraphics'], ['goog.array', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.graphics.AbstractGraphics', 'goog.graphics.LinearGradient', 'goog.graphics.Path', 'goog.graphics.SolidFill', 'goog.graphics.VmlEllipseElement', 'goog.graphics.VmlGroupElement', 'goog.graphics.VmlImageElement', 'goog.graphics.VmlPathElement', 'goog.graphics.VmlRectElement', 'goog.graphics.VmlTextElement', 'goog.math', 'goog.math.Size', 'goog.string', 'goog.style']);
-goog.addDependency('history/event.js', ['goog.history.Event'], ['goog.events.Event', 'goog.history.EventType']);
-goog.addDependency('history/eventtype.js', ['goog.history.EventType'], []);
-goog.addDependency('history/history.js', ['goog.History', 'goog.History.Event', 'goog.History.EventType'], ['goog.Timer', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.history.Event', 'goog.history.EventType', 'goog.labs.userAgent.device', 'goog.memoize', 'goog.string', 'goog.userAgent']);
-goog.addDependency('history/history_test.js', ['goog.HistoryTest'], ['goog.History', 'goog.dispose', 'goog.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('history/html5history.js', ['goog.history.Html5History', 'goog.history.Html5History.TokenTransformer'], ['goog.asserts', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.history.Event', 'goog.history.EventType']);
-goog.addDependency('history/html5history_test.js', ['goog.history.Html5HistoryTest'], ['goog.history.Html5History', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.mockmatchers']);
-goog.addDependency('html/legacyconversions.js', ['goog.html.legacyconversions'], ['goog.html.SafeHtml', 'goog.html.SafeUrl', 'goog.html.TrustedResourceUrl']);
-goog.addDependency('html/legacyconversions_test.js', ['goog.html.legacyconversionsTest'], ['goog.html.SafeHtml', 'goog.html.SafeUrl', 'goog.html.TrustedResourceUrl', 'goog.html.legacyconversions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('html/safehtml.js', ['goog.html.SafeHtml'], ['goog.array', 'goog.asserts', 'goog.dom.tags', 'goog.html.SafeStyle', 'goog.html.SafeUrl', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.DirectionalString', 'goog.object', 'goog.string', 'goog.string.Const', 'goog.string.TypedString']);
-goog.addDependency('html/safehtml_test.js', ['goog.html.safeHtmlTest'], ['goog.html.SafeHtml', 'goog.html.SafeStyle', 'goog.html.SafeUrl', 'goog.html.testing', 'goog.i18n.bidi.Dir', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('html/safestyle.js', ['goog.html.SafeStyle'], ['goog.array', 'goog.asserts', 'goog.string', 'goog.string.Const', 'goog.string.TypedString']);
-goog.addDependency('html/safestyle_test.js', ['goog.html.safeStyleTest'], ['goog.html.SafeStyle', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('html/safeurl.js', ['goog.html.SafeUrl'], ['goog.asserts', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.DirectionalString', 'goog.string.Const', 'goog.string.TypedString']);
-goog.addDependency('html/safeurl_test.js', ['goog.html.safeUrlTest'], ['goog.html.SafeUrl', 'goog.i18n.bidi.Dir', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('html/testing.js', ['goog.html.testing'], ['goog.html.SafeHtml', 'goog.html.SafeStyle', 'goog.html.SafeUrl', 'goog.html.TrustedResourceUrl']);
-goog.addDependency('html/trustedresourceurl.js', ['goog.html.TrustedResourceUrl'], ['goog.asserts', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.DirectionalString', 'goog.string.Const', 'goog.string.TypedString']);
-goog.addDependency('html/trustedresourceurl_test.js', ['goog.html.trustedResourceUrlTest'], ['goog.html.TrustedResourceUrl', 'goog.i18n.bidi.Dir', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('html/uncheckedconversions.js', ['goog.html.uncheckedconversions'], ['goog.asserts', 'goog.html.SafeHtml', 'goog.html.SafeStyle', 'goog.html.SafeUrl', 'goog.html.TrustedResourceUrl', 'goog.string', 'goog.string.Const']);
-goog.addDependency('html/uncheckedconversions_test.js', ['goog.html.uncheckedconversionsTest'], ['goog.html.SafeHtml', 'goog.html.SafeUrl', 'goog.html.TrustedResourceUrl', 'goog.html.uncheckedconversions', 'goog.i18n.bidi.Dir', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('html/utils.js', ['goog.html.utils'], ['goog.string']);
-goog.addDependency('html/utils_test.js', ['goog.html.UtilsTest'], ['goog.array', 'goog.dom.TagName', 'goog.html.utils', 'goog.object', 'goog.testing.jsunit']);
-goog.addDependency('i18n/bidi.js', ['goog.i18n.bidi', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.DirectionalString', 'goog.i18n.bidi.Format'], []);
-goog.addDependency('i18n/bidi_test.js', ['goog.i18n.bidiTest'], ['goog.i18n.bidi', 'goog.i18n.bidi.Dir', 'goog.testing.jsunit']);
-goog.addDependency('i18n/bidiformatter.js', ['goog.i18n.BidiFormatter'], ['goog.html.SafeHtml', 'goog.html.legacyconversions', 'goog.i18n.bidi', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.Format']);
-goog.addDependency('i18n/bidiformatter_test.js', ['goog.i18n.BidiFormatterTest'], ['goog.html.SafeHtml', 'goog.i18n.BidiFormatter', 'goog.i18n.bidi.Dir', 'goog.i18n.bidi.Format', 'goog.testing.jsunit']);
-goog.addDependency('i18n/charlistdecompressor.js', ['goog.i18n.CharListDecompressor'], ['goog.array', 'goog.i18n.uChar']);
-goog.addDependency('i18n/charlistdecompressor_test.js', ['goog.i18n.CharListDecompressorTest'], ['goog.i18n.CharListDecompressor', 'goog.testing.jsunit']);
-goog.addDependency('i18n/charpickerdata.js', ['goog.i18n.CharPickerData'], []);
-goog.addDependency('i18n/collation.js', ['goog.i18n.collation'], []);
-goog.addDependency('i18n/collation_test.js', ['goog.i18n.collationTest'], ['goog.i18n.collation', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('i18n/compactnumberformatsymbols.js', ['goog.i18n.CompactNumberFormatSymbols', 'goog.i18n.CompactNumberFormatSymbols_af', 'goog.i18n.CompactNumberFormatSymbols_af_ZA', 'goog.i18n.CompactNumberFormatSymbols_am', 'goog.i18n.CompactNumberFormatSymbols_am_ET', 'goog.i18n.CompactNumberFormatSymbols_ar', 'goog.i18n.CompactNumberFormatSymbols_ar_001', 'goog.i18n.CompactNumberFormatSymbols_az', 'goog.i18n.CompactNumberFormatSymbols_az_Cyrl_AZ', 'goog.i18n.CompactNumberFormatSymbols_az_Latn_AZ', 'goog.i18n.CompactNumberFormatSymbols_bg', 'goog.i18n.CompactNumberFormatSymbols_bg_BG', 'goog.i18n.CompactNumberFormatSymbols_bn', 'goog.i18n.CompactNumberFormatSymbols_bn_BD', 'goog.i18n.CompactNumberFormatSymbols_br', 'goog.i18n.CompactNumberFormatSymbols_br_FR', 'goog.i18n.CompactNumberFormatSymbols_ca', 'goog.i18n.CompactNumberFormatSymbols_ca_AD', 'goog.i18n.CompactNumberFormatSymbols_ca_ES', 'goog.i18n.CompactNumberFormatSymbols_ca_ES_VALENCIA', 'goog.i18n.CompactNumberFormatSymbols_ca_FR', 'goog.i18n.CompactNumberFormatSymbols_ca_IT', 'goog.i18n.CompactNumberFormatSymbols_chr', 'goog.i18n.CompactNumberFormatSymbols_chr_US', 'goog.i18n.CompactNumberFormatSymbols_cs', 'goog.i18n.CompactNumberFormatSymbols_cs_CZ', 'goog.i18n.CompactNumberFormatSymbols_cy', 'goog.i18n.CompactNumberFormatSymbols_cy_GB', 'goog.i18n.CompactNumberFormatSymbols_da', 'goog.i18n.CompactNumberFormatSymbols_da_DK', 'goog.i18n.CompactNumberFormatSymbols_da_GL', 'goog.i18n.CompactNumberFormatSymbols_de', 'goog.i18n.CompactNumberFormatSymbols_de_AT', 'goog.i18n.CompactNumberFormatSymbols_de_BE', 'goog.i18n.CompactNumberFormatSymbols_de_CH', 'goog.i18n.CompactNumberFormatSymbols_de_DE', 'goog.i18n.CompactNumberFormatSymbols_de_LU', 'goog.i18n.CompactNumberFormatSymbols_el', 'goog.i18n.CompactNumberFormatSymbols_el_GR', 'goog.i18n.CompactNumberFormatSymbols_en', 'goog.i18n.CompactNumberFormatSymbols_en_001', 'goog.i18n.CompactNumberFormatSymbols_en_AS', 'goog.i18n.CompactNumberFormatSymbols_en_AU', 'goog.i18n.CompactNumberFormatSymbols_en_DG', 'goog.i18n.CompactNumberFormatSymbols_en_FM', 'goog.i18n.CompactNumberFormatSymbols_en_GB', 'goog.i18n.CompactNumberFormatSymbols_en_GU', 'goog.i18n.CompactNumberFormatSymbols_en_IE', 'goog.i18n.CompactNumberFormatSymbols_en_IN', 'goog.i18n.CompactNumberFormatSymbols_en_IO', 'goog.i18n.CompactNumberFormatSymbols_en_MH', 'goog.i18n.CompactNumberFormatSymbols_en_MP', 'goog.i18n.CompactNumberFormatSymbols_en_PR', 'goog.i18n.CompactNumberFormatSymbols_en_PW', 'goog.i18n.CompactNumberFormatSymbols_en_SG', 'goog.i18n.CompactNumberFormatSymbols_en_TC', 'goog.i18n.CompactNumberFormatSymbols_en_UM', 'goog.i18n.CompactNumberFormatSymbols_en_US', 'goog.i18n.CompactNumberFormatSymbols_en_VG', 'goog.i18n.CompactNumberFormatSymbols_en_VI', 'goog.i18n.CompactNumberFormatSymbols_en_ZA', 'goog.i18n.CompactNumberFormatSymbols_en_ZW', 'goog.i18n.CompactNumberFormatSymbols_es', 'goog.i18n.CompactNumberFormatSymbols_es_419', 'goog.i18n.CompactNumberFormatSymbols_es_EA', 'goog.i18n.CompactNumberFormatSymbols_es_ES', 'goog.i18n.CompactNumberFormatSymbols_es_IC', 'goog.i18n.CompactNumberFormatSymbols_et', 'goog.i18n.CompactNumberFormatSymbols_et_EE', 'goog.i18n.CompactNumberFormatSymbols_eu', 'goog.i18n.CompactNumberFormatSymbols_eu_ES', 'goog.i18n.CompactNumberFormatSymbols_fa', 'goog.i18n.CompactNumberFormatSymbols_fa_IR', 'goog.i18n.CompactNumberFormatSymbols_fi', 'goog.i18n.CompactNumberFormatSymbols_fi_FI', 'goog.i18n.CompactNumberFormatSymbols_fil', 'goog.i18n.CompactNumberFormatSymbols_fil_PH', 'goog.i18n.CompactNumberFormatSymbols_fr', 'goog.i18n.CompactNumberFormatSymbols_fr_BL', 'goog.i18n.CompactNumberFormatSymbols_fr_CA', 'goog.i18n.CompactNumberFormatSymbols_fr_FR', 'goog.i18n.CompactNumberFormatSymbols_fr_GF', 'goog.i18n.CompactNumberFormatSymbols_fr_GP', 'goog.i18n.CompactNumberFormatSymbols_fr_MC', 'goog.i18n.CompactNumberFormatSymbols_fr_MF', 'goog.i18n.CompactNumberFormatSymbols_fr_MQ', 'goog.i18n.CompactNumberFormatSymbols_fr_PM', 'goog.i18n.CompactNumberFormatSymbols_fr_RE', 'goog.i18n.CompactNumberFormatSymbols_fr_YT', 'goog.i18n.CompactNumberFormatSymbols_gl', 'goog.i18n.CompactNumberFormatSymbols_gl_ES', 'goog.i18n.CompactNumberFormatSymbols_gsw', 'goog.i18n.CompactNumberFormatSymbols_gsw_CH', 'goog.i18n.CompactNumberFormatSymbols_gsw_LI', 'goog.i18n.CompactNumberFormatSymbols_gu', 'goog.i18n.CompactNumberFormatSymbols_gu_IN', 'goog.i18n.CompactNumberFormatSymbols_haw', 'goog.i18n.CompactNumberFormatSymbols_haw_US', 'goog.i18n.CompactNumberFormatSymbols_he', 'goog.i18n.CompactNumberFormatSymbols_he_IL', 'goog.i18n.CompactNumberFormatSymbols_hi', 'goog.i18n.CompactNumberFormatSymbols_hi_IN', 'goog.i18n.CompactNumberFormatSymbols_hr', 'goog.i18n.CompactNumberFormatSymbols_hr_HR', 'goog.i18n.CompactNumberFormatSymbols_hu', 'goog.i18n.CompactNumberFormatSymbols_hu_HU', 'goog.i18n.CompactNumberFormatSymbols_hy', 'goog.i18n.CompactNumberFormatSymbols_hy_AM', 'goog.i18n.CompactNumberFormatSymbols_id', 'goog.i18n.CompactNumberFormatSymbols_id_ID', 'goog.i18n.CompactNumberFormatSymbols_in', 'goog.i18n.CompactNumberFormatSymbols_is', 'goog.i18n.CompactNumberFormatSymbols_is_IS', 'goog.i18n.CompactNumberFormatSymbols_it', 'goog.i18n.CompactNumberFormatSymbols_it_IT', 'goog.i18n.CompactNumberFormatSymbols_it_SM', 'goog.i18n.CompactNumberFormatSymbols_iw', 'goog.i18n.CompactNumberFormatSymbols_ja', 'goog.i18n.CompactNumberFormatSymbols_ja_JP', 'goog.i18n.CompactNumberFormatSymbols_ka', 'goog.i18n.CompactNumberFormatSymbols_ka_GE', 'goog.i18n.CompactNumberFormatSymbols_kk', 'goog.i18n.CompactNumberFormatSymbols_kk_Cyrl_KZ', 'goog.i18n.CompactNumberFormatSymbols_km', 'goog.i18n.CompactNumberFormatSymbols_km_KH', 'goog.i18n.CompactNumberFormatSymbols_kn', 'goog.i18n.CompactNumberFormatSymbols_kn_IN', 'goog.i18n.CompactNumberFormatSymbols_ko', 'goog.i18n.CompactNumberFormatSymbols_ko_KR', 'goog.i18n.CompactNumberFormatSymbols_ky', 'goog.i18n.CompactNumberFormatSymbols_ky_Cyrl_KG', 'goog.i18n.CompactNumberFormatSymbols_ln', 'goog.i18n.CompactNumberFormatSymbols_ln_CD', 'goog.i18n.CompactNumberFormatSymbols_lo', 'goog.i18n.CompactNumberFormatSymbols_lo_LA', 'goog.i18n.CompactNumberFormatSymbols_lt', 'goog.i18n.CompactNumberFormatSymbols_lt_LT', 'goog.i18n.CompactNumberFormatSymbols_lv', 'goog.i18n.CompactNumberFormatSymbols_lv_LV', 'goog.i18n.CompactNumberFormatSymbols_mk', 'goog.i18n.CompactNumberFormatSymbols_mk_MK', 'goog.i18n.CompactNumberFormatSymbols_ml', 'goog.i18n.CompactNumberFormatSymbols_ml_IN', 'goog.i18n.CompactNumberFormatSymbols_mn', 'goog.i18n.CompactNumberFormatSymbols_mn_Cyrl_MN', 'goog.i18n.CompactNumberFormatSymbols_mr', 'goog.i18n.CompactNumberFormatSymbols_mr_IN', 'goog.i18n.CompactNumberFormatSymbols_ms', 'goog.i18n.CompactNumberFormatSymbols_ms_Latn_MY', 'goog.i18n.CompactNumberFormatSymbols_mt', 'goog.i18n.CompactNumberFormatSymbols_mt_MT', 'goog.i18n.CompactNumberFormatSymbols_my', 'goog.i18n.CompactNumberFormatSymbols_my_MM', 'goog.i18n.CompactNumberFormatSymbols_nb', 'goog.i18n.CompactNumberFormatSymbols_nb_NO', 'goog.i18n.CompactNumberFormatSymbols_nb_SJ', 'goog.i18n.CompactNumberFormatSymbols_ne', 'goog.i18n.CompactNumberFormatSymbols_ne_NP', 'goog.i18n.CompactNumberFormatSymbols_nl', 'goog.i18n.CompactNumberFormatSymbols_nl_NL', 'goog.i18n.CompactNumberFormatSymbols_no', 'goog.i18n.CompactNumberFormatSymbols_no_NO', 'goog.i18n.CompactNumberFormatSymbols_or', 'goog.i18n.CompactNumberFormatSymbols_or_IN', 'goog.i18n.CompactNumberFormatSymbols_pa', 'goog.i18n.CompactNumberFormatSymbols_pa_Guru_IN', 'goog.i18n.CompactNumberFormatSymbols_pl', 'goog.i18n.CompactNumberFormatSymbols_pl_PL', 'goog.i18n.CompactNumberFormatSymbols_pt', 'goog.i18n.CompactNumberFormatSymbols_pt_BR', 'goog.i18n.CompactNumberFormatSymbols_pt_PT', 'goog.i18n.CompactNumberFormatSymbols_ro', 'goog.i18n.CompactNumberFormatSymbols_ro_RO', 'goog.i18n.CompactNumberFormatSymbols_ru', 'goog.i18n.CompactNumberFormatSymbols_ru_RU', 'goog.i18n.CompactNumberFormatSymbols_si', 'goog.i18n.CompactNumberFormatSymbols_si_LK', 'goog.i18n.CompactNumberFormatSymbols_sk', 'goog.i18n.CompactNumberFormatSymbols_sk_SK', 'goog.i18n.CompactNumberFormatSymbols_sl', 'goog.i18n.CompactNumberFormatSymbols_sl_SI', 'goog.i18n.CompactNumberFormatSymbols_sq', 'goog.i18n.CompactNumberFormatSymbols_sq_AL', 'goog.i18n.CompactNumberFormatSymbols_sr', 'goog.i18n.CompactNumberFormatSymbols_sr_Cyrl_RS', 'goog.i18n.CompactNumberFormatSymbols_sv', 'goog.i18n.CompactNumberFormatSymbols_sv_SE', 'goog.i18n.CompactNumberFormatSymbols_sw', 'goog.i18n.CompactNumberFormatSymbols_sw_TZ', 'goog.i18n.CompactNumberFormatSymbols_ta', 'goog.i18n.CompactNumberFormatSymbols_ta_IN', 'goog.i18n.CompactNumberFormatSymbols_te', 'goog.i18n.CompactNumberFormatSymbols_te_IN', 'goog.i18n.CompactNumberFormatSymbols_th', 'goog.i18n.CompactNumberFormatSymbols_th_TH', 'goog.i18n.CompactNumberFormatSymbols_tl', 'goog.i18n.CompactNumberFormatSymbols_tr', 'goog.i18n.CompactNumberFormatSymbols_tr_TR', 'goog.i18n.CompactNumberFormatSymbols_uk', 'goog.i18n.CompactNumberFormatSymbols_uk_UA', 'goog.i18n.CompactNumberFormatSymbols_ur', 'goog.i18n.CompactNumberFormatSymbols_ur_PK', 'goog.i18n.CompactNumberFormatSymbols_uz', 'goog.i18n.CompactNumberFormatSymbols_uz_Latn_UZ', 'goog.i18n.CompactNumberFormatSymbols_vi', 'goog.i18n.CompactNumberFormatSymbols_vi_VN', 'goog.i18n.CompactNumberFormatSymbols_zh', 'goog.i18n.CompactNumberFormatSymbols_zh_CN', 'goog.i18n.CompactNumberFormatSymbols_zh_HK', 'goog.i18n.CompactNumberFormatSymbols_zh_Hans_CN', 'goog.i18n.CompactNumberFormatSymbols_zh_TW', 'goog.i18n.CompactNumberFormatSymbols_zu', 'goog.i18n.CompactNumberFormatSymbols_zu_ZA'], []);
-goog.addDependency('i18n/compactnumberformatsymbols_ext.js', ['goog.i18n.CompactNumberFormatSymbolsExt', 'goog.i18n.CompactNumberFormatSymbols_aa', 'goog.i18n.CompactNumberFormatSymbols_aa_DJ', 'goog.i18n.CompactNumberFormatSymbols_aa_ER', 'goog.i18n.CompactNumberFormatSymbols_aa_ET', 'goog.i18n.CompactNumberFormatSymbols_af_NA', 'goog.i18n.CompactNumberFormatSymbols_agq', 'goog.i18n.CompactNumberFormatSymbols_agq_CM', 'goog.i18n.CompactNumberFormatSymbols_ak', 'goog.i18n.CompactNumberFormatSymbols_ak_GH', 'goog.i18n.CompactNumberFormatSymbols_ar_AE', 'goog.i18n.CompactNumberFormatSymbols_ar_BH', 'goog.i18n.CompactNumberFormatSymbols_ar_DJ', 'goog.i18n.CompactNumberFormatSymbols_ar_DZ', 'goog.i18n.CompactNumberFormatSymbols_ar_EG', 'goog.i18n.CompactNumberFormatSymbols_ar_EH', 'goog.i18n.CompactNumberFormatSymbols_ar_ER', 'goog.i18n.CompactNumberFormatSymbols_ar_IL', 'goog.i18n.CompactNumberFormatSymbols_ar_IQ', 'goog.i18n.CompactNumberFormatSymbols_ar_JO', 'goog.i18n.CompactNumberFormatSymbols_ar_KM', 'goog.i18n.CompactNumberFormatSymbols_ar_KW', 'goog.i18n.CompactNumberFormatSymbols_ar_LB', 'goog.i18n.CompactNumberFormatSymbols_ar_LY', 'goog.i18n.CompactNumberFormatSymbols_ar_MA', 'goog.i18n.CompactNumberFormatSymbols_ar_MR', 'goog.i18n.CompactNumberFormatSymbols_ar_OM', 'goog.i18n.CompactNumberFormatSymbols_ar_PS', 'goog.i18n.CompactNumberFormatSymbols_ar_QA', 'goog.i18n.CompactNumberFormatSymbols_ar_SA', 'goog.i18n.CompactNumberFormatSymbols_ar_SD', 'goog.i18n.CompactNumberFormatSymbols_ar_SO', 'goog.i18n.CompactNumberFormatSymbols_ar_SS', 'goog.i18n.CompactNumberFormatSymbols_ar_SY', 'goog.i18n.CompactNumberFormatSymbols_ar_TD', 'goog.i18n.CompactNumberFormatSymbols_ar_TN', 'goog.i18n.CompactNumberFormatSymbols_ar_YE', 'goog.i18n.CompactNumberFormatSymbols_as', 'goog.i18n.CompactNumberFormatSymbols_as_IN', 'goog.i18n.CompactNumberFormatSymbols_asa', 'goog.i18n.CompactNumberFormatSymbols_asa_TZ', 'goog.i18n.CompactNumberFormatSymbols_ast', 'goog.i18n.CompactNumberFormatSymbols_ast_ES', 'goog.i18n.CompactNumberFormatSymbols_az_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_az_Latn', 'goog.i18n.CompactNumberFormatSymbols_bas', 'goog.i18n.CompactNumberFormatSymbols_bas_CM', 'goog.i18n.CompactNumberFormatSymbols_be', 'goog.i18n.CompactNumberFormatSymbols_be_BY', 'goog.i18n.CompactNumberFormatSymbols_bem', 'goog.i18n.CompactNumberFormatSymbols_bem_ZM', 'goog.i18n.CompactNumberFormatSymbols_bez', 'goog.i18n.CompactNumberFormatSymbols_bez_TZ', 'goog.i18n.CompactNumberFormatSymbols_bm', 'goog.i18n.CompactNumberFormatSymbols_bm_ML', 'goog.i18n.CompactNumberFormatSymbols_bn_IN', 'goog.i18n.CompactNumberFormatSymbols_bo', 'goog.i18n.CompactNumberFormatSymbols_bo_CN', 'goog.i18n.CompactNumberFormatSymbols_bo_IN', 'goog.i18n.CompactNumberFormatSymbols_brx', 'goog.i18n.CompactNumberFormatSymbols_brx_IN', 'goog.i18n.CompactNumberFormatSymbols_bs', 'goog.i18n.CompactNumberFormatSymbols_bs_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_bs_Cyrl_BA', 'goog.i18n.CompactNumberFormatSymbols_bs_Latn', 'goog.i18n.CompactNumberFormatSymbols_bs_Latn_BA', 'goog.i18n.CompactNumberFormatSymbols_byn', 'goog.i18n.CompactNumberFormatSymbols_byn_ER', 'goog.i18n.CompactNumberFormatSymbols_cgg', 'goog.i18n.CompactNumberFormatSymbols_cgg_UG', 'goog.i18n.CompactNumberFormatSymbols_ckb', 'goog.i18n.CompactNumberFormatSymbols_ckb_Arab', 'goog.i18n.CompactNumberFormatSymbols_ckb_Arab_IQ', 'goog.i18n.CompactNumberFormatSymbols_ckb_Arab_IR', 'goog.i18n.CompactNumberFormatSymbols_ckb_IQ', 'goog.i18n.CompactNumberFormatSymbols_ckb_IR', 'goog.i18n.CompactNumberFormatSymbols_ckb_Latn', 'goog.i18n.CompactNumberFormatSymbols_ckb_Latn_IQ', 'goog.i18n.CompactNumberFormatSymbols_dav', 'goog.i18n.CompactNumberFormatSymbols_dav_KE', 'goog.i18n.CompactNumberFormatSymbols_de_LI', 'goog.i18n.CompactNumberFormatSymbols_dje', 'goog.i18n.CompactNumberFormatSymbols_dje_NE', 'goog.i18n.CompactNumberFormatSymbols_dua', 'goog.i18n.CompactNumberFormatSymbols_dua_CM', 'goog.i18n.CompactNumberFormatSymbols_dyo', 'goog.i18n.CompactNumberFormatSymbols_dyo_SN', 'goog.i18n.CompactNumberFormatSymbols_dz', 'goog.i18n.CompactNumberFormatSymbols_dz_BT', 'goog.i18n.CompactNumberFormatSymbols_ebu', 'goog.i18n.CompactNumberFormatSymbols_ebu_KE', 'goog.i18n.CompactNumberFormatSymbols_ee', 'goog.i18n.CompactNumberFormatSymbols_ee_GH', 'goog.i18n.CompactNumberFormatSymbols_ee_TG', 'goog.i18n.CompactNumberFormatSymbols_el_CY', 'goog.i18n.CompactNumberFormatSymbols_en_150', 'goog.i18n.CompactNumberFormatSymbols_en_AG', 'goog.i18n.CompactNumberFormatSymbols_en_AI', 'goog.i18n.CompactNumberFormatSymbols_en_BB', 'goog.i18n.CompactNumberFormatSymbols_en_BE', 'goog.i18n.CompactNumberFormatSymbols_en_BM', 'goog.i18n.CompactNumberFormatSymbols_en_BS', 'goog.i18n.CompactNumberFormatSymbols_en_BW', 'goog.i18n.CompactNumberFormatSymbols_en_BZ', 'goog.i18n.CompactNumberFormatSymbols_en_CA', 'goog.i18n.CompactNumberFormatSymbols_en_CC', 'goog.i18n.CompactNumberFormatSymbols_en_CK', 'goog.i18n.CompactNumberFormatSymbols_en_CM', 'goog.i18n.CompactNumberFormatSymbols_en_CX', 'goog.i18n.CompactNumberFormatSymbols_en_DM', 'goog.i18n.CompactNumberFormatSymbols_en_ER', 'goog.i18n.CompactNumberFormatSymbols_en_FJ', 'goog.i18n.CompactNumberFormatSymbols_en_FK', 'goog.i18n.CompactNumberFormatSymbols_en_GD', 'goog.i18n.CompactNumberFormatSymbols_en_GG', 'goog.i18n.CompactNumberFormatSymbols_en_GH', 'goog.i18n.CompactNumberFormatSymbols_en_GI', 'goog.i18n.CompactNumberFormatSymbols_en_GM', 'goog.i18n.CompactNumberFormatSymbols_en_GY', 'goog.i18n.CompactNumberFormatSymbols_en_HK', 'goog.i18n.CompactNumberFormatSymbols_en_IM', 'goog.i18n.CompactNumberFormatSymbols_en_JE', 'goog.i18n.CompactNumberFormatSymbols_en_JM', 'goog.i18n.CompactNumberFormatSymbols_en_KE', 'goog.i18n.CompactNumberFormatSymbols_en_KI', 'goog.i18n.CompactNumberFormatSymbols_en_KN', 'goog.i18n.CompactNumberFormatSymbols_en_KY', 'goog.i18n.CompactNumberFormatSymbols_en_LC', 'goog.i18n.CompactNumberFormatSymbols_en_LR', 'goog.i18n.CompactNumberFormatSymbols_en_LS', 'goog.i18n.CompactNumberFormatSymbols_en_MG', 'goog.i18n.CompactNumberFormatSymbols_en_MO', 'goog.i18n.CompactNumberFormatSymbols_en_MS', 'goog.i18n.CompactNumberFormatSymbols_en_MT', 'goog.i18n.CompactNumberFormatSymbols_en_MU', 'goog.i18n.CompactNumberFormatSymbols_en_MW', 'goog.i18n.CompactNumberFormatSymbols_en_NA', 'goog.i18n.CompactNumberFormatSymbols_en_NF', 'goog.i18n.CompactNumberFormatSymbols_en_NG', 'goog.i18n.CompactNumberFormatSymbols_en_NR', 'goog.i18n.CompactNumberFormatSymbols_en_NU', 'goog.i18n.CompactNumberFormatSymbols_en_NZ', 'goog.i18n.CompactNumberFormatSymbols_en_PG', 'goog.i18n.CompactNumberFormatSymbols_en_PH', 'goog.i18n.CompactNumberFormatSymbols_en_PK', 'goog.i18n.CompactNumberFormatSymbols_en_PN', 'goog.i18n.CompactNumberFormatSymbols_en_RW', 'goog.i18n.CompactNumberFormatSymbols_en_SB', 'goog.i18n.CompactNumberFormatSymbols_en_SC', 'goog.i18n.CompactNumberFormatSymbols_en_SD', 'goog.i18n.CompactNumberFormatSymbols_en_SH', 'goog.i18n.CompactNumberFormatSymbols_en_SL', 'goog.i18n.CompactNumberFormatSymbols_en_SS', 'goog.i18n.CompactNumberFormatSymbols_en_SX', 'goog.i18n.CompactNumberFormatSymbols_en_SZ', 'goog.i18n.CompactNumberFormatSymbols_en_TK', 'goog.i18n.CompactNumberFormatSymbols_en_TO', 'goog.i18n.CompactNumberFormatSymbols_en_TT', 'goog.i18n.CompactNumberFormatSymbols_en_TV', 'goog.i18n.CompactNumberFormatSymbols_en_TZ', 'goog.i18n.CompactNumberFormatSymbols_en_UG', 'goog.i18n.CompactNumberFormatSymbols_en_VC', 'goog.i18n.CompactNumberFormatSymbols_en_VU', 'goog.i18n.CompactNumberFormatSymbols_en_WS', 'goog.i18n.CompactNumberFormatSymbols_en_ZM', 'goog.i18n.CompactNumberFormatSymbols_eo', 'goog.i18n.CompactNumberFormatSymbols_eo_001', 'goog.i18n.CompactNumberFormatSymbols_es_AR', 'goog.i18n.CompactNumberFormatSymbols_es_BO', 'goog.i18n.CompactNumberFormatSymbols_es_CL', 'goog.i18n.CompactNumberFormatSymbols_es_CO', 'goog.i18n.CompactNumberFormatSymbols_es_CR', 'goog.i18n.CompactNumberFormatSymbols_es_CU', 'goog.i18n.CompactNumberFormatSymbols_es_DO', 'goog.i18n.CompactNumberFormatSymbols_es_EC', 'goog.i18n.CompactNumberFormatSymbols_es_GQ', 'goog.i18n.CompactNumberFormatSymbols_es_GT', 'goog.i18n.CompactNumberFormatSymbols_es_HN', 'goog.i18n.CompactNumberFormatSymbols_es_MX', 'goog.i18n.CompactNumberFormatSymbols_es_NI', 'goog.i18n.CompactNumberFormatSymbols_es_PA', 'goog.i18n.CompactNumberFormatSymbols_es_PE', 'goog.i18n.CompactNumberFormatSymbols_es_PH', 'goog.i18n.CompactNumberFormatSymbols_es_PR', 'goog.i18n.CompactNumberFormatSymbols_es_PY', 'goog.i18n.CompactNumberFormatSymbols_es_SV', 'goog.i18n.CompactNumberFormatSymbols_es_US', 'goog.i18n.CompactNumberFormatSymbols_es_UY', 'goog.i18n.CompactNumberFormatSymbols_es_VE', 'goog.i18n.CompactNumberFormatSymbols_ewo', 'goog.i18n.CompactNumberFormatSymbols_ewo_CM', 'goog.i18n.CompactNumberFormatSymbols_fa_AF', 'goog.i18n.CompactNumberFormatSymbols_ff', 'goog.i18n.CompactNumberFormatSymbols_ff_CM', 'goog.i18n.CompactNumberFormatSymbols_ff_GN', 'goog.i18n.CompactNumberFormatSymbols_ff_MR', 'goog.i18n.CompactNumberFormatSymbols_ff_SN', 'goog.i18n.CompactNumberFormatSymbols_fo', 'goog.i18n.CompactNumberFormatSymbols_fo_FO', 'goog.i18n.CompactNumberFormatSymbols_fr_BE', 'goog.i18n.CompactNumberFormatSymbols_fr_BF', 'goog.i18n.CompactNumberFormatSymbols_fr_BI', 'goog.i18n.CompactNumberFormatSymbols_fr_BJ', 'goog.i18n.CompactNumberFormatSymbols_fr_CD', 'goog.i18n.CompactNumberFormatSymbols_fr_CF', 'goog.i18n.CompactNumberFormatSymbols_fr_CG', 'goog.i18n.CompactNumberFormatSymbols_fr_CH', 'goog.i18n.CompactNumberFormatSymbols_fr_CI', 'goog.i18n.CompactNumberFormatSymbols_fr_CM', 'goog.i18n.CompactNumberFormatSymbols_fr_DJ', 'goog.i18n.CompactNumberFormatSymbols_fr_DZ', 'goog.i18n.CompactNumberFormatSymbols_fr_GA', 'goog.i18n.CompactNumberFormatSymbols_fr_GN', 'goog.i18n.CompactNumberFormatSymbols_fr_GQ', 'goog.i18n.CompactNumberFormatSymbols_fr_HT', 'goog.i18n.CompactNumberFormatSymbols_fr_KM', 'goog.i18n.CompactNumberFormatSymbols_fr_LU', 'goog.i18n.CompactNumberFormatSymbols_fr_MA', 'goog.i18n.CompactNumberFormatSymbols_fr_MG', 'goog.i18n.CompactNumberFormatSymbols_fr_ML', 'goog.i18n.CompactNumberFormatSymbols_fr_MR', 'goog.i18n.CompactNumberFormatSymbols_fr_MU', 'goog.i18n.CompactNumberFormatSymbols_fr_NC', 'goog.i18n.CompactNumberFormatSymbols_fr_NE', 'goog.i18n.CompactNumberFormatSymbols_fr_PF', 'goog.i18n.CompactNumberFormatSymbols_fr_RW', 'goog.i18n.CompactNumberFormatSymbols_fr_SC', 'goog.i18n.CompactNumberFormatSymbols_fr_SN', 'goog.i18n.CompactNumberFormatSymbols_fr_SY', 'goog.i18n.CompactNumberFormatSymbols_fr_TD', 'goog.i18n.CompactNumberFormatSymbols_fr_TG', 'goog.i18n.CompactNumberFormatSymbols_fr_TN', 'goog.i18n.CompactNumberFormatSymbols_fr_VU', 'goog.i18n.CompactNumberFormatSymbols_fr_WF', 'goog.i18n.CompactNumberFormatSymbols_fur', 'goog.i18n.CompactNumberFormatSymbols_fur_IT', 'goog.i18n.CompactNumberFormatSymbols_fy', 'goog.i18n.CompactNumberFormatSymbols_fy_NL', 'goog.i18n.CompactNumberFormatSymbols_ga', 'goog.i18n.CompactNumberFormatSymbols_ga_IE', 'goog.i18n.CompactNumberFormatSymbols_gd', 'goog.i18n.CompactNumberFormatSymbols_gd_GB', 'goog.i18n.CompactNumberFormatSymbols_guz', 'goog.i18n.CompactNumberFormatSymbols_guz_KE', 'goog.i18n.CompactNumberFormatSymbols_gv', 'goog.i18n.CompactNumberFormatSymbols_gv_IM', 'goog.i18n.CompactNumberFormatSymbols_ha', 'goog.i18n.CompactNumberFormatSymbols_ha_Latn', 'goog.i18n.CompactNumberFormatSymbols_ha_Latn_GH', 'goog.i18n.CompactNumberFormatSymbols_ha_Latn_NE', 'goog.i18n.CompactNumberFormatSymbols_ha_Latn_NG', 'goog.i18n.CompactNumberFormatSymbols_hr_BA', 'goog.i18n.CompactNumberFormatSymbols_ia', 'goog.i18n.CompactNumberFormatSymbols_ia_FR', 'goog.i18n.CompactNumberFormatSymbols_ig', 'goog.i18n.CompactNumberFormatSymbols_ig_NG', 'goog.i18n.CompactNumberFormatSymbols_ii', 'goog.i18n.CompactNumberFormatSymbols_ii_CN', 'goog.i18n.CompactNumberFormatSymbols_it_CH', 'goog.i18n.CompactNumberFormatSymbols_jgo', 'goog.i18n.CompactNumberFormatSymbols_jgo_CM', 'goog.i18n.CompactNumberFormatSymbols_jmc', 'goog.i18n.CompactNumberFormatSymbols_jmc_TZ', 'goog.i18n.CompactNumberFormatSymbols_kab', 'goog.i18n.CompactNumberFormatSymbols_kab_DZ', 'goog.i18n.CompactNumberFormatSymbols_kam', 'goog.i18n.CompactNumberFormatSymbols_kam_KE', 'goog.i18n.CompactNumberFormatSymbols_kde', 'goog.i18n.CompactNumberFormatSymbols_kde_TZ', 'goog.i18n.CompactNumberFormatSymbols_kea', 'goog.i18n.CompactNumberFormatSymbols_kea_CV', 'goog.i18n.CompactNumberFormatSymbols_khq', 'goog.i18n.CompactNumberFormatSymbols_khq_ML', 'goog.i18n.CompactNumberFormatSymbols_ki', 'goog.i18n.CompactNumberFormatSymbols_ki_KE', 'goog.i18n.CompactNumberFormatSymbols_kk_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_kkj', 'goog.i18n.CompactNumberFormatSymbols_kkj_CM', 'goog.i18n.CompactNumberFormatSymbols_kl', 'goog.i18n.CompactNumberFormatSymbols_kl_GL', 'goog.i18n.CompactNumberFormatSymbols_kln', 'goog.i18n.CompactNumberFormatSymbols_kln_KE', 'goog.i18n.CompactNumberFormatSymbols_ko_KP', 'goog.i18n.CompactNumberFormatSymbols_kok', 'goog.i18n.CompactNumberFormatSymbols_kok_IN', 'goog.i18n.CompactNumberFormatSymbols_ks', 'goog.i18n.CompactNumberFormatSymbols_ks_Arab', 'goog.i18n.CompactNumberFormatSymbols_ks_Arab_IN', 'goog.i18n.CompactNumberFormatSymbols_ksb', 'goog.i18n.CompactNumberFormatSymbols_ksb_TZ', 'goog.i18n.CompactNumberFormatSymbols_ksf', 'goog.i18n.CompactNumberFormatSymbols_ksf_CM', 'goog.i18n.CompactNumberFormatSymbols_ksh', 'goog.i18n.CompactNumberFormatSymbols_ksh_DE', 'goog.i18n.CompactNumberFormatSymbols_kw', 'goog.i18n.CompactNumberFormatSymbols_kw_GB', 'goog.i18n.CompactNumberFormatSymbols_ky_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_lag', 'goog.i18n.CompactNumberFormatSymbols_lag_TZ', 'goog.i18n.CompactNumberFormatSymbols_lg', 'goog.i18n.CompactNumberFormatSymbols_lg_UG', 'goog.i18n.CompactNumberFormatSymbols_lkt', 'goog.i18n.CompactNumberFormatSymbols_lkt_US', 'goog.i18n.CompactNumberFormatSymbols_ln_AO', 'goog.i18n.CompactNumberFormatSymbols_ln_CF', 'goog.i18n.CompactNumberFormatSymbols_ln_CG', 'goog.i18n.CompactNumberFormatSymbols_lu', 'goog.i18n.CompactNumberFormatSymbols_lu_CD', 'goog.i18n.CompactNumberFormatSymbols_luo', 'goog.i18n.CompactNumberFormatSymbols_luo_KE', 'goog.i18n.CompactNumberFormatSymbols_luy', 'goog.i18n.CompactNumberFormatSymbols_luy_KE', 'goog.i18n.CompactNumberFormatSymbols_mas', 'goog.i18n.CompactNumberFormatSymbols_mas_KE', 'goog.i18n.CompactNumberFormatSymbols_mas_TZ', 'goog.i18n.CompactNumberFormatSymbols_mer', 'goog.i18n.CompactNumberFormatSymbols_mer_KE', 'goog.i18n.CompactNumberFormatSymbols_mfe', 'goog.i18n.CompactNumberFormatSymbols_mfe_MU', 'goog.i18n.CompactNumberFormatSymbols_mg', 'goog.i18n.CompactNumberFormatSymbols_mg_MG', 'goog.i18n.CompactNumberFormatSymbols_mgh', 'goog.i18n.CompactNumberFormatSymbols_mgh_MZ', 'goog.i18n.CompactNumberFormatSymbols_mgo', 'goog.i18n.CompactNumberFormatSymbols_mgo_CM', 'goog.i18n.CompactNumberFormatSymbols_mn_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_ms_Latn', 'goog.i18n.CompactNumberFormatSymbols_ms_Latn_BN', 'goog.i18n.CompactNumberFormatSymbols_ms_Latn_SG', 'goog.i18n.CompactNumberFormatSymbols_mua', 'goog.i18n.CompactNumberFormatSymbols_mua_CM', 'goog.i18n.CompactNumberFormatSymbols_naq', 'goog.i18n.CompactNumberFormatSymbols_naq_NA', 'goog.i18n.CompactNumberFormatSymbols_nd', 'goog.i18n.CompactNumberFormatSymbols_nd_ZW', 'goog.i18n.CompactNumberFormatSymbols_ne_IN', 'goog.i18n.CompactNumberFormatSymbols_nl_AW', 'goog.i18n.CompactNumberFormatSymbols_nl_BE', 'goog.i18n.CompactNumberFormatSymbols_nl_BQ', 'goog.i18n.CompactNumberFormatSymbols_nl_CW', 'goog.i18n.CompactNumberFormatSymbols_nl_SR', 'goog.i18n.CompactNumberFormatSymbols_nl_SX', 'goog.i18n.CompactNumberFormatSymbols_nmg', 'goog.i18n.CompactNumberFormatSymbols_nmg_CM', 'goog.i18n.CompactNumberFormatSymbols_nn', 'goog.i18n.CompactNumberFormatSymbols_nn_NO', 'goog.i18n.CompactNumberFormatSymbols_nnh', 'goog.i18n.CompactNumberFormatSymbols_nnh_CM', 'goog.i18n.CompactNumberFormatSymbols_nr', 'goog.i18n.CompactNumberFormatSymbols_nr_ZA', 'goog.i18n.CompactNumberFormatSymbols_nso', 'goog.i18n.CompactNumberFormatSymbols_nso_ZA', 'goog.i18n.CompactNumberFormatSymbols_nus', 'goog.i18n.CompactNumberFormatSymbols_nus_SD', 'goog.i18n.CompactNumberFormatSymbols_nyn', 'goog.i18n.CompactNumberFormatSymbols_nyn_UG', 'goog.i18n.CompactNumberFormatSymbols_om', 'goog.i18n.CompactNumberFormatSymbols_om_ET', 'goog.i18n.CompactNumberFormatSymbols_om_KE', 'goog.i18n.CompactNumberFormatSymbols_os', 'goog.i18n.CompactNumberFormatSymbols_os_GE', 'goog.i18n.CompactNumberFormatSymbols_os_RU', 'goog.i18n.CompactNumberFormatSymbols_pa_Arab', 'goog.i18n.CompactNumberFormatSymbols_pa_Arab_PK', 'goog.i18n.CompactNumberFormatSymbols_pa_Guru', 'goog.i18n.CompactNumberFormatSymbols_ps', 'goog.i18n.CompactNumberFormatSymbols_ps_AF', 'goog.i18n.CompactNumberFormatSymbols_pt_AO', 'goog.i18n.CompactNumberFormatSymbols_pt_CV', 'goog.i18n.CompactNumberFormatSymbols_pt_GW', 'goog.i18n.CompactNumberFormatSymbols_pt_MO', 'goog.i18n.CompactNumberFormatSymbols_pt_MZ', 'goog.i18n.CompactNumberFormatSymbols_pt_ST', 'goog.i18n.CompactNumberFormatSymbols_pt_TL', 'goog.i18n.CompactNumberFormatSymbols_rm', 'goog.i18n.CompactNumberFormatSymbols_rm_CH', 'goog.i18n.CompactNumberFormatSymbols_rn', 'goog.i18n.CompactNumberFormatSymbols_rn_BI', 'goog.i18n.CompactNumberFormatSymbols_ro_MD', 'goog.i18n.CompactNumberFormatSymbols_rof', 'goog.i18n.CompactNumberFormatSymbols_rof_TZ', 'goog.i18n.CompactNumberFormatSymbols_ru_BY', 'goog.i18n.CompactNumberFormatSymbols_ru_KG', 'goog.i18n.CompactNumberFormatSymbols_ru_KZ', 'goog.i18n.CompactNumberFormatSymbols_ru_MD', 'goog.i18n.CompactNumberFormatSymbols_ru_UA', 'goog.i18n.CompactNumberFormatSymbols_rw', 'goog.i18n.CompactNumberFormatSymbols_rw_RW', 'goog.i18n.CompactNumberFormatSymbols_rwk', 'goog.i18n.CompactNumberFormatSymbols_rwk_TZ', 'goog.i18n.CompactNumberFormatSymbols_sah', 'goog.i18n.CompactNumberFormatSymbols_sah_RU', 'goog.i18n.CompactNumberFormatSymbols_saq', 'goog.i18n.CompactNumberFormatSymbols_saq_KE', 'goog.i18n.CompactNumberFormatSymbols_sbp', 'goog.i18n.CompactNumberFormatSymbols_sbp_TZ', 'goog.i18n.CompactNumberFormatSymbols_se', 'goog.i18n.CompactNumberFormatSymbols_se_FI', 'goog.i18n.CompactNumberFormatSymbols_se_NO', 'goog.i18n.CompactNumberFormatSymbols_seh', 'goog.i18n.CompactNumberFormatSymbols_seh_MZ', 'goog.i18n.CompactNumberFormatSymbols_ses', 'goog.i18n.CompactNumberFormatSymbols_ses_ML', 'goog.i18n.CompactNumberFormatSymbols_sg', 'goog.i18n.CompactNumberFormatSymbols_sg_CF', 'goog.i18n.CompactNumberFormatSymbols_shi', 'goog.i18n.CompactNumberFormatSymbols_shi_Latn', 'goog.i18n.CompactNumberFormatSymbols_shi_Latn_MA', 'goog.i18n.CompactNumberFormatSymbols_shi_Tfng', 'goog.i18n.CompactNumberFormatSymbols_shi_Tfng_MA', 'goog.i18n.CompactNumberFormatSymbols_sn', 'goog.i18n.CompactNumberFormatSymbols_sn_ZW', 'goog.i18n.CompactNumberFormatSymbols_so', 'goog.i18n.CompactNumberFormatSymbols_so_DJ', 'goog.i18n.CompactNumberFormatSymbols_so_ET', 'goog.i18n.CompactNumberFormatSymbols_so_KE', 'goog.i18n.CompactNumberFormatSymbols_so_SO', 'goog.i18n.CompactNumberFormatSymbols_sq_MK', 'goog.i18n.CompactNumberFormatSymbols_sq_XK', 'goog.i18n.CompactNumberFormatSymbols_sr_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_sr_Cyrl_BA', 'goog.i18n.CompactNumberFormatSymbols_sr_Cyrl_ME', 'goog.i18n.CompactNumberFormatSymbols_sr_Cyrl_XK', 'goog.i18n.CompactNumberFormatSymbols_sr_Latn', 'goog.i18n.CompactNumberFormatSymbols_sr_Latn_BA', 'goog.i18n.CompactNumberFormatSymbols_sr_Latn_ME', 'goog.i18n.CompactNumberFormatSymbols_sr_Latn_RS', 'goog.i18n.CompactNumberFormatSymbols_sr_Latn_XK', 'goog.i18n.CompactNumberFormatSymbols_ss', 'goog.i18n.CompactNumberFormatSymbols_ss_SZ', 'goog.i18n.CompactNumberFormatSymbols_ss_ZA', 'goog.i18n.CompactNumberFormatSymbols_ssy', 'goog.i18n.CompactNumberFormatSymbols_ssy_ER', 'goog.i18n.CompactNumberFormatSymbols_st', 'goog.i18n.CompactNumberFormatSymbols_st_LS', 'goog.i18n.CompactNumberFormatSymbols_st_ZA', 'goog.i18n.CompactNumberFormatSymbols_sv_AX', 'goog.i18n.CompactNumberFormatSymbols_sv_FI', 'goog.i18n.CompactNumberFormatSymbols_sw_KE', 'goog.i18n.CompactNumberFormatSymbols_sw_UG', 'goog.i18n.CompactNumberFormatSymbols_swc', 'goog.i18n.CompactNumberFormatSymbols_swc_CD', 'goog.i18n.CompactNumberFormatSymbols_ta_LK', 'goog.i18n.CompactNumberFormatSymbols_ta_MY', 'goog.i18n.CompactNumberFormatSymbols_ta_SG', 'goog.i18n.CompactNumberFormatSymbols_teo', 'goog.i18n.CompactNumberFormatSymbols_teo_KE', 'goog.i18n.CompactNumberFormatSymbols_teo_UG', 'goog.i18n.CompactNumberFormatSymbols_tg', 'goog.i18n.CompactNumberFormatSymbols_tg_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_tg_Cyrl_TJ', 'goog.i18n.CompactNumberFormatSymbols_ti', 'goog.i18n.CompactNumberFormatSymbols_ti_ER', 'goog.i18n.CompactNumberFormatSymbols_ti_ET', 'goog.i18n.CompactNumberFormatSymbols_tig', 'goog.i18n.CompactNumberFormatSymbols_tig_ER', 'goog.i18n.CompactNumberFormatSymbols_tn', 'goog.i18n.CompactNumberFormatSymbols_tn_BW', 'goog.i18n.CompactNumberFormatSymbols_tn_ZA', 'goog.i18n.CompactNumberFormatSymbols_to', 'goog.i18n.CompactNumberFormatSymbols_to_TO', 'goog.i18n.CompactNumberFormatSymbols_tr_CY', 'goog.i18n.CompactNumberFormatSymbols_ts', 'goog.i18n.CompactNumberFormatSymbols_ts_ZA', 'goog.i18n.CompactNumberFormatSymbols_twq', 'goog.i18n.CompactNumberFormatSymbols_twq_NE', 'goog.i18n.CompactNumberFormatSymbols_tzm', 'goog.i18n.CompactNumberFormatSymbols_tzm_Latn', 'goog.i18n.CompactNumberFormatSymbols_tzm_Latn_MA', 'goog.i18n.CompactNumberFormatSymbols_ug', 'goog.i18n.CompactNumberFormatSymbols_ug_Arab', 'goog.i18n.CompactNumberFormatSymbols_ug_Arab_CN', 'goog.i18n.CompactNumberFormatSymbols_ur_IN', 'goog.i18n.CompactNumberFormatSymbols_uz_Arab', 'goog.i18n.CompactNumberFormatSymbols_uz_Arab_AF', 'goog.i18n.CompactNumberFormatSymbols_uz_Cyrl', 'goog.i18n.CompactNumberFormatSymbols_uz_Cyrl_UZ', 'goog.i18n.CompactNumberFormatSymbols_uz_Latn', 'goog.i18n.CompactNumberFormatSymbols_vai', 'goog.i18n.CompactNumberFormatSymbols_vai_Latn', 'goog.i18n.CompactNumberFormatSymbols_vai_Latn_LR', 'goog.i18n.CompactNumberFormatSymbols_vai_Vaii', 'goog.i18n.CompactNumberFormatSymbols_vai_Vaii_LR', 'goog.i18n.CompactNumberFormatSymbols_ve', 'goog.i18n.CompactNumberFormatSymbols_ve_ZA', 'goog.i18n.CompactNumberFormatSymbols_vo', 'goog.i18n.CompactNumberFormatSymbols_vo_001', 'goog.i18n.CompactNumberFormatSymbols_vun', 'goog.i18n.CompactNumberFormatSymbols_vun_TZ', 'goog.i18n.CompactNumberFormatSymbols_wae', 'goog.i18n.CompactNumberFormatSymbols_wae_CH', 'goog.i18n.CompactNumberFormatSymbols_wal', 'goog.i18n.CompactNumberFormatSymbols_wal_ET', 'goog.i18n.CompactNumberFormatSymbols_xh', 'goog.i18n.CompactNumberFormatSymbols_xh_ZA', 'goog.i18n.CompactNumberFormatSymbols_xog', 'goog.i18n.CompactNumberFormatSymbols_xog_UG', 'goog.i18n.CompactNumberFormatSymbols_yav', 'goog.i18n.CompactNumberFormatSymbols_yav_CM', 'goog.i18n.CompactNumberFormatSymbols_yo', 'goog.i18n.CompactNumberFormatSymbols_yo_BJ', 'goog.i18n.CompactNumberFormatSymbols_yo_NG', 'goog.i18n.CompactNumberFormatSymbols_zgh', 'goog.i18n.CompactNumberFormatSymbols_zgh_MA', 'goog.i18n.CompactNumberFormatSymbols_zh_Hans', 'goog.i18n.CompactNumberFormatSymbols_zh_Hans_HK', 'goog.i18n.CompactNumberFormatSymbols_zh_Hans_MO', 'goog.i18n.CompactNumberFormatSymbols_zh_Hans_SG', 'goog.i18n.CompactNumberFormatSymbols_zh_Hant', 'goog.i18n.CompactNumberFormatSymbols_zh_Hant_HK', 'goog.i18n.CompactNumberFormatSymbols_zh_Hant_MO', 'goog.i18n.CompactNumberFormatSymbols_zh_Hant_TW'], []);
-goog.addDependency('i18n/currency.js', ['goog.i18n.currency', 'goog.i18n.currency.CurrencyInfo', 'goog.i18n.currency.CurrencyInfoTier2'], []);
-goog.addDependency('i18n/currency_test.js', ['goog.i18n.currencyTest'], ['goog.i18n.NumberFormat', 'goog.i18n.currency', 'goog.i18n.currency.CurrencyInfo', 'goog.object', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('i18n/currencycodemap.js', ['goog.i18n.currencyCodeMap', 'goog.i18n.currencyCodeMapTier2'], []);
-goog.addDependency('i18n/datetimeformat.js', ['goog.i18n.DateTimeFormat', 'goog.i18n.DateTimeFormat.Format'], ['goog.asserts', 'goog.date', 'goog.i18n.DateTimeSymbols', 'goog.i18n.TimeZone', 'goog.string']);
-goog.addDependency('i18n/datetimeformat_test.js', ['goog.i18n.DateTimeFormatTest'], ['goog.date.Date', 'goog.date.DateTime', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimePatterns', 'goog.i18n.DateTimePatterns_de', 'goog.i18n.DateTimePatterns_en', 'goog.i18n.DateTimePatterns_fa', 'goog.i18n.DateTimePatterns_fr', 'goog.i18n.DateTimePatterns_ja', 'goog.i18n.DateTimePatterns_sv', 'goog.i18n.DateTimeSymbols', 'goog.i18n.DateTimeSymbols_ar_AE', 'goog.i18n.DateTimeSymbols_ar_SA', 'goog.i18n.DateTimeSymbols_bn_BD', 'goog.i18n.DateTimeSymbols_de', 'goog.i18n.DateTimeSymbols_en', 'goog.i18n.DateTimeSymbols_en_GB', 'goog.i18n.DateTimeSymbols_en_IE', 'goog.i18n.DateTimeSymbols_en_IN', 'goog.i18n.DateTimeSymbols_en_US', 'goog.i18n.DateTimeSymbols_fa', 'goog.i18n.DateTimeSymbols_fr', 'goog.i18n.DateTimeSymbols_fr_DJ', 'goog.i18n.DateTimeSymbols_he_IL', 'goog.i18n.DateTimeSymbols_ja', 'goog.i18n.DateTimeSymbols_ro_RO', 'goog.i18n.DateTimeSymbols_sv', 'goog.i18n.TimeZone', 'goog.testing.jsunit']);
-goog.addDependency('i18n/datetimeparse.js', ['goog.i18n.DateTimeParse'], ['goog.date', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimeSymbols']);
-goog.addDependency('i18n/datetimeparse_test.js', ['goog.i18n.DateTimeParseTest'], ['goog.date.Date', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimeParse', 'goog.i18n.DateTimeSymbols', 'goog.i18n.DateTimeSymbols_en', 'goog.i18n.DateTimeSymbols_fa', 'goog.i18n.DateTimeSymbols_fr', 'goog.i18n.DateTimeSymbols_pl', 'goog.i18n.DateTimeSymbols_zh', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('i18n/datetimepatterns.js', ['goog.i18n.DateTimePatterns', 'goog.i18n.DateTimePatterns_af', 'goog.i18n.DateTimePatterns_am', 'goog.i18n.DateTimePatterns_ar', 'goog.i18n.DateTimePatterns_az', 'goog.i18n.DateTimePatterns_bg', 'goog.i18n.DateTimePatterns_bn', 'goog.i18n.DateTimePatterns_br', 'goog.i18n.DateTimePatterns_ca', 'goog.i18n.DateTimePatterns_chr', 'goog.i18n.DateTimePatterns_cs', 'goog.i18n.DateTimePatterns_cy', 'goog.i18n.DateTimePatterns_da', 'goog.i18n.DateTimePatterns_de', 'goog.i18n.DateTimePatterns_de_AT', 'goog.i18n.DateTimePatterns_de_CH', 'goog.i18n.DateTimePatterns_el', 'goog.i18n.DateTimePatterns_en', 'goog.i18n.DateTimePatterns_en_AU', 'goog.i18n.DateTimePatterns_en_GB', 'goog.i18n.DateTimePatterns_en_IE', 'goog.i18n.DateTimePatterns_en_IN', 'goog.i18n.DateTimePatterns_en_SG', 'goog.i18n.DateTimePatterns_en_US', 'goog.i18n.DateTimePatterns_en_ZA', 'goog.i18n.DateTimePatterns_es', 'goog.i18n.DateTimePatterns_es_419', 'goog.i18n.DateTimePatterns_es_ES', 'goog.i18n.DateTimePatterns_et', 'goog.i18n.DateTimePatterns_eu', 'goog.i18n.DateTimePatterns_fa', 'goog.i18n.DateTimePatterns_fi', 'goog.i18n.DateTimePatterns_fil', 'goog.i18n.DateTimePatterns_fr', 'goog.i18n.DateTimePatterns_fr_CA', 'goog.i18n.DateTimePatterns_gl', 'goog.i18n.DateTimePatterns_gsw', 'goog.i18n.DateTimePatterns_gu', 'goog.i18n.DateTimePatterns_haw', 'goog.i18n.DateTimePatterns_he', 'goog.i18n.DateTimePatterns_hi', 'goog.i18n.DateTimePatterns_hr', 'goog.i18n.DateTimePatterns_hu', 'goog.i18n.DateTimePatterns_hy', 'goog.i18n.DateTimePatterns_id', 'goog.i18n.DateTimePatterns_in', 'goog.i18n.DateTimePatterns_is', 'goog.i18n.DateTimePatterns_it', 'goog.i18n.DateTimePatterns_iw', 'goog.i18n.DateTimePatterns_ja', 'goog.i18n.DateTimePatterns_ka', 'goog.i18n.DateTimePatterns_kk', 'goog.i18n.DateTimePatterns_km', 'goog.i18n.DateTimePatterns_kn', 'goog.i18n.DateTimePatterns_ko', 'goog.i18n.DateTimePatterns_ky', 'goog.i18n.DateTimePatterns_ln', 'goog.i18n.DateTimePatterns_lo', 'goog.i18n.DateTimePatterns_lt', 'goog.i18n.DateTimePatterns_lv', 'goog.i18n.DateTimePatterns_mk', 'goog.i18n.DateTimePatterns_ml', 'goog.i18n.DateTimePatterns_mn', 'goog.i18n.DateTimePatterns_mo', 'goog.i18n.DateTimePatterns_mr', 'goog.i18n.DateTimePatterns_ms', 'goog.i18n.DateTimePatterns_mt', 'goog.i18n.DateTimePatterns_my', 'goog.i18n.DateTimePatterns_nb', 'goog.i18n.DateTimePatterns_ne', 'goog.i18n.DateTimePatterns_nl', 'goog.i18n.DateTimePatterns_no', 'goog.i18n.DateTimePatterns_no_NO', 'goog.i18n.DateTimePatterns_or', 'goog.i18n.DateTimePatterns_pa', 'goog.i18n.DateTimePatterns_pl', 'goog.i18n.DateTimePatterns_pt', 'goog.i18n.DateTimePatterns_pt_BR', 'goog.i18n.DateTimePatterns_pt_PT', 'goog.i18n.DateTimePatterns_ro', 'goog.i18n.DateTimePatterns_ru', 'goog.i18n.DateTimePatterns_sh', 'goog.i18n.DateTimePatterns_si', 'goog.i18n.DateTimePatterns_sk', 'goog.i18n.DateTimePatterns_sl', 'goog.i18n.DateTimePatterns_sq', 'goog.i18n.DateTimePatterns_sr', 'goog.i18n.DateTimePatterns_sv', 'goog.i18n.DateTimePatterns_sw', 'goog.i18n.DateTimePatterns_ta', 'goog.i18n.DateTimePatterns_te', 'goog.i18n.DateTimePatterns_th', 'goog.i18n.DateTimePatterns_tl', 'goog.i18n.DateTimePatterns_tr', 'goog.i18n.DateTimePatterns_uk', 'goog.i18n.DateTimePatterns_ur', 'goog.i18n.DateTimePatterns_uz', 'goog.i18n.DateTimePatterns_vi', 'goog.i18n.DateTimePatterns_zh', 'goog.i18n.DateTimePatterns_zh_CN', 'goog.i18n.DateTimePatterns_zh_HK', 'goog.i18n.DateTimePatterns_zh_TW', 'goog.i18n.DateTimePatterns_zu'], []);
-goog.addDependency('i18n/datetimepatternsext.js', ['goog.i18n.DateTimePatternsExt', 'goog.i18n.DateTimePatterns_af_NA', 'goog.i18n.DateTimePatterns_af_ZA', 'goog.i18n.DateTimePatterns_agq', 'goog.i18n.DateTimePatterns_agq_CM', 'goog.i18n.DateTimePatterns_ak', 'goog.i18n.DateTimePatterns_ak_GH', 'goog.i18n.DateTimePatterns_am_ET', 'goog.i18n.DateTimePatterns_ar_001', 'goog.i18n.DateTimePatterns_ar_AE', 'goog.i18n.DateTimePatterns_ar_BH', 'goog.i18n.DateTimePatterns_ar_DJ', 'goog.i18n.DateTimePatterns_ar_DZ', 'goog.i18n.DateTimePatterns_ar_EG', 'goog.i18n.DateTimePatterns_ar_EH', 'goog.i18n.DateTimePatterns_ar_ER', 'goog.i18n.DateTimePatterns_ar_IL', 'goog.i18n.DateTimePatterns_ar_IQ', 'goog.i18n.DateTimePatterns_ar_JO', 'goog.i18n.DateTimePatterns_ar_KM', 'goog.i18n.DateTimePatterns_ar_KW', 'goog.i18n.DateTimePatterns_ar_LB', 'goog.i18n.DateTimePatterns_ar_LY', 'goog.i18n.DateTimePatterns_ar_MA', 'goog.i18n.DateTimePatterns_ar_MR', 'goog.i18n.DateTimePatterns_ar_OM', 'goog.i18n.DateTimePatterns_ar_PS', 'goog.i18n.DateTimePatterns_ar_QA', 'goog.i18n.DateTimePatterns_ar_SA', 'goog.i18n.DateTimePatterns_ar_SD', 'goog.i18n.DateTimePatterns_ar_SO', 'goog.i18n.DateTimePatterns_ar_SS', 'goog.i18n.DateTimePatterns_ar_SY', 'goog.i18n.DateTimePatterns_ar_TD', 'goog.i18n.DateTimePatterns_ar_TN', 'goog.i18n.DateTimePatterns_ar_YE', 'goog.i18n.DateTimePatterns_as', 'goog.i18n.DateTimePatterns_as_IN', 'goog.i18n.DateTimePatterns_asa', 'goog.i18n.DateTimePatterns_asa_TZ', 'goog.i18n.DateTimePatterns_az_Cyrl', 'goog.i18n.DateTimePatterns_az_Cyrl_AZ', 'goog.i18n.DateTimePatterns_az_Latn', 'goog.i18n.DateTimePatterns_az_Latn_AZ', 'goog.i18n.DateTimePatterns_bas', 'goog.i18n.DateTimePatterns_bas_CM', 'goog.i18n.DateTimePatterns_be', 'goog.i18n.DateTimePatterns_be_BY', 'goog.i18n.DateTimePatterns_bem', 'goog.i18n.DateTimePatterns_bem_ZM', 'goog.i18n.DateTimePatterns_bez', 'goog.i18n.DateTimePatterns_bez_TZ', 'goog.i18n.DateTimePatterns_bg_BG', 'goog.i18n.DateTimePatterns_bm', 'goog.i18n.DateTimePatterns_bm_ML', 'goog.i18n.DateTimePatterns_bn_BD', 'goog.i18n.DateTimePatterns_bn_IN', 'goog.i18n.DateTimePatterns_bo', 'goog.i18n.DateTimePatterns_bo_CN', 'goog.i18n.DateTimePatterns_bo_IN', 'goog.i18n.DateTimePatterns_br_FR', 'goog.i18n.DateTimePatterns_brx', 'goog.i18n.DateTimePatterns_brx_IN', 'goog.i18n.DateTimePatterns_bs', 'goog.i18n.DateTimePatterns_bs_Cyrl', 'goog.i18n.DateTimePatterns_bs_Cyrl_BA', 'goog.i18n.DateTimePatterns_bs_Latn', 'goog.i18n.DateTimePatterns_bs_Latn_BA', 'goog.i18n.DateTimePatterns_ca_AD', 'goog.i18n.DateTimePatterns_ca_ES', 'goog.i18n.DateTimePatterns_ca_FR', 'goog.i18n.DateTimePatterns_ca_IT', 'goog.i18n.DateTimePatterns_cgg', 'goog.i18n.DateTimePatterns_cgg_UG', 'goog.i18n.DateTimePatterns_chr_US', 'goog.i18n.DateTimePatterns_cs_CZ', 'goog.i18n.DateTimePatterns_cy_GB', 'goog.i18n.DateTimePatterns_da_DK', 'goog.i18n.DateTimePatterns_da_GL', 'goog.i18n.DateTimePatterns_dav', 'goog.i18n.DateTimePatterns_dav_KE', 'goog.i18n.DateTimePatterns_de_BE', 'goog.i18n.DateTimePatterns_de_DE', 'goog.i18n.DateTimePatterns_de_LI', 'goog.i18n.DateTimePatterns_de_LU', 'goog.i18n.DateTimePatterns_dje', 'goog.i18n.DateTimePatterns_dje_NE', 'goog.i18n.DateTimePatterns_dua', 'goog.i18n.DateTimePatterns_dua_CM', 'goog.i18n.DateTimePatterns_dyo', 'goog.i18n.DateTimePatterns_dyo_SN', 'goog.i18n.DateTimePatterns_dz', 'goog.i18n.DateTimePatterns_dz_BT', 'goog.i18n.DateTimePatterns_ebu', 'goog.i18n.DateTimePatterns_ebu_KE', 'goog.i18n.DateTimePatterns_ee', 'goog.i18n.DateTimePatterns_ee_GH', 'goog.i18n.DateTimePatterns_ee_TG', 'goog.i18n.DateTimePatterns_el_CY', 'goog.i18n.DateTimePatterns_el_GR', 'goog.i18n.DateTimePatterns_en_001', 'goog.i18n.DateTimePatterns_en_150', 'goog.i18n.DateTimePatterns_en_AG', 'goog.i18n.DateTimePatterns_en_AI', 'goog.i18n.DateTimePatterns_en_AS', 'goog.i18n.DateTimePatterns_en_BB', 'goog.i18n.DateTimePatterns_en_BE', 'goog.i18n.DateTimePatterns_en_BM', 'goog.i18n.DateTimePatterns_en_BS', 'goog.i18n.DateTimePatterns_en_BW', 'goog.i18n.DateTimePatterns_en_BZ', 'goog.i18n.DateTimePatterns_en_CA', 'goog.i18n.DateTimePatterns_en_CC', 'goog.i18n.DateTimePatterns_en_CK', 'goog.i18n.DateTimePatterns_en_CM', 'goog.i18n.DateTimePatterns_en_CX', 'goog.i18n.DateTimePatterns_en_DG', 'goog.i18n.DateTimePatterns_en_DM', 'goog.i18n.DateTimePatterns_en_ER', 'goog.i18n.DateTimePatterns_en_FJ', 'goog.i18n.DateTimePatterns_en_FK', 'goog.i18n.DateTimePatterns_en_FM', 'goog.i18n.DateTimePatterns_en_GD', 'goog.i18n.DateTimePatterns_en_GG', 'goog.i18n.DateTimePatterns_en_GH', 'goog.i18n.DateTimePatterns_en_GI', 'goog.i18n.DateTimePatterns_en_GM', 'goog.i18n.DateTimePatterns_en_GU', 'goog.i18n.DateTimePatterns_en_GY', 'goog.i18n.DateTimePatterns_en_HK', 'goog.i18n.DateTimePatterns_en_IM', 'goog.i18n.DateTimePatterns_en_IO', 'goog.i18n.DateTimePatterns_en_JE', 'goog.i18n.DateTimePatterns_en_JM', 'goog.i18n.DateTimePatterns_en_KE', 'goog.i18n.DateTimePatterns_en_KI', 'goog.i18n.DateTimePatterns_en_KN', 'goog.i18n.DateTimePatterns_en_KY', 'goog.i18n.DateTimePatterns_en_LC', 'goog.i18n.DateTimePatterns_en_LR', 'goog.i18n.DateTimePatterns_en_LS', 'goog.i18n.DateTimePatterns_en_MG', 'goog.i18n.DateTimePatterns_en_MH', 'goog.i18n.DateTimePatterns_en_MO', 'goog.i18n.DateTimePatterns_en_MP', 'goog.i18n.DateTimePatterns_en_MS', 'goog.i18n.DateTimePatterns_en_MT', 'goog.i18n.DateTimePatterns_en_MU', 'goog.i18n.DateTimePatterns_en_MW', 'goog.i18n.DateTimePatterns_en_NA', 'goog.i18n.DateTimePatterns_en_NF', 'goog.i18n.DateTimePatterns_en_NG', 'goog.i18n.DateTimePatterns_en_NR', 'goog.i18n.DateTimePatterns_en_NU', 'goog.i18n.DateTimePatterns_en_NZ', 'goog.i18n.DateTimePatterns_en_PG', 'goog.i18n.DateTimePatterns_en_PH', 'goog.i18n.DateTimePatterns_en_PK', 'goog.i18n.DateTimePatterns_en_PN', 'goog.i18n.DateTimePatterns_en_PR', 'goog.i18n.DateTimePatterns_en_PW', 'goog.i18n.DateTimePatterns_en_RW', 'goog.i18n.DateTimePatterns_en_SB', 'goog.i18n.DateTimePatterns_en_SC', 'goog.i18n.DateTimePatterns_en_SD', 'goog.i18n.DateTimePatterns_en_SH', 'goog.i18n.DateTimePatterns_en_SL', 'goog.i18n.DateTimePatterns_en_SS', 'goog.i18n.DateTimePatterns_en_SX', 'goog.i18n.DateTimePatterns_en_SZ', 'goog.i18n.DateTimePatterns_en_TC', 'goog.i18n.DateTimePatterns_en_TK', 'goog.i18n.DateTimePatterns_en_TO', 'goog.i18n.DateTimePatterns_en_TT', 'goog.i18n.DateTimePatterns_en_TV', 'goog.i18n.DateTimePatterns_en_TZ', 'goog.i18n.DateTimePatterns_en_UG', 'goog.i18n.DateTimePatterns_en_UM', 'goog.i18n.DateTimePatterns_en_US_POSIX', 'goog.i18n.DateTimePatterns_en_VC', 'goog.i18n.DateTimePatterns_en_VG', 'goog.i18n.DateTimePatterns_en_VI', 'goog.i18n.DateTimePatterns_en_VU', 'goog.i18n.DateTimePatterns_en_WS', 'goog.i18n.DateTimePatterns_en_ZM', 'goog.i18n.DateTimePatterns_en_ZW', 'goog.i18n.DateTimePatterns_eo', 'goog.i18n.DateTimePatterns_es_AR', 'goog.i18n.DateTimePatterns_es_BO', 'goog.i18n.DateTimePatterns_es_CL', 'goog.i18n.DateTimePatterns_es_CO', 'goog.i18n.DateTimePatterns_es_CR', 'goog.i18n.DateTimePatterns_es_CU', 'goog.i18n.DateTimePatterns_es_DO', 'goog.i18n.DateTimePatterns_es_EA', 'goog.i18n.DateTimePatterns_es_EC', 'goog.i18n.DateTimePatterns_es_GQ', 'goog.i18n.DateTimePatterns_es_GT', 'goog.i18n.DateTimePatterns_es_HN', 'goog.i18n.DateTimePatterns_es_IC', 'goog.i18n.DateTimePatterns_es_MX', 'goog.i18n.DateTimePatterns_es_NI', 'goog.i18n.DateTimePatterns_es_PA', 'goog.i18n.DateTimePatterns_es_PE', 'goog.i18n.DateTimePatterns_es_PH', 'goog.i18n.DateTimePatterns_es_PR', 'goog.i18n.DateTimePatterns_es_PY', 'goog.i18n.DateTimePatterns_es_SV', 'goog.i18n.DateTimePatterns_es_US', 'goog.i18n.DateTimePatterns_es_UY', 'goog.i18n.DateTimePatterns_es_VE', 'goog.i18n.DateTimePatterns_et_EE', 'goog.i18n.DateTimePatterns_eu_ES', 'goog.i18n.DateTimePatterns_ewo', 'goog.i18n.DateTimePatterns_ewo_CM', 'goog.i18n.DateTimePatterns_fa_AF', 'goog.i18n.DateTimePatterns_fa_IR', 'goog.i18n.DateTimePatterns_ff', 'goog.i18n.DateTimePatterns_ff_SN', 'goog.i18n.DateTimePatterns_fi_FI', 'goog.i18n.DateTimePatterns_fil_PH', 'goog.i18n.DateTimePatterns_fo', 'goog.i18n.DateTimePatterns_fo_FO', 'goog.i18n.DateTimePatterns_fr_BE', 'goog.i18n.DateTimePatterns_fr_BF', 'goog.i18n.DateTimePatterns_fr_BI', 'goog.i18n.DateTimePatterns_fr_BJ', 'goog.i18n.DateTimePatterns_fr_BL', 'goog.i18n.DateTimePatterns_fr_CD', 'goog.i18n.DateTimePatterns_fr_CF', 'goog.i18n.DateTimePatterns_fr_CG', 'goog.i18n.DateTimePatterns_fr_CH', 'goog.i18n.DateTimePatterns_fr_CI', 'goog.i18n.DateTimePatterns_fr_CM', 'goog.i18n.DateTimePatterns_fr_DJ', 'goog.i18n.DateTimePatterns_fr_DZ', 'goog.i18n.DateTimePatterns_fr_FR', 'goog.i18n.DateTimePatterns_fr_GA', 'goog.i18n.DateTimePatterns_fr_GF', 'goog.i18n.DateTimePatterns_fr_GN', 'goog.i18n.DateTimePatterns_fr_GP', 'goog.i18n.DateTimePatterns_fr_GQ', 'goog.i18n.DateTimePatterns_fr_HT', 'goog.i18n.DateTimePatterns_fr_KM', 'goog.i18n.DateTimePatterns_fr_LU', 'goog.i18n.DateTimePatterns_fr_MA', 'goog.i18n.DateTimePatterns_fr_MC', 'goog.i18n.DateTimePatterns_fr_MF', 'goog.i18n.DateTimePatterns_fr_MG', 'goog.i18n.DateTimePatterns_fr_ML', 'goog.i18n.DateTimePatterns_fr_MQ', 'goog.i18n.DateTimePatterns_fr_MR', 'goog.i18n.DateTimePatterns_fr_MU', 'goog.i18n.DateTimePatterns_fr_NC', 'goog.i18n.DateTimePatterns_fr_NE', 'goog.i18n.DateTimePatterns_fr_PF', 'goog.i18n.DateTimePatterns_fr_PM', 'goog.i18n.DateTimePatterns_fr_RE', 'goog.i18n.DateTimePatterns_fr_RW', 'goog.i18n.DateTimePatterns_fr_SC', 'goog.i18n.DateTimePatterns_fr_SN', 'goog.i18n.DateTimePatterns_fr_SY', 'goog.i18n.DateTimePatterns_fr_TD', 'goog.i18n.DateTimePatterns_fr_TG', 'goog.i18n.DateTimePatterns_fr_TN', 'goog.i18n.DateTimePatterns_fr_VU', 'goog.i18n.DateTimePatterns_fr_WF', 'goog.i18n.DateTimePatterns_fr_YT', 'goog.i18n.DateTimePatterns_ga', 'goog.i18n.DateTimePatterns_ga_IE', 'goog.i18n.DateTimePatterns_gl_ES', 'goog.i18n.DateTimePatterns_gsw_CH', 'goog.i18n.DateTimePatterns_gsw_LI', 'goog.i18n.DateTimePatterns_gu_IN', 'goog.i18n.DateTimePatterns_guz', 'goog.i18n.DateTimePatterns_guz_KE', 'goog.i18n.DateTimePatterns_gv', 'goog.i18n.DateTimePatterns_gv_IM', 'goog.i18n.DateTimePatterns_ha', 'goog.i18n.DateTimePatterns_ha_Latn', 'goog.i18n.DateTimePatterns_ha_Latn_GH', 'goog.i18n.DateTimePatterns_ha_Latn_NE', 'goog.i18n.DateTimePatterns_ha_Latn_NG', 'goog.i18n.DateTimePatterns_haw_US', 'goog.i18n.DateTimePatterns_he_IL', 'goog.i18n.DateTimePatterns_hi_IN', 'goog.i18n.DateTimePatterns_hr_BA', 'goog.i18n.DateTimePatterns_hr_HR', 'goog.i18n.DateTimePatterns_hu_HU', 'goog.i18n.DateTimePatterns_hy_AM', 'goog.i18n.DateTimePatterns_id_ID', 'goog.i18n.DateTimePatterns_ig', 'goog.i18n.DateTimePatterns_ig_NG', 'goog.i18n.DateTimePatterns_ii', 'goog.i18n.DateTimePatterns_ii_CN', 'goog.i18n.DateTimePatterns_is_IS', 'goog.i18n.DateTimePatterns_it_CH', 'goog.i18n.DateTimePatterns_it_IT', 'goog.i18n.DateTimePatterns_it_SM', 'goog.i18n.DateTimePatterns_ja_JP', 'goog.i18n.DateTimePatterns_jgo', 'goog.i18n.DateTimePatterns_jgo_CM', 'goog.i18n.DateTimePatterns_jmc', 'goog.i18n.DateTimePatterns_jmc_TZ', 'goog.i18n.DateTimePatterns_ka_GE', 'goog.i18n.DateTimePatterns_kab', 'goog.i18n.DateTimePatterns_kab_DZ', 'goog.i18n.DateTimePatterns_kam', 'goog.i18n.DateTimePatterns_kam_KE', 'goog.i18n.DateTimePatterns_kde', 'goog.i18n.DateTimePatterns_kde_TZ', 'goog.i18n.DateTimePatterns_kea', 'goog.i18n.DateTimePatterns_kea_CV', 'goog.i18n.DateTimePatterns_khq', 'goog.i18n.DateTimePatterns_khq_ML', 'goog.i18n.DateTimePatterns_ki', 'goog.i18n.DateTimePatterns_ki_KE', 'goog.i18n.DateTimePatterns_kk_Cyrl', 'goog.i18n.DateTimePatterns_kk_Cyrl_KZ', 'goog.i18n.DateTimePatterns_kkj', 'goog.i18n.DateTimePatterns_kkj_CM', 'goog.i18n.DateTimePatterns_kl', 'goog.i18n.DateTimePatterns_kl_GL', 'goog.i18n.DateTimePatterns_kln', 'goog.i18n.DateTimePatterns_kln_KE', 'goog.i18n.DateTimePatterns_km_KH', 'goog.i18n.DateTimePatterns_kn_IN', 'goog.i18n.DateTimePatterns_ko_KP', 'goog.i18n.DateTimePatterns_ko_KR', 'goog.i18n.DateTimePatterns_kok', 'goog.i18n.DateTimePatterns_kok_IN', 'goog.i18n.DateTimePatterns_ks', 'goog.i18n.DateTimePatterns_ks_Arab', 'goog.i18n.DateTimePatterns_ks_Arab_IN', 'goog.i18n.DateTimePatterns_ksb', 'goog.i18n.DateTimePatterns_ksb_TZ', 'goog.i18n.DateTimePatterns_ksf', 'goog.i18n.DateTimePatterns_ksf_CM', 'goog.i18n.DateTimePatterns_kw', 'goog.i18n.DateTimePatterns_kw_GB', 'goog.i18n.DateTimePatterns_ky_Cyrl', 'goog.i18n.DateTimePatterns_ky_Cyrl_KG', 'goog.i18n.DateTimePatterns_lag', 'goog.i18n.DateTimePatterns_lag_TZ', 'goog.i18n.DateTimePatterns_lg', 'goog.i18n.DateTimePatterns_lg_UG', 'goog.i18n.DateTimePatterns_lkt', 'goog.i18n.DateTimePatterns_lkt_US', 'goog.i18n.DateTimePatterns_ln_AO', 'goog.i18n.DateTimePatterns_ln_CD', 'goog.i18n.DateTimePatterns_ln_CF', 'goog.i18n.DateTimePatterns_ln_CG', 'goog.i18n.DateTimePatterns_lo_LA', 'goog.i18n.DateTimePatterns_lt_LT', 'goog.i18n.DateTimePatterns_lu', 'goog.i18n.DateTimePatterns_lu_CD', 'goog.i18n.DateTimePatterns_luo', 'goog.i18n.DateTimePatterns_luo_KE', 'goog.i18n.DateTimePatterns_luy', 'goog.i18n.DateTimePatterns_luy_KE', 'goog.i18n.DateTimePatterns_lv_LV', 'goog.i18n.DateTimePatterns_mas', 'goog.i18n.DateTimePatterns_mas_KE', 'goog.i18n.DateTimePatterns_mas_TZ', 'goog.i18n.DateTimePatterns_mer', 'goog.i18n.DateTimePatterns_mer_KE', 'goog.i18n.DateTimePatterns_mfe', 'goog.i18n.DateTimePatterns_mfe_MU', 'goog.i18n.DateTimePatterns_mg', 'goog.i18n.DateTimePatterns_mg_MG', 'goog.i18n.DateTimePatterns_mgh', 'goog.i18n.DateTimePatterns_mgh_MZ', 'goog.i18n.DateTimePatterns_mgo', 'goog.i18n.DateTimePatterns_mgo_CM', 'goog.i18n.DateTimePatterns_mk_MK', 'goog.i18n.DateTimePatterns_ml_IN', 'goog.i18n.DateTimePatterns_mn_Cyrl', 'goog.i18n.DateTimePatterns_mn_Cyrl_MN', 'goog.i18n.DateTimePatterns_mr_IN', 'goog.i18n.DateTimePatterns_ms_Latn', 'goog.i18n.DateTimePatterns_ms_Latn_BN', 'goog.i18n.DateTimePatterns_ms_Latn_MY', 'goog.i18n.DateTimePatterns_ms_Latn_SG', 'goog.i18n.DateTimePatterns_mt_MT', 'goog.i18n.DateTimePatterns_mua', 'goog.i18n.DateTimePatterns_mua_CM', 'goog.i18n.DateTimePatterns_my_MM', 'goog.i18n.DateTimePatterns_naq', 'goog.i18n.DateTimePatterns_naq_NA', 'goog.i18n.DateTimePatterns_nb_NO', 'goog.i18n.DateTimePatterns_nb_SJ', 'goog.i18n.DateTimePatterns_nd', 'goog.i18n.DateTimePatterns_nd_ZW', 'goog.i18n.DateTimePatterns_ne_IN', 'goog.i18n.DateTimePatterns_ne_NP', 'goog.i18n.DateTimePatterns_nl_AW', 'goog.i18n.DateTimePatterns_nl_BE', 'goog.i18n.DateTimePatterns_nl_BQ', 'goog.i18n.DateTimePatterns_nl_CW', 'goog.i18n.DateTimePatterns_nl_NL', 'goog.i18n.DateTimePatterns_nl_SR', 'goog.i18n.DateTimePatterns_nl_SX', 'goog.i18n.DateTimePatterns_nmg', 'goog.i18n.DateTimePatterns_nmg_CM', 'goog.i18n.DateTimePatterns_nn', 'goog.i18n.DateTimePatterns_nn_NO', 'goog.i18n.DateTimePatterns_nnh', 'goog.i18n.DateTimePatterns_nnh_CM', 'goog.i18n.DateTimePatterns_nus', 'goog.i18n.DateTimePatterns_nus_SD', 'goog.i18n.DateTimePatterns_nyn', 'goog.i18n.DateTimePatterns_nyn_UG', 'goog.i18n.DateTimePatterns_om', 'goog.i18n.DateTimePatterns_om_ET', 'goog.i18n.DateTimePatterns_om_KE', 'goog.i18n.DateTimePatterns_or_IN', 'goog.i18n.DateTimePatterns_pa_Arab', 'goog.i18n.DateTimePatterns_pa_Arab_PK', 'goog.i18n.DateTimePatterns_pa_Guru', 'goog.i18n.DateTimePatterns_pa_Guru_IN', 'goog.i18n.DateTimePatterns_pl_PL', 'goog.i18n.DateTimePatterns_ps', 'goog.i18n.DateTimePatterns_ps_AF', 'goog.i18n.DateTimePatterns_pt_AO', 'goog.i18n.DateTimePatterns_pt_CV', 'goog.i18n.DateTimePatterns_pt_GW', 'goog.i18n.DateTimePatterns_pt_MO', 'goog.i18n.DateTimePatterns_pt_MZ', 'goog.i18n.DateTimePatterns_pt_ST', 'goog.i18n.DateTimePatterns_pt_TL', 'goog.i18n.DateTimePatterns_rm', 'goog.i18n.DateTimePatterns_rm_CH', 'goog.i18n.DateTimePatterns_rn', 'goog.i18n.DateTimePatterns_rn_BI', 'goog.i18n.DateTimePatterns_ro_MD', 'goog.i18n.DateTimePatterns_ro_RO', 'goog.i18n.DateTimePatterns_rof', 'goog.i18n.DateTimePatterns_rof_TZ', 'goog.i18n.DateTimePatterns_ru_BY', 'goog.i18n.DateTimePatterns_ru_KG', 'goog.i18n.DateTimePatterns_ru_KZ', 'goog.i18n.DateTimePatterns_ru_MD', 'goog.i18n.DateTimePatterns_ru_RU', 'goog.i18n.DateTimePatterns_ru_UA', 'goog.i18n.DateTimePatterns_rw', 'goog.i18n.DateTimePatterns_rw_RW', 'goog.i18n.DateTimePatterns_rwk', 'goog.i18n.DateTimePatterns_rwk_TZ', 'goog.i18n.DateTimePatterns_saq', 'goog.i18n.DateTimePatterns_saq_KE', 'goog.i18n.DateTimePatterns_sbp', 'goog.i18n.DateTimePatterns_sbp_TZ', 'goog.i18n.DateTimePatterns_seh', 'goog.i18n.DateTimePatterns_seh_MZ', 'goog.i18n.DateTimePatterns_ses', 'goog.i18n.DateTimePatterns_ses_ML', 'goog.i18n.DateTimePatterns_sg', 'goog.i18n.DateTimePatterns_sg_CF', 'goog.i18n.DateTimePatterns_shi', 'goog.i18n.DateTimePatterns_shi_Latn', 'goog.i18n.DateTimePatterns_shi_Latn_MA', 'goog.i18n.DateTimePatterns_shi_Tfng', 'goog.i18n.DateTimePatterns_shi_Tfng_MA', 'goog.i18n.DateTimePatterns_si_LK', 'goog.i18n.DateTimePatterns_sk_SK', 'goog.i18n.DateTimePatterns_sl_SI', 'goog.i18n.DateTimePatterns_sn', 'goog.i18n.DateTimePatterns_sn_ZW', 'goog.i18n.DateTimePatterns_so', 'goog.i18n.DateTimePatterns_so_DJ', 'goog.i18n.DateTimePatterns_so_ET', 'goog.i18n.DateTimePatterns_so_KE', 'goog.i18n.DateTimePatterns_so_SO', 'goog.i18n.DateTimePatterns_sq_AL', 'goog.i18n.DateTimePatterns_sq_MK', 'goog.i18n.DateTimePatterns_sq_XK', 'goog.i18n.DateTimePatterns_sr_Cyrl', 'goog.i18n.DateTimePatterns_sr_Cyrl_BA', 'goog.i18n.DateTimePatterns_sr_Cyrl_ME', 'goog.i18n.DateTimePatterns_sr_Cyrl_RS', 'goog.i18n.DateTimePatterns_sr_Cyrl_XK', 'goog.i18n.DateTimePatterns_sr_Latn', 'goog.i18n.DateTimePatterns_sr_Latn_BA', 'goog.i18n.DateTimePatterns_sr_Latn_ME', 'goog.i18n.DateTimePatterns_sr_Latn_RS', 'goog.i18n.DateTimePatterns_sr_Latn_XK', 'goog.i18n.DateTimePatterns_sv_AX', 'goog.i18n.DateTimePatterns_sv_FI', 'goog.i18n.DateTimePatterns_sv_SE', 'goog.i18n.DateTimePatterns_sw_KE', 'goog.i18n.DateTimePatterns_sw_TZ', 'goog.i18n.DateTimePatterns_sw_UG', 'goog.i18n.DateTimePatterns_swc', 'goog.i18n.DateTimePatterns_swc_CD', 'goog.i18n.DateTimePatterns_ta_IN', 'goog.i18n.DateTimePatterns_ta_LK', 'goog.i18n.DateTimePatterns_ta_MY', 'goog.i18n.DateTimePatterns_ta_SG', 'goog.i18n.DateTimePatterns_te_IN', 'goog.i18n.DateTimePatterns_teo', 'goog.i18n.DateTimePatterns_teo_KE', 'goog.i18n.DateTimePatterns_teo_UG', 'goog.i18n.DateTimePatterns_th_TH', 'goog.i18n.DateTimePatterns_ti', 'goog.i18n.DateTimePatterns_ti_ER', 'goog.i18n.DateTimePatterns_ti_ET', 'goog.i18n.DateTimePatterns_to', 'goog.i18n.DateTimePatterns_to_TO', 'goog.i18n.DateTimePatterns_tr_CY', 'goog.i18n.DateTimePatterns_tr_TR', 'goog.i18n.DateTimePatterns_twq', 'goog.i18n.DateTimePatterns_twq_NE', 'goog.i18n.DateTimePatterns_tzm', 'goog.i18n.DateTimePatterns_tzm_Latn', 'goog.i18n.DateTimePatterns_tzm_Latn_MA', 'goog.i18n.DateTimePatterns_ug', 'goog.i18n.DateTimePatterns_ug_Arab', 'goog.i18n.DateTimePatterns_ug_Arab_CN', 'goog.i18n.DateTimePatterns_uk_UA', 'goog.i18n.DateTimePatterns_ur_IN', 'goog.i18n.DateTimePatterns_ur_PK', 'goog.i18n.DateTimePatterns_uz_Arab', 'goog.i18n.DateTimePatterns_uz_Arab_AF', 'goog.i18n.DateTimePatterns_uz_Cyrl', 'goog.i18n.DateTimePatterns_uz_Cyrl_UZ', 'goog.i18n.DateTimePatterns_uz_Latn', 'goog.i18n.DateTimePatterns_uz_Latn_UZ', 'goog.i18n.DateTimePatterns_vai', 'goog.i18n.DateTimePatterns_vai_Latn', 'goog.i18n.DateTimePatterns_vai_Latn_LR', 'goog.i18n.DateTimePatterns_vai_Vaii', 'goog.i18n.DateTimePatterns_vai_Vaii_LR', 'goog.i18n.DateTimePatterns_vi_VN', 'goog.i18n.DateTimePatterns_vun', 'goog.i18n.DateTimePatterns_vun_TZ', 'goog.i18n.DateTimePatterns_xog', 'goog.i18n.DateTimePatterns_xog_UG', 'goog.i18n.DateTimePatterns_yav', 'goog.i18n.DateTimePatterns_yav_CM', 'goog.i18n.DateTimePatterns_yo', 'goog.i18n.DateTimePatterns_yo_BJ', 'goog.i18n.DateTimePatterns_yo_NG', 'goog.i18n.DateTimePatterns_zgh', 'goog.i18n.DateTimePatterns_zgh_MA', 'goog.i18n.DateTimePatterns_zh_Hans', 'goog.i18n.DateTimePatterns_zh_Hans_CN', 'goog.i18n.DateTimePatterns_zh_Hans_HK', 'goog.i18n.DateTimePatterns_zh_Hans_MO', 'goog.i18n.DateTimePatterns_zh_Hans_SG', 'goog.i18n.DateTimePatterns_zh_Hant', 'goog.i18n.DateTimePatterns_zh_Hant_HK', 'goog.i18n.DateTimePatterns_zh_Hant_MO', 'goog.i18n.DateTimePatterns_zh_Hant_TW', 'goog.i18n.DateTimePatterns_zu_ZA'], ['goog.i18n.DateTimePatterns']);
-goog.addDependency('i18n/datetimesymbols.js', ['goog.i18n.DateTimeSymbols', 'goog.i18n.DateTimeSymbols_af', 'goog.i18n.DateTimeSymbols_am', 'goog.i18n.DateTimeSymbols_ar', 'goog.i18n.DateTimeSymbols_az', 'goog.i18n.DateTimeSymbols_bg', 'goog.i18n.DateTimeSymbols_bn', 'goog.i18n.DateTimeSymbols_br', 'goog.i18n.DateTimeSymbols_ca', 'goog.i18n.DateTimeSymbols_chr', 'goog.i18n.DateTimeSymbols_cs', 'goog.i18n.DateTimeSymbols_cy', 'goog.i18n.DateTimeSymbols_da', 'goog.i18n.DateTimeSymbols_de', 'goog.i18n.DateTimeSymbols_de_AT', 'goog.i18n.DateTimeSymbols_de_CH', 'goog.i18n.DateTimeSymbols_el', 'goog.i18n.DateTimeSymbols_en', 'goog.i18n.DateTimeSymbols_en_AU', 'goog.i18n.DateTimeSymbols_en_GB', 'goog.i18n.DateTimeSymbols_en_IE', 'goog.i18n.DateTimeSymbols_en_IN', 'goog.i18n.DateTimeSymbols_en_ISO', 'goog.i18n.DateTimeSymbols_en_SG', 'goog.i18n.DateTimeSymbols_en_US', 'goog.i18n.DateTimeSymbols_en_ZA', 'goog.i18n.DateTimeSymbols_es', 'goog.i18n.DateTimeSymbols_es_419', 'goog.i18n.DateTimeSymbols_es_ES', 'goog.i18n.DateTimeSymbols_et', 'goog.i18n.DateTimeSymbols_eu', 'goog.i18n.DateTimeSymbols_fa', 'goog.i18n.DateTimeSymbols_fi', 'goog.i18n.DateTimeSymbols_fil', 'goog.i18n.DateTimeSymbols_fr', 'goog.i18n.DateTimeSymbols_fr_CA', 'goog.i18n.DateTimeSymbols_gl', 'goog.i18n.DateTimeSymbols_gsw', 'goog.i18n.DateTimeSymbols_gu', 'goog.i18n.DateTimeSymbols_haw', 'goog.i18n.DateTimeSymbols_he', 'goog.i18n.DateTimeSymbols_hi', 'goog.i18n.DateTimeSymbols_hr', 'goog.i18n.DateTimeSymbols_hu', 'goog.i18n.DateTimeSymbols_hy', 'goog.i18n.DateTimeSymbols_id', 'goog.i18n.DateTimeSymbols_in', 'goog.i18n.DateTimeSymbols_is', 'goog.i18n.DateTimeSymbols_it', 'goog.i18n.DateTimeSymbols_iw', 'goog.i18n.DateTimeSymbols_ja', 'goog.i18n.DateTimeSymbols_ka', 'goog.i18n.DateTimeSymbols_kk', 'goog.i18n.DateTimeSymbols_km', 'goog.i18n.DateTimeSymbols_kn', 'goog.i18n.DateTimeSymbols_ko', 'goog.i18n.DateTimeSymbols_ky', 'goog.i18n.DateTimeSymbols_ln', 'goog.i18n.DateTimeSymbols_lo', 'goog.i18n.DateTimeSymbols_lt', 'goog.i18n.DateTimeSymbols_lv', 'goog.i18n.DateTimeSymbols_mk', 'goog.i18n.DateTimeSymbols_ml', 'goog.i18n.DateTimeSymbols_mn', 'goog.i18n.DateTimeSymbols_mr', 'goog.i18n.DateTimeSymbols_ms', 'goog.i18n.DateTimeSymbols_mt', 'goog.i18n.DateTimeSymbols_my', 'goog.i18n.DateTimeSymbols_nb', 'goog.i18n.DateTimeSymbols_ne', 'goog.i18n.DateTimeSymbols_nl', 'goog.i18n.DateTimeSymbols_no', 'goog.i18n.DateTimeSymbols_no_NO', 'goog.i18n.DateTimeSymbols_or', 'goog.i18n.DateTimeSymbols_pa', 'goog.i18n.DateTimeSymbols_pl', 'goog.i18n.DateTimeSymbols_pt', 'goog.i18n.DateTimeSymbols_pt_BR', 'goog.i18n.DateTimeSymbols_pt_PT', 'goog.i18n.DateTimeSymbols_ro', 'goog.i18n.DateTimeSymbols_ru', 'goog.i18n.DateTimeSymbols_si', 'goog.i18n.DateTimeSymbols_sk', 'goog.i18n.DateTimeSymbols_sl', 'goog.i18n.DateTimeSymbols_sq', 'goog.i18n.DateTimeSymbols_sr', 'goog.i18n.DateTimeSymbols_sv', 'goog.i18n.DateTimeSymbols_sw', 'goog.i18n.DateTimeSymbols_ta', 'goog.i18n.DateTimeSymbols_te', 'goog.i18n.DateTimeSymbols_th', 'goog.i18n.DateTimeSymbols_tl', 'goog.i18n.DateTimeSymbols_tr', 'goog.i18n.DateTimeSymbols_uk', 'goog.i18n.DateTimeSymbols_ur', 'goog.i18n.DateTimeSymbols_uz', 'goog.i18n.DateTimeSymbols_vi', 'goog.i18n.DateTimeSymbols_zh', 'goog.i18n.DateTimeSymbols_zh_CN', 'goog.i18n.DateTimeSymbols_zh_HK', 'goog.i18n.DateTimeSymbols_zh_TW', 'goog.i18n.DateTimeSymbols_zu'], []);
-goog.addDependency('i18n/datetimesymbolsext.js', ['goog.i18n.DateTimeSymbolsExt', 'goog.i18n.DateTimeSymbols_aa', 'goog.i18n.DateTimeSymbols_aa_DJ', 'goog.i18n.DateTimeSymbols_aa_ER', 'goog.i18n.DateTimeSymbols_aa_ET', 'goog.i18n.DateTimeSymbols_af_NA', 'goog.i18n.DateTimeSymbols_af_ZA', 'goog.i18n.DateTimeSymbols_agq', 'goog.i18n.DateTimeSymbols_agq_CM', 'goog.i18n.DateTimeSymbols_ak', 'goog.i18n.DateTimeSymbols_ak_GH', 'goog.i18n.DateTimeSymbols_am_ET', 'goog.i18n.DateTimeSymbols_ar_001', 'goog.i18n.DateTimeSymbols_ar_AE', 'goog.i18n.DateTimeSymbols_ar_BH', 'goog.i18n.DateTimeSymbols_ar_DJ', 'goog.i18n.DateTimeSymbols_ar_DZ', 'goog.i18n.DateTimeSymbols_ar_EG', 'goog.i18n.DateTimeSymbols_ar_EH', 'goog.i18n.DateTimeSymbols_ar_ER', 'goog.i18n.DateTimeSymbols_ar_IL', 'goog.i18n.DateTimeSymbols_ar_IQ', 'goog.i18n.DateTimeSymbols_ar_JO', 'goog.i18n.DateTimeSymbols_ar_KM', 'goog.i18n.DateTimeSymbols_ar_KW', 'goog.i18n.DateTimeSymbols_ar_LB', 'goog.i18n.DateTimeSymbols_ar_LY', 'goog.i18n.DateTimeSymbols_ar_MA', 'goog.i18n.DateTimeSymbols_ar_MR', 'goog.i18n.DateTimeSymbols_ar_OM', 'goog.i18n.DateTimeSymbols_ar_PS', 'goog.i18n.DateTimeSymbols_ar_QA', 'goog.i18n.DateTimeSymbols_ar_SA', 'goog.i18n.DateTimeSymbols_ar_SD', 'goog.i18n.DateTimeSymbols_ar_SO', 'goog.i18n.DateTimeSymbols_ar_SS', 'goog.i18n.DateTimeSymbols_ar_SY', 'goog.i18n.DateTimeSymbols_ar_TD', 'goog.i18n.DateTimeSymbols_ar_TN', 'goog.i18n.DateTimeSymbols_ar_YE', 'goog.i18n.DateTimeSymbols_as', 'goog.i18n.DateTimeSymbols_as_IN', 'goog.i18n.DateTimeSymbols_asa', 'goog.i18n.DateTimeSymbols_asa_TZ', 'goog.i18n.DateTimeSymbols_ast', 'goog.i18n.DateTimeSymbols_ast_ES', 'goog.i18n.DateTimeSymbols_az_Cyrl', 'goog.i18n.DateTimeSymbols_az_Cyrl_AZ', 'goog.i18n.DateTimeSymbols_az_Latn', 'goog.i18n.DateTimeSymbols_az_Latn_AZ', 'goog.i18n.DateTimeSymbols_bas', 'goog.i18n.DateTimeSymbols_bas_CM', 'goog.i18n.DateTimeSymbols_be', 'goog.i18n.DateTimeSymbols_be_BY', 'goog.i18n.DateTimeSymbols_bem', 'goog.i18n.DateTimeSymbols_bem_ZM', 'goog.i18n.DateTimeSymbols_bez', 'goog.i18n.DateTimeSymbols_bez_TZ', 'goog.i18n.DateTimeSymbols_bg_BG', 'goog.i18n.DateTimeSymbols_bm', 'goog.i18n.DateTimeSymbols_bm_ML', 'goog.i18n.DateTimeSymbols_bn_BD', 'goog.i18n.DateTimeSymbols_bn_IN', 'goog.i18n.DateTimeSymbols_bo', 'goog.i18n.DateTimeSymbols_bo_CN', 'goog.i18n.DateTimeSymbols_bo_IN', 'goog.i18n.DateTimeSymbols_br_FR', 'goog.i18n.DateTimeSymbols_brx', 'goog.i18n.DateTimeSymbols_brx_IN', 'goog.i18n.DateTimeSymbols_bs', 'goog.i18n.DateTimeSymbols_bs_Cyrl', 'goog.i18n.DateTimeSymbols_bs_Cyrl_BA', 'goog.i18n.DateTimeSymbols_bs_Latn', 'goog.i18n.DateTimeSymbols_bs_Latn_BA', 'goog.i18n.DateTimeSymbols_byn', 'goog.i18n.DateTimeSymbols_byn_ER', 'goog.i18n.DateTimeSymbols_ca_AD', 'goog.i18n.DateTimeSymbols_ca_ES', 'goog.i18n.DateTimeSymbols_ca_ES_VALENCIA', 'goog.i18n.DateTimeSymbols_ca_FR', 'goog.i18n.DateTimeSymbols_ca_IT', 'goog.i18n.DateTimeSymbols_cgg', 'goog.i18n.DateTimeSymbols_cgg_UG', 'goog.i18n.DateTimeSymbols_chr_US', 'goog.i18n.DateTimeSymbols_ckb', 'goog.i18n.DateTimeSymbols_ckb_Arab', 'goog.i18n.DateTimeSymbols_ckb_Arab_IQ', 'goog.i18n.DateTimeSymbols_ckb_Arab_IR', 'goog.i18n.DateTimeSymbols_ckb_IQ', 'goog.i18n.DateTimeSymbols_ckb_IR', 'goog.i18n.DateTimeSymbols_ckb_Latn', 'goog.i18n.DateTimeSymbols_ckb_Latn_IQ', 'goog.i18n.DateTimeSymbols_cs_CZ', 'goog.i18n.DateTimeSymbols_cy_GB', 'goog.i18n.DateTimeSymbols_da_DK', 'goog.i18n.DateTimeSymbols_da_GL', 'goog.i18n.DateTimeSymbols_dav', 'goog.i18n.DateTimeSymbols_dav_KE', 'goog.i18n.DateTimeSymbols_de_BE', 'goog.i18n.DateTimeSymbols_de_DE', 'goog.i18n.DateTimeSymbols_de_LI', 'goog.i18n.DateTimeSymbols_de_LU', 'goog.i18n.DateTimeSymbols_dje', 'goog.i18n.DateTimeSymbols_dje_NE', 'goog.i18n.DateTimeSymbols_dua', 'goog.i18n.DateTimeSymbols_dua_CM', 'goog.i18n.DateTimeSymbols_dyo', 'goog.i18n.DateTimeSymbols_dyo_SN', 'goog.i18n.DateTimeSymbols_dz', 'goog.i18n.DateTimeSymbols_dz_BT', 'goog.i18n.DateTimeSymbols_ebu', 'goog.i18n.DateTimeSymbols_ebu_KE', 'goog.i18n.DateTimeSymbols_ee', 'goog.i18n.DateTimeSymbols_ee_GH', 'goog.i18n.DateTimeSymbols_ee_TG', 'goog.i18n.DateTimeSymbols_el_CY', 'goog.i18n.DateTimeSymbols_el_GR', 'goog.i18n.DateTimeSymbols_en_001', 'goog.i18n.DateTimeSymbols_en_150', 'goog.i18n.DateTimeSymbols_en_AG', 'goog.i18n.DateTimeSymbols_en_AI', 'goog.i18n.DateTimeSymbols_en_AS', 'goog.i18n.DateTimeSymbols_en_BB', 'goog.i18n.DateTimeSymbols_en_BE', 'goog.i18n.DateTimeSymbols_en_BM', 'goog.i18n.DateTimeSymbols_en_BS', 'goog.i18n.DateTimeSymbols_en_BW', 'goog.i18n.DateTimeSymbols_en_BZ', 'goog.i18n.DateTimeSymbols_en_CA', 'goog.i18n.DateTimeSymbols_en_CC', 'goog.i18n.DateTimeSymbols_en_CK', 'goog.i18n.DateTimeSymbols_en_CM', 'goog.i18n.DateTimeSymbols_en_CX', 'goog.i18n.DateTimeSymbols_en_DG', 'goog.i18n.DateTimeSymbols_en_DM', 'goog.i18n.DateTimeSymbols_en_ER', 'goog.i18n.DateTimeSymbols_en_FJ', 'goog.i18n.DateTimeSymbols_en_FK', 'goog.i18n.DateTimeSymbols_en_FM', 'goog.i18n.DateTimeSymbols_en_GD', 'goog.i18n.DateTimeSymbols_en_GG', 'goog.i18n.DateTimeSymbols_en_GH', 'goog.i18n.DateTimeSymbols_en_GI', 'goog.i18n.DateTimeSymbols_en_GM', 'goog.i18n.DateTimeSymbols_en_GU', 'goog.i18n.DateTimeSymbols_en_GY', 'goog.i18n.DateTimeSymbols_en_HK', 'goog.i18n.DateTimeSymbols_en_IM', 'goog.i18n.DateTimeSymbols_en_IO', 'goog.i18n.DateTimeSymbols_en_JE', 'goog.i18n.DateTimeSymbols_en_JM', 'goog.i18n.DateTimeSymbols_en_KE', 'goog.i18n.DateTimeSymbols_en_KI', 'goog.i18n.DateTimeSymbols_en_KN', 'goog.i18n.DateTimeSymbols_en_KY', 'goog.i18n.DateTimeSymbols_en_LC', 'goog.i18n.DateTimeSymbols_en_LR', 'goog.i18n.DateTimeSymbols_en_LS', 'goog.i18n.DateTimeSymbols_en_MG', 'goog.i18n.DateTimeSymbols_en_MH', 'goog.i18n.DateTimeSymbols_en_MO', 'goog.i18n.DateTimeSymbols_en_MP', 'goog.i18n.DateTimeSymbols_en_MS', 'goog.i18n.DateTimeSymbols_en_MT', 'goog.i18n.DateTimeSymbols_en_MU', 'goog.i18n.DateTimeSymbols_en_MW', 'goog.i18n.DateTimeSymbols_en_NA', 'goog.i18n.DateTimeSymbols_en_NF', 'goog.i18n.DateTimeSymbols_en_NG', 'goog.i18n.DateTimeSymbols_en_NR', 'goog.i18n.DateTimeSymbols_en_NU', 'goog.i18n.DateTimeSymbols_en_NZ', 'goog.i18n.DateTimeSymbols_en_PG', 'goog.i18n.DateTimeSymbols_en_PH', 'goog.i18n.DateTimeSymbols_en_PK', 'goog.i18n.DateTimeSymbols_en_PN', 'goog.i18n.DateTimeSymbols_en_PR', 'goog.i18n.DateTimeSymbols_en_PW', 'goog.i18n.DateTimeSymbols_en_RW', 'goog.i18n.DateTimeSymbols_en_SB', 'goog.i18n.DateTimeSymbols_en_SC', 'goog.i18n.DateTimeSymbols_en_SD', 'goog.i18n.DateTimeSymbols_en_SH', 'goog.i18n.DateTimeSymbols_en_SL', 'goog.i18n.DateTimeSymbols_en_SS', 'goog.i18n.DateTimeSymbols_en_SX', 'goog.i18n.DateTimeSymbols_en_SZ', 'goog.i18n.DateTimeSymbols_en_TC', 'goog.i18n.DateTimeSymbols_en_TK', 'goog.i18n.DateTimeSymbols_en_TO', 'goog.i18n.DateTimeSymbols_en_TT', 'goog.i18n.DateTimeSymbols_en_TV', 'goog.i18n.DateTimeSymbols_en_TZ', 'goog.i18n.DateTimeSymbols_en_UG', 'goog.i18n.DateTimeSymbols_en_UM', 'goog.i18n.DateTimeSymbols_en_VC', 'goog.i18n.DateTimeSymbols_en_VG', 'goog.i18n.DateTimeSymbols_en_VI', 'goog.i18n.DateTimeSymbols_en_VU', 'goog.i18n.DateTimeSymbols_en_WS', 'goog.i18n.DateTimeSymbols_en_ZM', 'goog.i18n.DateTimeSymbols_en_ZW', 'goog.i18n.DateTimeSymbols_eo', 'goog.i18n.DateTimeSymbols_eo_001', 'goog.i18n.DateTimeSymbols_es_AR', 'goog.i18n.DateTimeSymbols_es_BO', 'goog.i18n.DateTimeSymbols_es_CL', 'goog.i18n.DateTimeSymbols_es_CO', 'goog.i18n.DateTimeSymbols_es_CR', 'goog.i18n.DateTimeSymbols_es_CU', 'goog.i18n.DateTimeSymbols_es_DO', 'goog.i18n.DateTimeSymbols_es_EA', 'goog.i18n.DateTimeSymbols_es_EC', 'goog.i18n.DateTimeSymbols_es_GQ', 'goog.i18n.DateTimeSymbols_es_GT', 'goog.i18n.DateTimeSymbols_es_HN', 'goog.i18n.DateTimeSymbols_es_IC', 'goog.i18n.DateTimeSymbols_es_MX', 'goog.i18n.DateTimeSymbols_es_NI', 'goog.i18n.DateTimeSymbols_es_PA', 'goog.i18n.DateTimeSymbols_es_PE', 'goog.i18n.DateTimeSymbols_es_PH', 'goog.i18n.DateTimeSymbols_es_PR', 'goog.i18n.DateTimeSymbols_es_PY', 'goog.i18n.DateTimeSymbols_es_SV', 'goog.i18n.DateTimeSymbols_es_US', 'goog.i18n.DateTimeSymbols_es_UY', 'goog.i18n.DateTimeSymbols_es_VE', 'goog.i18n.DateTimeSymbols_et_EE', 'goog.i18n.DateTimeSymbols_eu_ES', 'goog.i18n.DateTimeSymbols_ewo', 'goog.i18n.DateTimeSymbols_ewo_CM', 'goog.i18n.DateTimeSymbols_fa_AF', 'goog.i18n.DateTimeSymbols_fa_IR', 'goog.i18n.DateTimeSymbols_ff', 'goog.i18n.DateTimeSymbols_ff_CM', 'goog.i18n.DateTimeSymbols_ff_GN', 'goog.i18n.DateTimeSymbols_ff_MR', 'goog.i18n.DateTimeSymbols_ff_SN', 'goog.i18n.DateTimeSymbols_fi_FI', 'goog.i18n.DateTimeSymbols_fil_PH', 'goog.i18n.DateTimeSymbols_fo', 'goog.i18n.DateTimeSymbols_fo_FO', 'goog.i18n.DateTimeSymbols_fr_BE', 'goog.i18n.DateTimeSymbols_fr_BF', 'goog.i18n.DateTimeSymbols_fr_BI', 'goog.i18n.DateTimeSymbols_fr_BJ', 'goog.i18n.DateTimeSymbols_fr_BL', 'goog.i18n.DateTimeSymbols_fr_CD', 'goog.i18n.DateTimeSymbols_fr_CF', 'goog.i18n.DateTimeSymbols_fr_CG', 'goog.i18n.DateTimeSymbols_fr_CH', 'goog.i18n.DateTimeSymbols_fr_CI', 'goog.i18n.DateTimeSymbols_fr_CM', 'goog.i18n.DateTimeSymbols_fr_DJ', 'goog.i18n.DateTimeSymbols_fr_DZ', 'goog.i18n.DateTimeSymbols_fr_FR', 'goog.i18n.DateTimeSymbols_fr_GA', 'goog.i18n.DateTimeSymbols_fr_GF', 'goog.i18n.DateTimeSymbols_fr_GN', 'goog.i18n.DateTimeSymbols_fr_GP', 'goog.i18n.DateTimeSymbols_fr_GQ', 'goog.i18n.DateTimeSymbols_fr_HT', 'goog.i18n.DateTimeSymbols_fr_KM', 'goog.i18n.DateTimeSymbols_fr_LU', 'goog.i18n.DateTimeSymbols_fr_MA', 'goog.i18n.DateTimeSymbols_fr_MC', 'goog.i18n.DateTimeSymbols_fr_MF', 'goog.i18n.DateTimeSymbols_fr_MG', 'goog.i18n.DateTimeSymbols_fr_ML', 'goog.i18n.DateTimeSymbols_fr_MQ', 'goog.i18n.DateTimeSymbols_fr_MR', 'goog.i18n.DateTimeSymbols_fr_MU', 'goog.i18n.DateTimeSymbols_fr_NC', 'goog.i18n.DateTimeSymbols_fr_NE', 'goog.i18n.DateTimeSymbols_fr_PF', 'goog.i18n.DateTimeSymbols_fr_PM', 'goog.i18n.DateTimeSymbols_fr_RE', 'goog.i18n.DateTimeSymbols_fr_RW', 'goog.i18n.DateTimeSymbols_fr_SC', 'goog.i18n.DateTimeSymbols_fr_SN', 'goog.i18n.DateTimeSymbols_fr_SY', 'goog.i18n.DateTimeSymbols_fr_TD', 'goog.i18n.DateTimeSymbols_fr_TG', 'goog.i18n.DateTimeSymbols_fr_TN', 'goog.i18n.DateTimeSymbols_fr_VU', 'goog.i18n.DateTimeSymbols_fr_WF', 'goog.i18n.DateTimeSymbols_fr_YT', 'goog.i18n.DateTimeSymbols_fur', 'goog.i18n.DateTimeSymbols_fur_IT', 'goog.i18n.DateTimeSymbols_fy', 'goog.i18n.DateTimeSymbols_fy_NL', 'goog.i18n.DateTimeSymbols_ga', 'goog.i18n.DateTimeSymbols_ga_IE', 'goog.i18n.DateTimeSymbols_gd', 'goog.i18n.DateTimeSymbols_gd_GB', 'goog.i18n.DateTimeSymbols_gl_ES', 'goog.i18n.DateTimeSymbols_gsw_CH', 'goog.i18n.DateTimeSymbols_gsw_LI', 'goog.i18n.DateTimeSymbols_gu_IN', 'goog.i18n.DateTimeSymbols_guz', 'goog.i18n.DateTimeSymbols_guz_KE', 'goog.i18n.DateTimeSymbols_gv', 'goog.i18n.DateTimeSymbols_gv_IM', 'goog.i18n.DateTimeSymbols_ha', 'goog.i18n.DateTimeSymbols_ha_Latn', 'goog.i18n.DateTimeSymbols_ha_Latn_GH', 'goog.i18n.DateTimeSymbols_ha_Latn_NE', 'goog.i18n.DateTimeSymbols_ha_Latn_NG', 'goog.i18n.DateTimeSymbols_haw_US', 'goog.i18n.DateTimeSymbols_he_IL', 'goog.i18n.DateTimeSymbols_hi_IN', 'goog.i18n.DateTimeSymbols_hr_BA', 'goog.i18n.DateTimeSymbols_hr_HR', 'goog.i18n.DateTimeSymbols_hu_HU', 'goog.i18n.DateTimeSymbols_hy_AM', 'goog.i18n.DateTimeSymbols_ia', 'goog.i18n.DateTimeSymbols_ia_FR', 'goog.i18n.DateTimeSymbols_id_ID', 'goog.i18n.DateTimeSymbols_ig', 'goog.i18n.DateTimeSymbols_ig_NG', 'goog.i18n.DateTimeSymbols_ii', 'goog.i18n.DateTimeSymbols_ii_CN', 'goog.i18n.DateTimeSymbols_is_IS', 'goog.i18n.DateTimeSymbols_it_CH', 'goog.i18n.DateTimeSymbols_it_IT', 'goog.i18n.DateTimeSymbols_it_SM', 'goog.i18n.DateTimeSymbols_ja_JP', 'goog.i18n.DateTimeSymbols_jgo', 'goog.i18n.DateTimeSymbols_jgo_CM', 'goog.i18n.DateTimeSymbols_jmc', 'goog.i18n.DateTimeSymbols_jmc_TZ', 'goog.i18n.DateTimeSymbols_ka_GE', 'goog.i18n.DateTimeSymbols_kab', 'goog.i18n.DateTimeSymbols_kab_DZ', 'goog.i18n.DateTimeSymbols_kam', 'goog.i18n.DateTimeSymbols_kam_KE', 'goog.i18n.DateTimeSymbols_kde', 'goog.i18n.DateTimeSymbols_kde_TZ', 'goog.i18n.DateTimeSymbols_kea', 'goog.i18n.DateTimeSymbols_kea_CV', 'goog.i18n.DateTimeSymbols_khq', 'goog.i18n.DateTimeSymbols_khq_ML', 'goog.i18n.DateTimeSymbols_ki', 'goog.i18n.DateTimeSymbols_ki_KE', 'goog.i18n.DateTimeSymbols_kk_Cyrl', 'goog.i18n.DateTimeSymbols_kk_Cyrl_KZ', 'goog.i18n.DateTimeSymbols_kkj', 'goog.i18n.DateTimeSymbols_kkj_CM', 'goog.i18n.DateTimeSymbols_kl', 'goog.i18n.DateTimeSymbols_kl_GL', 'goog.i18n.DateTimeSymbols_kln', 'goog.i18n.DateTimeSymbols_kln_KE', 'goog.i18n.DateTimeSymbols_km_KH', 'goog.i18n.DateTimeSymbols_kn_IN', 'goog.i18n.DateTimeSymbols_ko_KP', 'goog.i18n.DateTimeSymbols_ko_KR', 'goog.i18n.DateTimeSymbols_kok', 'goog.i18n.DateTimeSymbols_kok_IN', 'goog.i18n.DateTimeSymbols_ks', 'goog.i18n.DateTimeSymbols_ks_Arab', 'goog.i18n.DateTimeSymbols_ks_Arab_IN', 'goog.i18n.DateTimeSymbols_ksb', 'goog.i18n.DateTimeSymbols_ksb_TZ', 'goog.i18n.DateTimeSymbols_ksf', 'goog.i18n.DateTimeSymbols_ksf_CM', 'goog.i18n.DateTimeSymbols_ksh', 'goog.i18n.DateTimeSymbols_ksh_DE', 'goog.i18n.DateTimeSymbols_kw', 'goog.i18n.DateTimeSymbols_kw_GB', 'goog.i18n.DateTimeSymbols_ky_Cyrl', 'goog.i18n.DateTimeSymbols_ky_Cyrl_KG', 'goog.i18n.DateTimeSymbols_lag', 'goog.i18n.DateTimeSymbols_lag_TZ', 'goog.i18n.DateTimeSymbols_lg', 'goog.i18n.DateTimeSymbols_lg_UG', 'goog.i18n.DateTimeSymbols_lkt', 'goog.i18n.DateTimeSymbols_lkt_US', 'goog.i18n.DateTimeSymbols_ln_AO', 'goog.i18n.DateTimeSymbols_ln_CD', 'goog.i18n.DateTimeSymbols_ln_CF', 'goog.i18n.DateTimeSymbols_ln_CG', 'goog.i18n.DateTimeSymbols_lo_LA', 'goog.i18n.DateTimeSymbols_lt_LT', 'goog.i18n.DateTimeSymbols_lu', 'goog.i18n.DateTimeSymbols_lu_CD', 'goog.i18n.DateTimeSymbols_luo', 'goog.i18n.DateTimeSymbols_luo_KE', 'goog.i18n.DateTimeSymbols_luy', 'goog.i18n.DateTimeSymbols_luy_KE', 'goog.i18n.DateTimeSymbols_lv_LV', 'goog.i18n.DateTimeSymbols_mas', 'goog.i18n.DateTimeSymbols_mas_KE', 'goog.i18n.DateTimeSymbols_mas_TZ', 'goog.i18n.DateTimeSymbols_mer', 'goog.i18n.DateTimeSymbols_mer_KE', 'goog.i18n.DateTimeSymbols_mfe', 'goog.i18n.DateTimeSymbols_mfe_MU', 'goog.i18n.DateTimeSymbols_mg', 'goog.i18n.DateTimeSymbols_mg_MG', 'goog.i18n.DateTimeSymbols_mgh', 'goog.i18n.DateTimeSymbols_mgh_MZ', 'goog.i18n.DateTimeSymbols_mgo', 'goog.i18n.DateTimeSymbols_mgo_CM', 'goog.i18n.DateTimeSymbols_mk_MK', 'goog.i18n.DateTimeSymbols_ml_IN', 'goog.i18n.DateTimeSymbols_mn_Cyrl', 'goog.i18n.DateTimeSymbols_mn_Cyrl_MN', 'goog.i18n.DateTimeSymbols_mr_IN', 'goog.i18n.DateTimeSymbols_ms_Latn', 'goog.i18n.DateTimeSymbols_ms_Latn_BN', 'goog.i18n.DateTimeSymbols_ms_Latn_MY', 'goog.i18n.DateTimeSymbols_ms_Latn_SG', 'goog.i18n.DateTimeSymbols_mt_MT', 'goog.i18n.DateTimeSymbols_mua', 'goog.i18n.DateTimeSymbols_mua_CM', 'goog.i18n.DateTimeSymbols_my_MM', 'goog.i18n.DateTimeSymbols_naq', 'goog.i18n.DateTimeSymbols_naq_NA', 'goog.i18n.DateTimeSymbols_nb_NO', 'goog.i18n.DateTimeSymbols_nb_SJ', 'goog.i18n.DateTimeSymbols_nd', 'goog.i18n.DateTimeSymbols_nd_ZW', 'goog.i18n.DateTimeSymbols_ne_IN', 'goog.i18n.DateTimeSymbols_ne_NP', 'goog.i18n.DateTimeSymbols_nl_AW', 'goog.i18n.DateTimeSymbols_nl_BE', 'goog.i18n.DateTimeSymbols_nl_BQ', 'goog.i18n.DateTimeSymbols_nl_CW', 'goog.i18n.DateTimeSymbols_nl_NL', 'goog.i18n.DateTimeSymbols_nl_SR', 'goog.i18n.DateTimeSymbols_nl_SX', 'goog.i18n.DateTimeSymbols_nmg', 'goog.i18n.DateTimeSymbols_nmg_CM', 'goog.i18n.DateTimeSymbols_nn', 'goog.i18n.DateTimeSymbols_nn_NO', 'goog.i18n.DateTimeSymbols_nnh', 'goog.i18n.DateTimeSymbols_nnh_CM', 'goog.i18n.DateTimeSymbols_nr', 'goog.i18n.DateTimeSymbols_nr_ZA', 'goog.i18n.DateTimeSymbols_nso', 'goog.i18n.DateTimeSymbols_nso_ZA', 'goog.i18n.DateTimeSymbols_nus', 'goog.i18n.DateTimeSymbols_nus_SD', 'goog.i18n.DateTimeSymbols_nyn', 'goog.i18n.DateTimeSymbols_nyn_UG', 'goog.i18n.DateTimeSymbols_om', 'goog.i18n.DateTimeSymbols_om_ET', 'goog.i18n.DateTimeSymbols_om_KE', 'goog.i18n.DateTimeSymbols_or_IN', 'goog.i18n.DateTimeSymbols_os', 'goog.i18n.DateTimeSymbols_os_GE', 'goog.i18n.DateTimeSymbols_os_RU', 'goog.i18n.DateTimeSymbols_pa_Arab', 'goog.i18n.DateTimeSymbols_pa_Arab_PK', 'goog.i18n.DateTimeSymbols_pa_Guru', 'goog.i18n.DateTimeSymbols_pa_Guru_IN', 'goog.i18n.DateTimeSymbols_pl_PL', 'goog.i18n.DateTimeSymbols_ps', 'goog.i18n.DateTimeSymbols_ps_AF', 'goog.i18n.DateTimeSymbols_pt_AO', 'goog.i18n.DateTimeSymbols_pt_CV', 'goog.i18n.DateTimeSymbols_pt_GW', 'goog.i18n.DateTimeSymbols_pt_MO', 'goog.i18n.DateTimeSymbols_pt_MZ', 'goog.i18n.DateTimeSymbols_pt_ST', 'goog.i18n.DateTimeSymbols_pt_TL', 'goog.i18n.DateTimeSymbols_rm', 'goog.i18n.DateTimeSymbols_rm_CH', 'goog.i18n.DateTimeSymbols_rn', 'goog.i18n.DateTimeSymbols_rn_BI', 'goog.i18n.DateTimeSymbols_ro_MD', 'goog.i18n.DateTimeSymbols_ro_RO', 'goog.i18n.DateTimeSymbols_rof', 'goog.i18n.DateTimeSymbols_rof_TZ', 'goog.i18n.DateTimeSymbols_ru_BY', 'goog.i18n.DateTimeSymbols_ru_KG', 'goog.i18n.DateTimeSymbols_ru_KZ', 'goog.i18n.DateTimeSymbols_ru_MD', 'goog.i18n.DateTimeSymbols_ru_RU', 'goog.i18n.DateTimeSymbols_ru_UA', 'goog.i18n.DateTimeSymbols_rw', 'goog.i18n.DateTimeSymbols_rw_RW', 'goog.i18n.DateTimeSymbols_rwk', 'goog.i18n.DateTimeSymbols_rwk_TZ', 'goog.i18n.DateTimeSymbols_sah', 'goog.i18n.DateTimeSymbols_sah_RU', 'goog.i18n.DateTimeSymbols_saq', 'goog.i18n.DateTimeSymbols_saq_KE', 'goog.i18n.DateTimeSymbols_sbp', 'goog.i18n.DateTimeSymbols_sbp_TZ', 'goog.i18n.DateTimeSymbols_se', 'goog.i18n.DateTimeSymbols_se_FI', 'goog.i18n.DateTimeSymbols_se_NO', 'goog.i18n.DateTimeSymbols_seh', 'goog.i18n.DateTimeSymbols_seh_MZ', 'goog.i18n.DateTimeSymbols_ses', 'goog.i18n.DateTimeSymbols_ses_ML', 'goog.i18n.DateTimeSymbols_sg', 'goog.i18n.DateTimeSymbols_sg_CF', 'goog.i18n.DateTimeSymbols_shi', 'goog.i18n.DateTimeSymbols_shi_Latn', 'goog.i18n.DateTimeSymbols_shi_Latn_MA', 'goog.i18n.DateTimeSymbols_shi_Tfng', 'goog.i18n.DateTimeSymbols_shi_Tfng_MA', 'goog.i18n.DateTimeSymbols_si_LK', 'goog.i18n.DateTimeSymbols_sk_SK', 'goog.i18n.DateTimeSymbols_sl_SI', 'goog.i18n.DateTimeSymbols_sn', 'goog.i18n.DateTimeSymbols_sn_ZW', 'goog.i18n.DateTimeSymbols_so', 'goog.i18n.DateTimeSymbols_so_DJ', 'goog.i18n.DateTimeSymbols_so_ET', 'goog.i18n.DateTimeSymbols_so_KE', 'goog.i18n.DateTimeSymbols_so_SO', 'goog.i18n.DateTimeSymbols_sq_AL', 'goog.i18n.DateTimeSymbols_sq_MK', 'goog.i18n.DateTimeSymbols_sq_XK', 'goog.i18n.DateTimeSymbols_sr_Cyrl', 'goog.i18n.DateTimeSymbols_sr_Cyrl_BA', 'goog.i18n.DateTimeSymbols_sr_Cyrl_ME', 'goog.i18n.DateTimeSymbols_sr_Cyrl_RS', 'goog.i18n.DateTimeSymbols_sr_Cyrl_XK', 'goog.i18n.DateTimeSymbols_sr_Latn', 'goog.i18n.DateTimeSymbols_sr_Latn_BA', 'goog.i18n.DateTimeSymbols_sr_Latn_ME', 'goog.i18n.DateTimeSymbols_sr_Latn_RS', 'goog.i18n.DateTimeSymbols_sr_Latn_XK', 'goog.i18n.DateTimeSymbols_ss', 'goog.i18n.DateTimeSymbols_ss_SZ', 'goog.i18n.DateTimeSymbols_ss_ZA', 'goog.i18n.DateTimeSymbols_ssy', 'goog.i18n.DateTimeSymbols_ssy_ER', 'goog.i18n.DateTimeSymbols_st', 'goog.i18n.DateTimeSymbols_st_LS', 'goog.i18n.DateTimeSymbols_st_ZA', 'goog.i18n.DateTimeSymbols_sv_AX', 'goog.i18n.DateTimeSymbols_sv_FI', 'goog.i18n.DateTimeSymbols_sv_SE', 'goog.i18n.DateTimeSymbols_sw_KE', 'goog.i18n.DateTimeSymbols_sw_TZ', 'goog.i18n.DateTimeSymbols_sw_UG', 'goog.i18n.DateTimeSymbols_swc', 'goog.i18n.DateTimeSymbols_swc_CD', 'goog.i18n.DateTimeSymbols_ta_IN', 'goog.i18n.DateTimeSymbols_ta_LK', 'goog.i18n.DateTimeSymbols_ta_MY', 'goog.i18n.DateTimeSymbols_ta_SG', 'goog.i18n.DateTimeSymbols_te_IN', 'goog.i18n.DateTimeSymbols_teo', 'goog.i18n.DateTimeSymbols_teo_KE', 'goog.i18n.DateTimeSymbols_teo_UG', 'goog.i18n.DateTimeSymbols_tg', 'goog.i18n.DateTimeSymbols_tg_Cyrl', 'goog.i18n.DateTimeSymbols_tg_Cyrl_TJ', 'goog.i18n.DateTimeSymbols_th_TH', 'goog.i18n.DateTimeSymbols_ti', 'goog.i18n.DateTimeSymbols_ti_ER', 'goog.i18n.DateTimeSymbols_ti_ET', 'goog.i18n.DateTimeSymbols_tig', 'goog.i18n.DateTimeSymbols_tig_ER', 'goog.i18n.DateTimeSymbols_tn', 'goog.i18n.DateTimeSymbols_tn_BW', 'goog.i18n.DateTimeSymbols_tn_ZA', 'goog.i18n.DateTimeSymbols_to', 'goog.i18n.DateTimeSymbols_to_TO', 'goog.i18n.DateTimeSymbols_tr_CY', 'goog.i18n.DateTimeSymbols_tr_TR', 'goog.i18n.DateTimeSymbols_ts', 'goog.i18n.DateTimeSymbols_ts_ZA', 'goog.i18n.DateTimeSymbols_twq', 'goog.i18n.DateTimeSymbols_twq_NE', 'goog.i18n.DateTimeSymbols_tzm', 'goog.i18n.DateTimeSymbols_tzm_Latn', 'goog.i18n.DateTimeSymbols_tzm_Latn_MA', 'goog.i18n.DateTimeSymbols_ug', 'goog.i18n.DateTimeSymbols_ug_Arab', 'goog.i18n.DateTimeSymbols_ug_Arab_CN', 'goog.i18n.DateTimeSymbols_uk_UA', 'goog.i18n.DateTimeSymbols_ur_IN', 'goog.i18n.DateTimeSymbols_ur_PK', 'goog.i18n.DateTimeSymbols_uz_Arab', 'goog.i18n.DateTimeSymbols_uz_Arab_AF', 'goog.i18n.DateTimeSymbols_uz_Cyrl', 'goog.i18n.DateTimeSymbols_uz_Cyrl_UZ', 'goog.i18n.DateTimeSymbols_uz_Latn', 'goog.i18n.DateTimeSymbols_uz_Latn_UZ', 'goog.i18n.DateTimeSymbols_vai', 'goog.i18n.DateTimeSymbols_vai_Latn', 'goog.i18n.DateTimeSymbols_vai_Latn_LR', 'goog.i18n.DateTimeSymbols_vai_Vaii', 'goog.i18n.DateTimeSymbols_vai_Vaii_LR', 'goog.i18n.DateTimeSymbols_ve', 'goog.i18n.DateTimeSymbols_ve_ZA', 'goog.i18n.DateTimeSymbols_vi_VN', 'goog.i18n.DateTimeSymbols_vo', 'goog.i18n.DateTimeSymbols_vo_001', 'goog.i18n.DateTimeSymbols_vun', 'goog.i18n.DateTimeSymbols_vun_TZ', 'goog.i18n.DateTimeSymbols_wae', 'goog.i18n.DateTimeSymbols_wae_CH', 'goog.i18n.DateTimeSymbols_wal', 'goog.i18n.DateTimeSymbols_wal_ET', 'goog.i18n.DateTimeSymbols_xh', 'goog.i18n.DateTimeSymbols_xh_ZA', 'goog.i18n.DateTimeSymbols_xog', 'goog.i18n.DateTimeSymbols_xog_UG', 'goog.i18n.DateTimeSymbols_yav', 'goog.i18n.DateTimeSymbols_yav_CM', 'goog.i18n.DateTimeSymbols_yo', 'goog.i18n.DateTimeSymbols_yo_BJ', 'goog.i18n.DateTimeSymbols_yo_NG', 'goog.i18n.DateTimeSymbols_zgh', 'goog.i18n.DateTimeSymbols_zgh_MA', 'goog.i18n.DateTimeSymbols_zh_Hans', 'goog.i18n.DateTimeSymbols_zh_Hans_CN', 'goog.i18n.DateTimeSymbols_zh_Hans_HK', 'goog.i18n.DateTimeSymbols_zh_Hans_MO', 'goog.i18n.DateTimeSymbols_zh_Hans_SG', 'goog.i18n.DateTimeSymbols_zh_Hant', 'goog.i18n.DateTimeSymbols_zh_Hant_HK', 'goog.i18n.DateTimeSymbols_zh_Hant_MO', 'goog.i18n.DateTimeSymbols_zh_Hant_TW', 'goog.i18n.DateTimeSymbols_zu_ZA'], ['goog.i18n.DateTimeSymbols']);
-goog.addDependency('i18n/graphemebreak.js', ['goog.i18n.GraphemeBreak'], ['goog.structs.InversionMap']);
-goog.addDependency('i18n/graphemebreak_test.js', ['goog.i18n.GraphemeBreakTest'], ['goog.i18n.GraphemeBreak', 'goog.testing.jsunit']);
-goog.addDependency('i18n/messageformat.js', ['goog.i18n.MessageFormat'], ['goog.asserts', 'goog.i18n.NumberFormat', 'goog.i18n.ordinalRules', 'goog.i18n.pluralRules']);
-goog.addDependency('i18n/messageformat_test.js', ['goog.i18n.MessageFormatTest'], ['goog.i18n.MessageFormat', 'goog.i18n.NumberFormatSymbols_hr', 'goog.i18n.pluralRules', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('i18n/mime.js', ['goog.i18n.mime', 'goog.i18n.mime.encode'], ['goog.array']);
-goog.addDependency('i18n/mime_test.js', ['goog.i18n.mime.encodeTest'], ['goog.i18n.mime.encode', 'goog.testing.jsunit']);
-goog.addDependency('i18n/numberformat.js', ['goog.i18n.NumberFormat', 'goog.i18n.NumberFormat.CurrencyStyle', 'goog.i18n.NumberFormat.Format'], ['goog.asserts', 'goog.i18n.CompactNumberFormatSymbols', 'goog.i18n.NumberFormatSymbols', 'goog.i18n.currency', 'goog.math']);
-goog.addDependency('i18n/numberformat_test.js', ['goog.i18n.NumberFormatTest'], ['goog.i18n.CompactNumberFormatSymbols', 'goog.i18n.CompactNumberFormatSymbols_de', 'goog.i18n.CompactNumberFormatSymbols_en', 'goog.i18n.CompactNumberFormatSymbols_fr', 'goog.i18n.NumberFormat', 'goog.i18n.NumberFormatSymbols', 'goog.i18n.NumberFormatSymbols_de', 'goog.i18n.NumberFormatSymbols_en', 'goog.i18n.NumberFormatSymbols_fr', 'goog.i18n.NumberFormatSymbols_pl', 'goog.i18n.NumberFormatSymbols_ro', 'goog.testing.ExpectedFailures', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('i18n/numberformatsymbols.js', ['goog.i18n.NumberFormatSymbols', 'goog.i18n.NumberFormatSymbols_af', 'goog.i18n.NumberFormatSymbols_af_ZA', 'goog.i18n.NumberFormatSymbols_am', 'goog.i18n.NumberFormatSymbols_am_ET', 'goog.i18n.NumberFormatSymbols_ar', 'goog.i18n.NumberFormatSymbols_ar_001', 'goog.i18n.NumberFormatSymbols_az', 'goog.i18n.NumberFormatSymbols_az_Cyrl_AZ', 'goog.i18n.NumberFormatSymbols_az_Latn_AZ', 'goog.i18n.NumberFormatSymbols_bg', 'goog.i18n.NumberFormatSymbols_bg_BG', 'goog.i18n.NumberFormatSymbols_bn', 'goog.i18n.NumberFormatSymbols_bn_BD', 'goog.i18n.NumberFormatSymbols_br', 'goog.i18n.NumberFormatSymbols_br_FR', 'goog.i18n.NumberFormatSymbols_ca', 'goog.i18n.NumberFormatSymbols_ca_AD', 'goog.i18n.NumberFormatSymbols_ca_ES', 'goog.i18n.NumberFormatSymbols_ca_ES_VALENCIA', 'goog.i18n.NumberFormatSymbols_ca_FR', 'goog.i18n.NumberFormatSymbols_ca_IT', 'goog.i18n.NumberFormatSymbols_chr', 'goog.i18n.NumberFormatSymbols_chr_US', 'goog.i18n.NumberFormatSymbols_cs', 'goog.i18n.NumberFormatSymbols_cs_CZ', 'goog.i18n.NumberFormatSymbols_cy', 'goog.i18n.NumberFormatSymbols_cy_GB', 'goog.i18n.NumberFormatSymbols_da', 'goog.i18n.NumberFormatSymbols_da_DK', 'goog.i18n.NumberFormatSymbols_da_GL', 'goog.i18n.NumberFormatSymbols_de', 'goog.i18n.NumberFormatSymbols_de_AT', 'goog.i18n.NumberFormatSymbols_de_BE', 'goog.i18n.NumberFormatSymbols_de_CH', 'goog.i18n.NumberFormatSymbols_de_DE', 'goog.i18n.NumberFormatSymbols_de_LU', 'goog.i18n.NumberFormatSymbols_el', 'goog.i18n.NumberFormatSymbols_el_GR', 'goog.i18n.NumberFormatSymbols_en', 'goog.i18n.NumberFormatSymbols_en_001', 'goog.i18n.NumberFormatSymbols_en_AS', 'goog.i18n.NumberFormatSymbols_en_AU', 'goog.i18n.NumberFormatSymbols_en_DG', 'goog.i18n.NumberFormatSymbols_en_FM', 'goog.i18n.NumberFormatSymbols_en_GB', 'goog.i18n.NumberFormatSymbols_en_GU', 'goog.i18n.NumberFormatSymbols_en_IE', 'goog.i18n.NumberFormatSymbols_en_IN', 'goog.i18n.NumberFormatSymbols_en_IO', 'goog.i18n.NumberFormatSymbols_en_MH', 'goog.i18n.NumberFormatSymbols_en_MP', 'goog.i18n.NumberFormatSymbols_en_PR', 'goog.i18n.NumberFormatSymbols_en_PW', 'goog.i18n.NumberFormatSymbols_en_SG', 'goog.i18n.NumberFormatSymbols_en_TC', 'goog.i18n.NumberFormatSymbols_en_UM', 'goog.i18n.NumberFormatSymbols_en_US', 'goog.i18n.NumberFormatSymbols_en_VG', 'goog.i18n.NumberFormatSymbols_en_VI', 'goog.i18n.NumberFormatSymbols_en_ZA', 'goog.i18n.NumberFormatSymbols_en_ZW', 'goog.i18n.NumberFormatSymbols_es', 'goog.i18n.NumberFormatSymbols_es_419', 'goog.i18n.NumberFormatSymbols_es_EA', 'goog.i18n.NumberFormatSymbols_es_ES', 'goog.i18n.NumberFormatSymbols_es_IC', 'goog.i18n.NumberFormatSymbols_et', 'goog.i18n.NumberFormatSymbols_et_EE', 'goog.i18n.NumberFormatSymbols_eu', 'goog.i18n.NumberFormatSymbols_eu_ES', 'goog.i18n.NumberFormatSymbols_fa', 'goog.i18n.NumberFormatSymbols_fa_IR', 'goog.i18n.NumberFormatSymbols_fi', 'goog.i18n.NumberFormatSymbols_fi_FI', 'goog.i18n.NumberFormatSymbols_fil', 'goog.i18n.NumberFormatSymbols_fil_PH', 'goog.i18n.NumberFormatSymbols_fr', 'goog.i18n.NumberFormatSymbols_fr_BL', 'goog.i18n.NumberFormatSymbols_fr_CA', 'goog.i18n.NumberFormatSymbols_fr_FR', 'goog.i18n.NumberFormatSymbols_fr_GF', 'goog.i18n.NumberFormatSymbols_fr_GP', 'goog.i18n.NumberFormatSymbols_fr_MC', 'goog.i18n.NumberFormatSymbols_fr_MF', 'goog.i18n.NumberFormatSymbols_fr_MQ', 'goog.i18n.NumberFormatSymbols_fr_PM', 'goog.i18n.NumberFormatSymbols_fr_RE', 'goog.i18n.NumberFormatSymbols_fr_YT', 'goog.i18n.NumberFormatSymbols_gl', 'goog.i18n.NumberFormatSymbols_gl_ES', 'goog.i18n.NumberFormatSymbols_gsw', 'goog.i18n.NumberFormatSymbols_gsw_CH', 'goog.i18n.NumberFormatSymbols_gsw_LI', 'goog.i18n.NumberFormatSymbols_gu', 'goog.i18n.NumberFormatSymbols_gu_IN', 'goog.i18n.NumberFormatSymbols_haw', 'goog.i18n.NumberFormatSymbols_haw_US', 'goog.i18n.NumberFormatSymbols_he', 'goog.i18n.NumberFormatSymbols_he_IL', 'goog.i18n.NumberFormatSymbols_hi', 'goog.i18n.NumberFormatSymbols_hi_IN', 'goog.i18n.NumberFormatSymbols_hr', 'goog.i18n.NumberFormatSymbols_hr_HR', 'goog.i18n.NumberFormatSymbols_hu', 'goog.i18n.NumberFormatSymbols_hu_HU', 'goog.i18n.NumberFormatSymbols_hy', 'goog.i18n.NumberFormatSymbols_hy_AM', 'goog.i18n.NumberFormatSymbols_id', 'goog.i18n.NumberFormatSymbols_id_ID', 'goog.i18n.NumberFormatSymbols_in', 'goog.i18n.NumberFormatSymbols_is', 'goog.i18n.NumberFormatSymbols_is_IS', 'goog.i18n.NumberFormatSymbols_it', 'goog.i18n.NumberFormatSymbols_it_IT', 'goog.i18n.NumberFormatSymbols_it_SM', 'goog.i18n.NumberFormatSymbols_iw', 'goog.i18n.NumberFormatSymbols_ja', 'goog.i18n.NumberFormatSymbols_ja_JP', 'goog.i18n.NumberFormatSymbols_ka', 'goog.i18n.NumberFormatSymbols_ka_GE', 'goog.i18n.NumberFormatSymbols_kk', 'goog.i18n.NumberFormatSymbols_kk_Cyrl_KZ', 'goog.i18n.NumberFormatSymbols_km', 'goog.i18n.NumberFormatSymbols_km_KH', 'goog.i18n.NumberFormatSymbols_kn', 'goog.i18n.NumberFormatSymbols_kn_IN', 'goog.i18n.NumberFormatSymbols_ko', 'goog.i18n.NumberFormatSymbols_ko_KR', 'goog.i18n.NumberFormatSymbols_ky', 'goog.i18n.NumberFormatSymbols_ky_Cyrl_KG', 'goog.i18n.NumberFormatSymbols_ln', 'goog.i18n.NumberFormatSymbols_ln_CD', 'goog.i18n.NumberFormatSymbols_lo', 'goog.i18n.NumberFormatSymbols_lo_LA', 'goog.i18n.NumberFormatSymbols_lt', 'goog.i18n.NumberFormatSymbols_lt_LT', 'goog.i18n.NumberFormatSymbols_lv', 'goog.i18n.NumberFormatSymbols_lv_LV', 'goog.i18n.NumberFormatSymbols_mk', 'goog.i18n.NumberFormatSymbols_mk_MK', 'goog.i18n.NumberFormatSymbols_ml', 'goog.i18n.NumberFormatSymbols_ml_IN', 'goog.i18n.NumberFormatSymbols_mn', 'goog.i18n.NumberFormatSymbols_mn_Cyrl_MN', 'goog.i18n.NumberFormatSymbols_mr', 'goog.i18n.NumberFormatSymbols_mr_IN', 'goog.i18n.NumberFormatSymbols_ms', 'goog.i18n.NumberFormatSymbols_ms_Latn_MY', 'goog.i18n.NumberFormatSymbols_mt', 'goog.i18n.NumberFormatSymbols_mt_MT', 'goog.i18n.NumberFormatSymbols_my', 'goog.i18n.NumberFormatSymbols_my_MM', 'goog.i18n.NumberFormatSymbols_nb', 'goog.i18n.NumberFormatSymbols_nb_NO', 'goog.i18n.NumberFormatSymbols_nb_SJ', 'goog.i18n.NumberFormatSymbols_ne', 'goog.i18n.NumberFormatSymbols_ne_NP', 'goog.i18n.NumberFormatSymbols_nl', 'goog.i18n.NumberFormatSymbols_nl_NL', 'goog.i18n.NumberFormatSymbols_no', 'goog.i18n.NumberFormatSymbols_no_NO', 'goog.i18n.NumberFormatSymbols_or', 'goog.i18n.NumberFormatSymbols_or_IN', 'goog.i18n.NumberFormatSymbols_pa', 'goog.i18n.NumberFormatSymbols_pa_Guru_IN', 'goog.i18n.NumberFormatSymbols_pl', 'goog.i18n.NumberFormatSymbols_pl_PL', 'goog.i18n.NumberFormatSymbols_pt', 'goog.i18n.NumberFormatSymbols_pt_BR', 'goog.i18n.NumberFormatSymbols_pt_PT', 'goog.i18n.NumberFormatSymbols_ro', 'goog.i18n.NumberFormatSymbols_ro_RO', 'goog.i18n.NumberFormatSymbols_ru', 'goog.i18n.NumberFormatSymbols_ru_RU', 'goog.i18n.NumberFormatSymbols_si', 'goog.i18n.NumberFormatSymbols_si_LK', 'goog.i18n.NumberFormatSymbols_sk', 'goog.i18n.NumberFormatSymbols_sk_SK', 'goog.i18n.NumberFormatSymbols_sl', 'goog.i18n.NumberFormatSymbols_sl_SI', 'goog.i18n.NumberFormatSymbols_sq', 'goog.i18n.NumberFormatSymbols_sq_AL', 'goog.i18n.NumberFormatSymbols_sr', 'goog.i18n.NumberFormatSymbols_sr_Cyrl_RS', 'goog.i18n.NumberFormatSymbols_sv', 'goog.i18n.NumberFormatSymbols_sv_SE', 'goog.i18n.NumberFormatSymbols_sw', 'goog.i18n.NumberFormatSymbols_sw_TZ', 'goog.i18n.NumberFormatSymbols_ta', 'goog.i18n.NumberFormatSymbols_ta_IN', 'goog.i18n.NumberFormatSymbols_te', 'goog.i18n.NumberFormatSymbols_te_IN', 'goog.i18n.NumberFormatSymbols_th', 'goog.i18n.NumberFormatSymbols_th_TH', 'goog.i18n.NumberFormatSymbols_tl', 'goog.i18n.NumberFormatSymbols_tr', 'goog.i18n.NumberFormatSymbols_tr_TR', 'goog.i18n.NumberFormatSymbols_uk', 'goog.i18n.NumberFormatSymbols_uk_UA', 'goog.i18n.NumberFormatSymbols_ur', 'goog.i18n.NumberFormatSymbols_ur_PK', 'goog.i18n.NumberFormatSymbols_uz', 'goog.i18n.NumberFormatSymbols_uz_Latn_UZ', 'goog.i18n.NumberFormatSymbols_vi', 'goog.i18n.NumberFormatSymbols_vi_VN', 'goog.i18n.NumberFormatSymbols_zh', 'goog.i18n.NumberFormatSymbols_zh_CN', 'goog.i18n.NumberFormatSymbols_zh_HK', 'goog.i18n.NumberFormatSymbols_zh_Hans_CN', 'goog.i18n.NumberFormatSymbols_zh_TW', 'goog.i18n.NumberFormatSymbols_zu', 'goog.i18n.NumberFormatSymbols_zu_ZA'], []);
-goog.addDependency('i18n/numberformatsymbolsext.js', ['goog.i18n.NumberFormatSymbolsExt', 'goog.i18n.NumberFormatSymbols_aa', 'goog.i18n.NumberFormatSymbols_aa_DJ', 'goog.i18n.NumberFormatSymbols_aa_ER', 'goog.i18n.NumberFormatSymbols_aa_ET', 'goog.i18n.NumberFormatSymbols_af_NA', 'goog.i18n.NumberFormatSymbols_agq', 'goog.i18n.NumberFormatSymbols_agq_CM', 'goog.i18n.NumberFormatSymbols_ak', 'goog.i18n.NumberFormatSymbols_ak_GH', 'goog.i18n.NumberFormatSymbols_ar_AE', 'goog.i18n.NumberFormatSymbols_ar_BH', 'goog.i18n.NumberFormatSymbols_ar_DJ', 'goog.i18n.NumberFormatSymbols_ar_DZ', 'goog.i18n.NumberFormatSymbols_ar_EG', 'goog.i18n.NumberFormatSymbols_ar_EH', 'goog.i18n.NumberFormatSymbols_ar_ER', 'goog.i18n.NumberFormatSymbols_ar_IL', 'goog.i18n.NumberFormatSymbols_ar_IQ', 'goog.i18n.NumberFormatSymbols_ar_JO', 'goog.i18n.NumberFormatSymbols_ar_KM', 'goog.i18n.NumberFormatSymbols_ar_KW', 'goog.i18n.NumberFormatSymbols_ar_LB', 'goog.i18n.NumberFormatSymbols_ar_LY', 'goog.i18n.NumberFormatSymbols_ar_MA', 'goog.i18n.NumberFormatSymbols_ar_MR', 'goog.i18n.NumberFormatSymbols_ar_OM', 'goog.i18n.NumberFormatSymbols_ar_PS', 'goog.i18n.NumberFormatSymbols_ar_QA', 'goog.i18n.NumberFormatSymbols_ar_SA', 'goog.i18n.NumberFormatSymbols_ar_SD', 'goog.i18n.NumberFormatSymbols_ar_SO', 'goog.i18n.NumberFormatSymbols_ar_SS', 'goog.i18n.NumberFormatSymbols_ar_SY', 'goog.i18n.NumberFormatSymbols_ar_TD', 'goog.i18n.NumberFormatSymbols_ar_TN', 'goog.i18n.NumberFormatSymbols_ar_YE', 'goog.i18n.NumberFormatSymbols_as', 'goog.i18n.NumberFormatSymbols_as_IN', 'goog.i18n.NumberFormatSymbols_asa', 'goog.i18n.NumberFormatSymbols_asa_TZ', 'goog.i18n.NumberFormatSymbols_ast', 'goog.i18n.NumberFormatSymbols_ast_ES', 'goog.i18n.NumberFormatSymbols_az_Cyrl', 'goog.i18n.NumberFormatSymbols_az_Latn', 'goog.i18n.NumberFormatSymbols_bas', 'goog.i18n.NumberFormatSymbols_bas_CM', 'goog.i18n.NumberFormatSymbols_be', 'goog.i18n.NumberFormatSymbols_be_BY', 'goog.i18n.NumberFormatSymbols_bem', 'goog.i18n.NumberFormatSymbols_bem_ZM', 'goog.i18n.NumberFormatSymbols_bez', 'goog.i18n.NumberFormatSymbols_bez_TZ', 'goog.i18n.NumberFormatSymbols_bm', 'goog.i18n.NumberFormatSymbols_bm_ML', 'goog.i18n.NumberFormatSymbols_bn_IN', 'goog.i18n.NumberFormatSymbols_bo', 'goog.i18n.NumberFormatSymbols_bo_CN', 'goog.i18n.NumberFormatSymbols_bo_IN', 'goog.i18n.NumberFormatSymbols_brx', 'goog.i18n.NumberFormatSymbols_brx_IN', 'goog.i18n.NumberFormatSymbols_bs', 'goog.i18n.NumberFormatSymbols_bs_Cyrl', 'goog.i18n.NumberFormatSymbols_bs_Cyrl_BA', 'goog.i18n.NumberFormatSymbols_bs_Latn', 'goog.i18n.NumberFormatSymbols_bs_Latn_BA', 'goog.i18n.NumberFormatSymbols_byn', 'goog.i18n.NumberFormatSymbols_byn_ER', 'goog.i18n.NumberFormatSymbols_cgg', 'goog.i18n.NumberFormatSymbols_cgg_UG', 'goog.i18n.NumberFormatSymbols_ckb', 'goog.i18n.NumberFormatSymbols_ckb_Arab', 'goog.i18n.NumberFormatSymbols_ckb_Arab_IQ', 'goog.i18n.NumberFormatSymbols_ckb_Arab_IR', 'goog.i18n.NumberFormatSymbols_ckb_IQ', 'goog.i18n.NumberFormatSymbols_ckb_IR', 'goog.i18n.NumberFormatSymbols_ckb_Latn', 'goog.i18n.NumberFormatSymbols_ckb_Latn_IQ', 'goog.i18n.NumberFormatSymbols_dav', 'goog.i18n.NumberFormatSymbols_dav_KE', 'goog.i18n.NumberFormatSymbols_de_LI', 'goog.i18n.NumberFormatSymbols_dje', 'goog.i18n.NumberFormatSymbols_dje_NE', 'goog.i18n.NumberFormatSymbols_dua', 'goog.i18n.NumberFormatSymbols_dua_CM', 'goog.i18n.NumberFormatSymbols_dyo', 'goog.i18n.NumberFormatSymbols_dyo_SN', 'goog.i18n.NumberFormatSymbols_dz', 'goog.i18n.NumberFormatSymbols_dz_BT', 'goog.i18n.NumberFormatSymbols_ebu', 'goog.i18n.NumberFormatSymbols_ebu_KE', 'goog.i18n.NumberFormatSymbols_ee', 'goog.i18n.NumberFormatSymbols_ee_GH', 'goog.i18n.NumberFormatSymbols_ee_TG', 'goog.i18n.NumberFormatSymbols_el_CY', 'goog.i18n.NumberFormatSymbols_en_150', 'goog.i18n.NumberFormatSymbols_en_AG', 'goog.i18n.NumberFormatSymbols_en_AI', 'goog.i18n.NumberFormatSymbols_en_BB', 'goog.i18n.NumberFormatSymbols_en_BE', 'goog.i18n.NumberFormatSymbols_en_BM', 'goog.i18n.NumberFormatSymbols_en_BS', 'goog.i18n.NumberFormatSymbols_en_BW', 'goog.i18n.NumberFormatSymbols_en_BZ', 'goog.i18n.NumberFormatSymbols_en_CA', 'goog.i18n.NumberFormatSymbols_en_CC', 'goog.i18n.NumberFormatSymbols_en_CK', 'goog.i18n.NumberFormatSymbols_en_CM', 'goog.i18n.NumberFormatSymbols_en_CX', 'goog.i18n.NumberFormatSymbols_en_DM', 'goog.i18n.NumberFormatSymbols_en_ER', 'goog.i18n.NumberFormatSymbols_en_FJ', 'goog.i18n.NumberFormatSymbols_en_FK', 'goog.i18n.NumberFormatSymbols_en_GD', 'goog.i18n.NumberFormatSymbols_en_GG', 'goog.i18n.NumberFormatSymbols_en_GH', 'goog.i18n.NumberFormatSymbols_en_GI', 'goog.i18n.NumberFormatSymbols_en_GM', 'goog.i18n.NumberFormatSymbols_en_GY', 'goog.i18n.NumberFormatSymbols_en_HK', 'goog.i18n.NumberFormatSymbols_en_IM', 'goog.i18n.NumberFormatSymbols_en_JE', 'goog.i18n.NumberFormatSymbols_en_JM', 'goog.i18n.NumberFormatSymbols_en_KE', 'goog.i18n.NumberFormatSymbols_en_KI', 'goog.i18n.NumberFormatSymbols_en_KN', 'goog.i18n.NumberFormatSymbols_en_KY', 'goog.i18n.NumberFormatSymbols_en_LC', 'goog.i18n.NumberFormatSymbols_en_LR', 'goog.i18n.NumberFormatSymbols_en_LS', 'goog.i18n.NumberFormatSymbols_en_MG', 'goog.i18n.NumberFormatSymbols_en_MO', 'goog.i18n.NumberFormatSymbols_en_MS', 'goog.i18n.NumberFormatSymbols_en_MT', 'goog.i18n.NumberFormatSymbols_en_MU', 'goog.i18n.NumberFormatSymbols_en_MW', 'goog.i18n.NumberFormatSymbols_en_NA', 'goog.i18n.NumberFormatSymbols_en_NF', 'goog.i18n.NumberFormatSymbols_en_NG', 'goog.i18n.NumberFormatSymbols_en_NR', 'goog.i18n.NumberFormatSymbols_en_NU', 'goog.i18n.NumberFormatSymbols_en_NZ', 'goog.i18n.NumberFormatSymbols_en_PG', 'goog.i18n.NumberFormatSymbols_en_PH', 'goog.i18n.NumberFormatSymbols_en_PK', 'goog.i18n.NumberFormatSymbols_en_PN', 'goog.i18n.NumberFormatSymbols_en_RW', 'goog.i18n.NumberFormatSymbols_en_SB', 'goog.i18n.NumberFormatSymbols_en_SC', 'goog.i18n.NumberFormatSymbols_en_SD', 'goog.i18n.NumberFormatSymbols_en_SH', 'goog.i18n.NumberFormatSymbols_en_SL', 'goog.i18n.NumberFormatSymbols_en_SS', 'goog.i18n.NumberFormatSymbols_en_SX', 'goog.i18n.NumberFormatSymbols_en_SZ', 'goog.i18n.NumberFormatSymbols_en_TK', 'goog.i18n.NumberFormatSymbols_en_TO', 'goog.i18n.NumberFormatSymbols_en_TT', 'goog.i18n.NumberFormatSymbols_en_TV', 'goog.i18n.NumberFormatSymbols_en_TZ', 'goog.i18n.NumberFormatSymbols_en_UG', 'goog.i18n.NumberFormatSymbols_en_VC', 'goog.i18n.NumberFormatSymbols_en_VU', 'goog.i18n.NumberFormatSymbols_en_WS', 'goog.i18n.NumberFormatSymbols_en_ZM', 'goog.i18n.NumberFormatSymbols_eo', 'goog.i18n.NumberFormatSymbols_eo_001', 'goog.i18n.NumberFormatSymbols_es_AR', 'goog.i18n.NumberFormatSymbols_es_BO', 'goog.i18n.NumberFormatSymbols_es_CL', 'goog.i18n.NumberFormatSymbols_es_CO', 'goog.i18n.NumberFormatSymbols_es_CR', 'goog.i18n.NumberFormatSymbols_es_CU', 'goog.i18n.NumberFormatSymbols_es_DO', 'goog.i18n.NumberFormatSymbols_es_EC', 'goog.i18n.NumberFormatSymbols_es_GQ', 'goog.i18n.NumberFormatSymbols_es_GT', 'goog.i18n.NumberFormatSymbols_es_HN', 'goog.i18n.NumberFormatSymbols_es_MX', 'goog.i18n.NumberFormatSymbols_es_NI', 'goog.i18n.NumberFormatSymbols_es_PA', 'goog.i18n.NumberFormatSymbols_es_PE', 'goog.i18n.NumberFormatSymbols_es_PH', 'goog.i18n.NumberFormatSymbols_es_PR', 'goog.i18n.NumberFormatSymbols_es_PY', 'goog.i18n.NumberFormatSymbols_es_SV', 'goog.i18n.NumberFormatSymbols_es_US', 'goog.i18n.NumberFormatSymbols_es_UY', 'goog.i18n.NumberFormatSymbols_es_VE', 'goog.i18n.NumberFormatSymbols_ewo', 'goog.i18n.NumberFormatSymbols_ewo_CM', 'goog.i18n.NumberFormatSymbols_fa_AF', 'goog.i18n.NumberFormatSymbols_ff', 'goog.i18n.NumberFormatSymbols_ff_CM', 'goog.i18n.NumberFormatSymbols_ff_GN', 'goog.i18n.NumberFormatSymbols_ff_MR', 'goog.i18n.NumberFormatSymbols_ff_SN', 'goog.i18n.NumberFormatSymbols_fo', 'goog.i18n.NumberFormatSymbols_fo_FO', 'goog.i18n.NumberFormatSymbols_fr_BE', 'goog.i18n.NumberFormatSymbols_fr_BF', 'goog.i18n.NumberFormatSymbols_fr_BI', 'goog.i18n.NumberFormatSymbols_fr_BJ', 'goog.i18n.NumberFormatSymbols_fr_CD', 'goog.i18n.NumberFormatSymbols_fr_CF', 'goog.i18n.NumberFormatSymbols_fr_CG', 'goog.i18n.NumberFormatSymbols_fr_CH', 'goog.i18n.NumberFormatSymbols_fr_CI', 'goog.i18n.NumberFormatSymbols_fr_CM', 'goog.i18n.NumberFormatSymbols_fr_DJ', 'goog.i18n.NumberFormatSymbols_fr_DZ', 'goog.i18n.NumberFormatSymbols_fr_GA', 'goog.i18n.NumberFormatSymbols_fr_GN', 'goog.i18n.NumberFormatSymbols_fr_GQ', 'goog.i18n.NumberFormatSymbols_fr_HT', 'goog.i18n.NumberFormatSymbols_fr_KM', 'goog.i18n.NumberFormatSymbols_fr_LU', 'goog.i18n.NumberFormatSymbols_fr_MA', 'goog.i18n.NumberFormatSymbols_fr_MG', 'goog.i18n.NumberFormatSymbols_fr_ML', 'goog.i18n.NumberFormatSymbols_fr_MR', 'goog.i18n.NumberFormatSymbols_fr_MU', 'goog.i18n.NumberFormatSymbols_fr_NC', 'goog.i18n.NumberFormatSymbols_fr_NE', 'goog.i18n.NumberFormatSymbols_fr_PF', 'goog.i18n.NumberFormatSymbols_fr_RW', 'goog.i18n.NumberFormatSymbols_fr_SC', 'goog.i18n.NumberFormatSymbols_fr_SN', 'goog.i18n.NumberFormatSymbols_fr_SY', 'goog.i18n.NumberFormatSymbols_fr_TD', 'goog.i18n.NumberFormatSymbols_fr_TG', 'goog.i18n.NumberFormatSymbols_fr_TN', 'goog.i18n.NumberFormatSymbols_fr_VU', 'goog.i18n.NumberFormatSymbols_fr_WF', 'goog.i18n.NumberFormatSymbols_fur', 'goog.i18n.NumberFormatSymbols_fur_IT', 'goog.i18n.NumberFormatSymbols_fy', 'goog.i18n.NumberFormatSymbols_fy_NL', 'goog.i18n.NumberFormatSymbols_ga', 'goog.i18n.NumberFormatSymbols_ga_IE', 'goog.i18n.NumberFormatSymbols_gd', 'goog.i18n.NumberFormatSymbols_gd_GB', 'goog.i18n.NumberFormatSymbols_guz', 'goog.i18n.NumberFormatSymbols_guz_KE', 'goog.i18n.NumberFormatSymbols_gv', 'goog.i18n.NumberFormatSymbols_gv_IM', 'goog.i18n.NumberFormatSymbols_ha', 'goog.i18n.NumberFormatSymbols_ha_Latn', 'goog.i18n.NumberFormatSymbols_ha_Latn_GH', 'goog.i18n.NumberFormatSymbols_ha_Latn_NE', 'goog.i18n.NumberFormatSymbols_ha_Latn_NG', 'goog.i18n.NumberFormatSymbols_hr_BA', 'goog.i18n.NumberFormatSymbols_ia', 'goog.i18n.NumberFormatSymbols_ia_FR', 'goog.i18n.NumberFormatSymbols_ig', 'goog.i18n.NumberFormatSymbols_ig_NG', 'goog.i18n.NumberFormatSymbols_ii', 'goog.i18n.NumberFormatSymbols_ii_CN', 'goog.i18n.NumberFormatSymbols_it_CH', 'goog.i18n.NumberFormatSymbols_jgo', 'goog.i18n.NumberFormatSymbols_jgo_CM', 'goog.i18n.NumberFormatSymbols_jmc', 'goog.i18n.NumberFormatSymbols_jmc_TZ', 'goog.i18n.NumberFormatSymbols_kab', 'goog.i18n.NumberFormatSymbols_kab_DZ', 'goog.i18n.NumberFormatSymbols_kam', 'goog.i18n.NumberFormatSymbols_kam_KE', 'goog.i18n.NumberFormatSymbols_kde', 'goog.i18n.NumberFormatSymbols_kde_TZ', 'goog.i18n.NumberFormatSymbols_kea', 'goog.i18n.NumberFormatSymbols_kea_CV', 'goog.i18n.NumberFormatSymbols_khq', 'goog.i18n.NumberFormatSymbols_khq_ML', 'goog.i18n.NumberFormatSymbols_ki', 'goog.i18n.NumberFormatSymbols_ki_KE', 'goog.i18n.NumberFormatSymbols_kk_Cyrl', 'goog.i18n.NumberFormatSymbols_kkj', 'goog.i18n.NumberFormatSymbols_kkj_CM', 'goog.i18n.NumberFormatSymbols_kl', 'goog.i18n.NumberFormatSymbols_kl_GL', 'goog.i18n.NumberFormatSymbols_kln', 'goog.i18n.NumberFormatSymbols_kln_KE', 'goog.i18n.NumberFormatSymbols_ko_KP', 'goog.i18n.NumberFormatSymbols_kok', 'goog.i18n.NumberFormatSymbols_kok_IN', 'goog.i18n.NumberFormatSymbols_ks', 'goog.i18n.NumberFormatSymbols_ks_Arab', 'goog.i18n.NumberFormatSymbols_ks_Arab_IN', 'goog.i18n.NumberFormatSymbols_ksb', 'goog.i18n.NumberFormatSymbols_ksb_TZ', 'goog.i18n.NumberFormatSymbols_ksf', 'goog.i18n.NumberFormatSymbols_ksf_CM', 'goog.i18n.NumberFormatSymbols_ksh', 'goog.i18n.NumberFormatSymbols_ksh_DE', 'goog.i18n.NumberFormatSymbols_kw', 'goog.i18n.NumberFormatSymbols_kw_GB', 'goog.i18n.NumberFormatSymbols_ky_Cyrl', 'goog.i18n.NumberFormatSymbols_lag', 'goog.i18n.NumberFormatSymbols_lag_TZ', 'goog.i18n.NumberFormatSymbols_lg', 'goog.i18n.NumberFormatSymbols_lg_UG', 'goog.i18n.NumberFormatSymbols_lkt', 'goog.i18n.NumberFormatSymbols_lkt_US', 'goog.i18n.NumberFormatSymbols_ln_AO', 'goog.i18n.NumberFormatSymbols_ln_CF', 'goog.i18n.NumberFormatSymbols_ln_CG', 'goog.i18n.NumberFormatSymbols_lu', 'goog.i18n.NumberFormatSymbols_lu_CD', 'goog.i18n.NumberFormatSymbols_luo', 'goog.i18n.NumberFormatSymbols_luo_KE', 'goog.i18n.NumberFormatSymbols_luy', 'goog.i18n.NumberFormatSymbols_luy_KE', 'goog.i18n.NumberFormatSymbols_mas', 'goog.i18n.NumberFormatSymbols_mas_KE', 'goog.i18n.NumberFormatSymbols_mas_TZ', 'goog.i18n.NumberFormatSymbols_mer', 'goog.i18n.NumberFormatSymbols_mer_KE', 'goog.i18n.NumberFormatSymbols_mfe', 'goog.i18n.NumberFormatSymbols_mfe_MU', 'goog.i18n.NumberFormatSymbols_mg', 'goog.i18n.NumberFormatSymbols_mg_MG', 'goog.i18n.NumberFormatSymbols_mgh', 'goog.i18n.NumberFormatSymbols_mgh_MZ', 'goog.i18n.NumberFormatSymbols_mgo', 'goog.i18n.NumberFormatSymbols_mgo_CM', 'goog.i18n.NumberFormatSymbols_mn_Cyrl', 'goog.i18n.NumberFormatSymbols_ms_Latn', 'goog.i18n.NumberFormatSymbols_ms_Latn_BN', 'goog.i18n.NumberFormatSymbols_ms_Latn_SG', 'goog.i18n.NumberFormatSymbols_mua', 'goog.i18n.NumberFormatSymbols_mua_CM', 'goog.i18n.NumberFormatSymbols_naq', 'goog.i18n.NumberFormatSymbols_naq_NA', 'goog.i18n.NumberFormatSymbols_nd', 'goog.i18n.NumberFormatSymbols_nd_ZW', 'goog.i18n.NumberFormatSymbols_ne_IN', 'goog.i18n.NumberFormatSymbols_nl_AW', 'goog.i18n.NumberFormatSymbols_nl_BE', 'goog.i18n.NumberFormatSymbols_nl_BQ', 'goog.i18n.NumberFormatSymbols_nl_CW', 'goog.i18n.NumberFormatSymbols_nl_SR', 'goog.i18n.NumberFormatSymbols_nl_SX', 'goog.i18n.NumberFormatSymbols_nmg', 'goog.i18n.NumberFormatSymbols_nmg_CM', 'goog.i18n.NumberFormatSymbols_nn', 'goog.i18n.NumberFormatSymbols_nn_NO', 'goog.i18n.NumberFormatSymbols_nnh', 'goog.i18n.NumberFormatSymbols_nnh_CM', 'goog.i18n.NumberFormatSymbols_nr', 'goog.i18n.NumberFormatSymbols_nr_ZA', 'goog.i18n.NumberFormatSymbols_nso', 'goog.i18n.NumberFormatSymbols_nso_ZA', 'goog.i18n.NumberFormatSymbols_nus', 'goog.i18n.NumberFormatSymbols_nus_SD', 'goog.i18n.NumberFormatSymbols_nyn', 'goog.i18n.NumberFormatSymbols_nyn_UG', 'goog.i18n.NumberFormatSymbols_om', 'goog.i18n.NumberFormatSymbols_om_ET', 'goog.i18n.NumberFormatSymbols_om_KE', 'goog.i18n.NumberFormatSymbols_os', 'goog.i18n.NumberFormatSymbols_os_GE', 'goog.i18n.NumberFormatSymbols_os_RU', 'goog.i18n.NumberFormatSymbols_pa_Arab', 'goog.i18n.NumberFormatSymbols_pa_Arab_PK', 'goog.i18n.NumberFormatSymbols_pa_Guru', 'goog.i18n.NumberFormatSymbols_ps', 'goog.i18n.NumberFormatSymbols_ps_AF', 'goog.i18n.NumberFormatSymbols_pt_AO', 'goog.i18n.NumberFormatSymbols_pt_CV', 'goog.i18n.NumberFormatSymbols_pt_GW', 'goog.i18n.NumberFormatSymbols_pt_MO', 'goog.i18n.NumberFormatSymbols_pt_MZ', 'goog.i18n.NumberFormatSymbols_pt_ST', 'goog.i18n.NumberFormatSymbols_pt_TL', 'goog.i18n.NumberFormatSymbols_rm', 'goog.i18n.NumberFormatSymbols_rm_CH', 'goog.i18n.NumberFormatSymbols_rn', 'goog.i18n.NumberFormatSymbols_rn_BI', 'goog.i18n.NumberFormatSymbols_ro_MD', 'goog.i18n.NumberFormatSymbols_rof', 'goog.i18n.NumberFormatSymbols_rof_TZ', 'goog.i18n.NumberFormatSymbols_ru_BY', 'goog.i18n.NumberFormatSymbols_ru_KG', 'goog.i18n.NumberFormatSymbols_ru_KZ', 'goog.i18n.NumberFormatSymbols_ru_MD', 'goog.i18n.NumberFormatSymbols_ru_UA', 'goog.i18n.NumberFormatSymbols_rw', 'goog.i18n.NumberFormatSymbols_rw_RW', 'goog.i18n.NumberFormatSymbols_rwk', 'goog.i18n.NumberFormatSymbols_rwk_TZ', 'goog.i18n.NumberFormatSymbols_sah', 'goog.i18n.NumberFormatSymbols_sah_RU', 'goog.i18n.NumberFormatSymbols_saq', 'goog.i18n.NumberFormatSymbols_saq_KE', 'goog.i18n.NumberFormatSymbols_sbp', 'goog.i18n.NumberFormatSymbols_sbp_TZ', 'goog.i18n.NumberFormatSymbols_se', 'goog.i18n.NumberFormatSymbols_se_FI', 'goog.i18n.NumberFormatSymbols_se_NO', 'goog.i18n.NumberFormatSymbols_seh', 'goog.i18n.NumberFormatSymbols_seh_MZ', 'goog.i18n.NumberFormatSymbols_ses', 'goog.i18n.NumberFormatSymbols_ses_ML', 'goog.i18n.NumberFormatSymbols_sg', 'goog.i18n.NumberFormatSymbols_sg_CF', 'goog.i18n.NumberFormatSymbols_shi', 'goog.i18n.NumberFormatSymbols_shi_Latn', 'goog.i18n.NumberFormatSymbols_shi_Latn_MA', 'goog.i18n.NumberFormatSymbols_shi_Tfng', 'goog.i18n.NumberFormatSymbols_shi_Tfng_MA', 'goog.i18n.NumberFormatSymbols_sn', 'goog.i18n.NumberFormatSymbols_sn_ZW', 'goog.i18n.NumberFormatSymbols_so', 'goog.i18n.NumberFormatSymbols_so_DJ', 'goog.i18n.NumberFormatSymbols_so_ET', 'goog.i18n.NumberFormatSymbols_so_KE', 'goog.i18n.NumberFormatSymbols_so_SO', 'goog.i18n.NumberFormatSymbols_sq_MK', 'goog.i18n.NumberFormatSymbols_sq_XK', 'goog.i18n.NumberFormatSymbols_sr_Cyrl', 'goog.i18n.NumberFormatSymbols_sr_Cyrl_BA', 'goog.i18n.NumberFormatSymbols_sr_Cyrl_ME', 'goog.i18n.NumberFormatSymbols_sr_Cyrl_XK', 'goog.i18n.NumberFormatSymbols_sr_Latn', 'goog.i18n.NumberFormatSymbols_sr_Latn_BA', 'goog.i18n.NumberFormatSymbols_sr_Latn_ME', 'goog.i18n.NumberFormatSymbols_sr_Latn_RS', 'goog.i18n.NumberFormatSymbols_sr_Latn_XK', 'goog.i18n.NumberFormatSymbols_ss', 'goog.i18n.NumberFormatSymbols_ss_SZ', 'goog.i18n.NumberFormatSymbols_ss_ZA', 'goog.i18n.NumberFormatSymbols_ssy', 'goog.i18n.NumberFormatSymbols_ssy_ER', 'goog.i18n.NumberFormatSymbols_st', 'goog.i18n.NumberFormatSymbols_st_LS', 'goog.i18n.NumberFormatSymbols_st_ZA', 'goog.i18n.NumberFormatSymbols_sv_AX', 'goog.i18n.NumberFormatSymbols_sv_FI', 'goog.i18n.NumberFormatSymbols_sw_KE', 'goog.i18n.NumberFormatSymbols_sw_UG', 'goog.i18n.NumberFormatSymbols_swc', 'goog.i18n.NumberFormatSymbols_swc_CD', 'goog.i18n.NumberFormatSymbols_ta_LK', 'goog.i18n.NumberFormatSymbols_ta_MY', 'goog.i18n.NumberFormatSymbols_ta_SG', 'goog.i18n.NumberFormatSymbols_teo', 'goog.i18n.NumberFormatSymbols_teo_KE', 'goog.i18n.NumberFormatSymbols_teo_UG', 'goog.i18n.NumberFormatSymbols_tg', 'goog.i18n.NumberFormatSymbols_tg_Cyrl', 'goog.i18n.NumberFormatSymbols_tg_Cyrl_TJ', 'goog.i18n.NumberFormatSymbols_ti', 'goog.i18n.NumberFormatSymbols_ti_ER', 'goog.i18n.NumberFormatSymbols_ti_ET', 'goog.i18n.NumberFormatSymbols_tig', 'goog.i18n.NumberFormatSymbols_tig_ER', 'goog.i18n.NumberFormatSymbols_tn', 'goog.i18n.NumberFormatSymbols_tn_BW', 'goog.i18n.NumberFormatSymbols_tn_ZA', 'goog.i18n.NumberFormatSymbols_to', 'goog.i18n.NumberFormatSymbols_to_TO', 'goog.i18n.NumberFormatSymbols_tr_CY', 'goog.i18n.NumberFormatSymbols_ts', 'goog.i18n.NumberFormatSymbols_ts_ZA', 'goog.i18n.NumberFormatSymbols_twq', 'goog.i18n.NumberFormatSymbols_twq_NE', 'goog.i18n.NumberFormatSymbols_tzm', 'goog.i18n.NumberFormatSymbols_tzm_Latn', 'goog.i18n.NumberFormatSymbols_tzm_Latn_MA', 'goog.i18n.NumberFormatSymbols_ug', 'goog.i18n.NumberFormatSymbols_ug_Arab', 'goog.i18n.NumberFormatSymbols_ug_Arab_CN', 'goog.i18n.NumberFormatSymbols_ur_IN', 'goog.i18n.NumberFormatSymbols_uz_Arab', 'goog.i18n.NumberFormatSymbols_uz_Arab_AF', 'goog.i18n.NumberFormatSymbols_uz_Cyrl', 'goog.i18n.NumberFormatSymbols_uz_Cyrl_UZ', 'goog.i18n.NumberFormatSymbols_uz_Latn', 'goog.i18n.NumberFormatSymbols_vai', 'goog.i18n.NumberFormatSymbols_vai_Latn', 'goog.i18n.NumberFormatSymbols_vai_Latn_LR', 'goog.i18n.NumberFormatSymbols_vai_Vaii', 'goog.i18n.NumberFormatSymbols_vai_Vaii_LR', 'goog.i18n.NumberFormatSymbols_ve', 'goog.i18n.NumberFormatSymbols_ve_ZA', 'goog.i18n.NumberFormatSymbols_vo', 'goog.i18n.NumberFormatSymbols_vo_001', 'goog.i18n.NumberFormatSymbols_vun', 'goog.i18n.NumberFormatSymbols_vun_TZ', 'goog.i18n.NumberFormatSymbols_wae', 'goog.i18n.NumberFormatSymbols_wae_CH', 'goog.i18n.NumberFormatSymbols_wal', 'goog.i18n.NumberFormatSymbols_wal_ET', 'goog.i18n.NumberFormatSymbols_xh', 'goog.i18n.NumberFormatSymbols_xh_ZA', 'goog.i18n.NumberFormatSymbols_xog', 'goog.i18n.NumberFormatSymbols_xog_UG', 'goog.i18n.NumberFormatSymbols_yav', 'goog.i18n.NumberFormatSymbols_yav_CM', 'goog.i18n.NumberFormatSymbols_yo', 'goog.i18n.NumberFormatSymbols_yo_BJ', 'goog.i18n.NumberFormatSymbols_yo_NG', 'goog.i18n.NumberFormatSymbols_zgh', 'goog.i18n.NumberFormatSymbols_zgh_MA', 'goog.i18n.NumberFormatSymbols_zh_Hans', 'goog.i18n.NumberFormatSymbols_zh_Hans_HK', 'goog.i18n.NumberFormatSymbols_zh_Hans_MO', 'goog.i18n.NumberFormatSymbols_zh_Hans_SG', 'goog.i18n.NumberFormatSymbols_zh_Hant', 'goog.i18n.NumberFormatSymbols_zh_Hant_HK', 'goog.i18n.NumberFormatSymbols_zh_Hant_MO', 'goog.i18n.NumberFormatSymbols_zh_Hant_TW'], ['goog.i18n.NumberFormatSymbols']);
-goog.addDependency('i18n/ordinalrules.js', ['goog.i18n.ordinalRules'], []);
-goog.addDependency('i18n/pluralrules.js', ['goog.i18n.pluralRules'], []);
-goog.addDependency('i18n/pluralrules_test.js', ['goog.i18n.pluralRulesTest'], ['goog.i18n.pluralRules', 'goog.testing.jsunit']);
-goog.addDependency('i18n/timezone.js', ['goog.i18n.TimeZone'], ['goog.array', 'goog.date.DateLike', 'goog.string']);
-goog.addDependency('i18n/timezone_test.js', ['goog.i18n.TimeZoneTest'], ['goog.i18n.TimeZone', 'goog.testing.jsunit']);
-goog.addDependency('i18n/uchar.js', ['goog.i18n.uChar'], []);
-goog.addDependency('i18n/uchar/localnamefetcher.js', ['goog.i18n.uChar.LocalNameFetcher'], ['goog.i18n.uChar', 'goog.i18n.uChar.NameFetcher', 'goog.log']);
-goog.addDependency('i18n/uchar/localnamefetcher_test.js', ['goog.i18n.uChar.LocalNameFetcherTest'], ['goog.i18n.uChar.LocalNameFetcher', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('i18n/uchar/namefetcher.js', ['goog.i18n.uChar.NameFetcher'], []);
-goog.addDependency('i18n/uchar/remotenamefetcher.js', ['goog.i18n.uChar.RemoteNameFetcher'], ['goog.Disposable', 'goog.Uri', 'goog.i18n.uChar', 'goog.i18n.uChar.NameFetcher', 'goog.log', 'goog.net.XhrIo', 'goog.structs.Map']);
-goog.addDependency('i18n/uchar/remotenamefetcher_test.js', ['goog.i18n.uChar.RemoteNameFetcherTest'], ['goog.i18n.uChar.RemoteNameFetcher', 'goog.net.XhrIo', 'goog.testing.jsunit', 'goog.testing.net.XhrIo', 'goog.testing.recordFunction']);
-goog.addDependency('i18n/uchar_test.js', ['goog.i18n.uCharTest'], ['goog.i18n.uChar', 'goog.testing.jsunit']);
-goog.addDependency('iter/iter.js', ['goog.iter', 'goog.iter.Iterable', 'goog.iter.Iterator', 'goog.iter.StopIteration'], ['goog.array', 'goog.asserts', 'goog.functions', 'goog.math']);
-goog.addDependency('iter/iter_test.js', ['goog.iterTest'], ['goog.iter', 'goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.testing.jsunit']);
-goog.addDependency('json/evaljsonprocessor.js', ['goog.json.EvalJsonProcessor'], ['goog.json', 'goog.json.Processor', 'goog.json.Serializer']);
-goog.addDependency('json/hybrid.js', ['goog.json.hybrid'], ['goog.asserts', 'goog.json']);
-goog.addDependency('json/hybrid_test.js', ['goog.json.hybridTest'], ['goog.json', 'goog.json.hybrid', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('json/hybridjsonprocessor.js', ['goog.json.HybridJsonProcessor'], ['goog.json.Processor', 'goog.json.hybrid']);
-goog.addDependency('json/hybridjsonprocessor_test.js', ['goog.json.HybridJsonProcessorTest'], ['goog.json.HybridJsonProcessor', 'goog.json.hybrid', 'goog.testing.jsunit']);
-goog.addDependency('json/json.js', ['goog.json', 'goog.json.Replacer', 'goog.json.Reviver', 'goog.json.Serializer'], []);
-goog.addDependency('json/json_perf.js', ['goog.jsonPerf'], ['goog.dom', 'goog.json', 'goog.math', 'goog.string', 'goog.testing.PerformanceTable', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('json/json_test.js', ['goog.jsonTest'], ['goog.functions', 'goog.json', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('json/nativejsonprocessor.js', ['goog.json.NativeJsonProcessor'], ['goog.asserts', 'goog.json', 'goog.json.Processor']);
-goog.addDependency('json/processor.js', ['goog.json.Processor'], ['goog.string.Parser', 'goog.string.Stringifier']);
-goog.addDependency('json/processor_test.js', ['goog.json.processorTest'], ['goog.json.EvalJsonProcessor', 'goog.json.NativeJsonProcessor', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('labs/dom/pagevisibilitymonitor.js', ['goog.labs.dom.PageVisibilityEvent', 'goog.labs.dom.PageVisibilityMonitor', 'goog.labs.dom.PageVisibilityState'], ['goog.dom', 'goog.dom.vendor', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.memoize']);
-goog.addDependency('labs/dom/pagevisibilitymonitor_test.js', ['goog.labs.dom.PageVisibilityMonitorTest'], ['goog.events', 'goog.functions', 'goog.labs.dom.PageVisibilityMonitor', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('labs/events/nondisposableeventtarget.js', ['goog.labs.events.NonDisposableEventTarget'], ['goog.array', 'goog.asserts', 'goog.events.Event', 'goog.events.Listenable', 'goog.events.ListenerMap', 'goog.object']);
-goog.addDependency('labs/events/nondisposableeventtarget_test.js', ['goog.labs.events.NonDisposableEventTargetTest'], ['goog.events.Listenable', 'goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType', 'goog.labs.events.NonDisposableEventTarget', 'goog.testing.jsunit']);
-goog.addDependency('labs/events/nondisposableeventtarget_via_googevents_test.js', ['goog.labs.events.NonDisposableEventTargetGoogEventsTest'], ['goog.events', 'goog.events.eventTargetTester', 'goog.events.eventTargetTester.KeyType', 'goog.events.eventTargetTester.UnlistenReturnType', 'goog.labs.events.NonDisposableEventTarget', 'goog.object', 'goog.testing', 'goog.testing.jsunit']);
-goog.addDependency('labs/events/touch.js', ['goog.labs.events.touch', 'goog.labs.events.touch.TouchData'], ['goog.array', 'goog.asserts', 'goog.events.EventType', 'goog.string']);
-goog.addDependency('labs/events/touch_test.js', ['goog.labs.events.touchTest'], ['goog.labs.events.touch', 'goog.testing.jsunit']);
-goog.addDependency('labs/format/csv.js', ['goog.labs.format.csv', 'goog.labs.format.csv.ParseError', 'goog.labs.format.csv.Token'], ['goog.array', 'goog.asserts', 'goog.debug.Error', 'goog.object', 'goog.string', 'goog.string.newlines']);
-goog.addDependency('labs/format/csv_test.js', ['goog.labs.format.csvTest'], ['goog.labs.format.csv', 'goog.labs.format.csv.ParseError', 'goog.object', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('labs/html/attribute_rewriter.js', ['goog.labs.html.AttributeRewriter', 'goog.labs.html.AttributeValue', 'goog.labs.html.attributeRewriterPresubmitWorkaround'], []);
-goog.addDependency('labs/html/sanitizer.js', ['goog.labs.html.Sanitizer'], ['goog.asserts', 'goog.html.SafeUrl', 'goog.labs.html.attributeRewriterPresubmitWorkaround', 'goog.labs.html.scrubber', 'goog.object', 'goog.string']);
-goog.addDependency('labs/html/sanitizer_test.js', ['goog.labs.html.SanitizerTest'], ['goog.html.SafeUrl', 'goog.labs.html.Sanitizer', 'goog.string', 'goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('labs/html/scrubber.js', ['goog.labs.html.scrubber'], ['goog.array', 'goog.dom.tags', 'goog.labs.html.attributeRewriterPresubmitWorkaround', 'goog.string']);
-goog.addDependency('labs/html/scrubber_test.js', ['goog.html.ScrubberTest'], ['goog.labs.html.scrubber', 'goog.object', 'goog.string', 'goog.testing.jsunit']);
-goog.addDependency('labs/i18n/listformat.js', ['goog.labs.i18n.GenderInfo', 'goog.labs.i18n.GenderInfo.Gender', 'goog.labs.i18n.ListFormat'], ['goog.asserts', 'goog.labs.i18n.ListFormatSymbols']);
-goog.addDependency('labs/i18n/listformat_test.js', ['goog.labs.i18n.ListFormatTest'], ['goog.labs.i18n.GenderInfo', 'goog.labs.i18n.ListFormat', 'goog.labs.i18n.ListFormatSymbols', 'goog.labs.i18n.ListFormatSymbols_el', 'goog.labs.i18n.ListFormatSymbols_en', 'goog.labs.i18n.ListFormatSymbols_fr', 'goog.labs.i18n.ListFormatSymbols_ml', 'goog.labs.i18n.ListFormatSymbols_zu', 'goog.testing.jsunit']);
-goog.addDependency('labs/i18n/listsymbols.js', ['goog.labs.i18n.ListFormatSymbols', 'goog.labs.i18n.ListFormatSymbols_af', 'goog.labs.i18n.ListFormatSymbols_am', 'goog.labs.i18n.ListFormatSymbols_ar', 'goog.labs.i18n.ListFormatSymbols_az', 'goog.labs.i18n.ListFormatSymbols_bg', 'goog.labs.i18n.ListFormatSymbols_bn', 'goog.labs.i18n.ListFormatSymbols_br', 'goog.labs.i18n.ListFormatSymbols_ca', 'goog.labs.i18n.ListFormatSymbols_chr', 'goog.labs.i18n.ListFormatSymbols_cs', 'goog.labs.i18n.ListFormatSymbols_cy', 'goog.labs.i18n.ListFormatSymbols_da', 'goog.labs.i18n.ListFormatSymbols_de', 'goog.labs.i18n.ListFormatSymbols_de_AT', 'goog.labs.i18n.ListFormatSymbols_de_CH', 'goog.labs.i18n.ListFormatSymbols_el', 'goog.labs.i18n.ListFormatSymbols_en', 'goog.labs.i18n.ListFormatSymbols_en_AU', 'goog.labs.i18n.ListFormatSymbols_en_GB', 'goog.labs.i18n.ListFormatSymbols_en_IE', 'goog.labs.i18n.ListFormatSymbols_en_IN', 'goog.labs.i18n.ListFormatSymbols_en_ISO', 'goog.labs.i18n.ListFormatSymbols_en_SG', 'goog.labs.i18n.ListFormatSymbols_en_US', 'goog.labs.i18n.ListFormatSymbols_en_ZA', 'goog.labs.i18n.ListFormatSymbols_es', 'goog.labs.i18n.ListFormatSymbols_es_419', 'goog.labs.i18n.ListFormatSymbols_es_ES', 'goog.labs.i18n.ListFormatSymbols_et', 'goog.labs.i18n.ListFormatSymbols_eu', 'goog.labs.i18n.ListFormatSymbols_fa', 'goog.labs.i18n.ListFormatSymbols_fi', 'goog.labs.i18n.ListFormatSymbols_fil', 'goog.labs.i18n.ListFormatSymbols_fr', 'goog.labs.i18n.ListFormatSymbols_fr_CA', 'goog.labs.i18n.ListFormatSymbols_gl', 'goog.labs.i18n.ListFormatSymbols_gsw', 'goog.labs.i18n.ListFormatSymbols_gu', 'goog.labs.i18n.ListFormatSymbols_haw', 'goog.labs.i18n.ListFormatSymbols_he', 'goog.labs.i18n.ListFormatSymbols_hi', 'goog.labs.i18n.ListFormatSymbols_hr', 'goog.labs.i18n.ListFormatSymbols_hu', 'goog.labs.i18n.ListFormatSymbols_hy', 'goog.labs.i18n.ListFormatSymbols_id', 'goog.labs.i18n.ListFormatSymbols_in', 'goog.labs.i18n.ListFormatSymbols_is', 'goog.labs.i18n.ListFormatSymbols_it', 'goog.labs.i18n.ListFormatSymbols_iw', 'goog.labs.i18n.ListFormatSymbols_ja', 'goog.labs.i18n.ListFormatSymbols_ka', 'goog.labs.i18n.ListFormatSymbols_kk', 'goog.labs.i18n.ListFormatSymbols_km', 'goog.labs.i18n.ListFormatSymbols_kn', 'goog.labs.i18n.ListFormatSymbols_ko', 'goog.labs.i18n.ListFormatSymbols_ky', 'goog.labs.i18n.ListFormatSymbols_ln', 'goog.labs.i18n.ListFormatSymbols_lo', 'goog.labs.i18n.ListFormatSymbols_lt', 'goog.labs.i18n.ListFormatSymbols_lv', 'goog.labs.i18n.ListFormatSymbols_mk', 'goog.labs.i18n.ListFormatSymbols_ml', 'goog.labs.i18n.ListFormatSymbols_mn', 'goog.labs.i18n.ListFormatSymbols_mo', 'goog.labs.i18n.ListFormatSymbols_mr', 'goog.labs.i18n.ListFormatSymbols_ms', 'goog.labs.i18n.ListFormatSymbols_mt', 'goog.labs.i18n.ListFormatSymbols_my', 'goog.labs.i18n.ListFormatSymbols_nb', 'goog.labs.i18n.ListFormatSymbols_ne', 'goog.labs.i18n.ListFormatSymbols_nl', 'goog.labs.i18n.ListFormatSymbols_no', 'goog.labs.i18n.ListFormatSymbols_no_NO', 'goog.labs.i18n.ListFormatSymbols_or', 'goog.labs.i18n.ListFormatSymbols_pa', 'goog.labs.i18n.ListFormatSymbols_pl', 'goog.labs.i18n.ListFormatSymbols_pt', 'goog.labs.i18n.ListFormatSymbols_pt_BR', 'goog.labs.i18n.ListFormatSymbols_pt_PT', 'goog.labs.i18n.ListFormatSymbols_ro', 'goog.labs.i18n.ListFormatSymbols_ru', 'goog.labs.i18n.ListFormatSymbols_sh', 'goog.labs.i18n.ListFormatSymbols_si', 'goog.labs.i18n.ListFormatSymbols_sk', 'goog.labs.i18n.ListFormatSymbols_sl', 'goog.labs.i18n.ListFormatSymbols_sq', 'goog.labs.i18n.ListFormatSymbols_sr', 'goog.labs.i18n.ListFormatSymbols_sv', 'goog.labs.i18n.ListFormatSymbols_sw', 'goog.labs.i18n.ListFormatSymbols_ta', 'goog.labs.i18n.ListFormatSymbols_te', 'goog.labs.i18n.ListFormatSymbols_th', 'goog.labs.i18n.ListFormatSymbols_tl', 'goog.labs.i18n.ListFormatSymbols_tr', 'goog.labs.i18n.ListFormatSymbols_uk', 'goog.labs.i18n.ListFormatSymbols_ur', 'goog.labs.i18n.ListFormatSymbols_uz', 'goog.labs.i18n.ListFormatSymbols_vi', 'goog.labs.i18n.ListFormatSymbols_zh', 'goog.labs.i18n.ListFormatSymbols_zh_CN', 'goog.labs.i18n.ListFormatSymbols_zh_HK', 'goog.labs.i18n.ListFormatSymbols_zh_TW', 'goog.labs.i18n.ListFormatSymbols_zu'], []);
-goog.addDependency('labs/i18n/listsymbolsext.js', ['goog.labs.i18n.ListFormatSymbolsExt', 'goog.labs.i18n.ListFormatSymbols_af_NA', 'goog.labs.i18n.ListFormatSymbols_af_ZA', 'goog.labs.i18n.ListFormatSymbols_agq', 'goog.labs.i18n.ListFormatSymbols_agq_CM', 'goog.labs.i18n.ListFormatSymbols_ak', 'goog.labs.i18n.ListFormatSymbols_ak_GH', 'goog.labs.i18n.ListFormatSymbols_am_ET', 'goog.labs.i18n.ListFormatSymbols_ar_001', 'goog.labs.i18n.ListFormatSymbols_ar_AE', 'goog.labs.i18n.ListFormatSymbols_ar_BH', 'goog.labs.i18n.ListFormatSymbols_ar_DJ', 'goog.labs.i18n.ListFormatSymbols_ar_DZ', 'goog.labs.i18n.ListFormatSymbols_ar_EG', 'goog.labs.i18n.ListFormatSymbols_ar_EH', 'goog.labs.i18n.ListFormatSymbols_ar_ER', 'goog.labs.i18n.ListFormatSymbols_ar_IL', 'goog.labs.i18n.ListFormatSymbols_ar_IQ', 'goog.labs.i18n.ListFormatSymbols_ar_JO', 'goog.labs.i18n.ListFormatSymbols_ar_KM', 'goog.labs.i18n.ListFormatSymbols_ar_KW', 'goog.labs.i18n.ListFormatSymbols_ar_LB', 'goog.labs.i18n.ListFormatSymbols_ar_LY', 'goog.labs.i18n.ListFormatSymbols_ar_MA', 'goog.labs.i18n.ListFormatSymbols_ar_MR', 'goog.labs.i18n.ListFormatSymbols_ar_OM', 'goog.labs.i18n.ListFormatSymbols_ar_PS', 'goog.labs.i18n.ListFormatSymbols_ar_QA', 'goog.labs.i18n.ListFormatSymbols_ar_SA', 'goog.labs.i18n.ListFormatSymbols_ar_SD', 'goog.labs.i18n.ListFormatSymbols_ar_SO', 'goog.labs.i18n.ListFormatSymbols_ar_SS', 'goog.labs.i18n.ListFormatSymbols_ar_SY', 'goog.labs.i18n.ListFormatSymbols_ar_TD', 'goog.labs.i18n.ListFormatSymbols_ar_TN', 'goog.labs.i18n.ListFormatSymbols_ar_YE', 'goog.labs.i18n.ListFormatSymbols_as', 'goog.labs.i18n.ListFormatSymbols_as_IN', 'goog.labs.i18n.ListFormatSymbols_asa', 'goog.labs.i18n.ListFormatSymbols_asa_TZ', 'goog.labs.i18n.ListFormatSymbols_az_Cyrl', 'goog.labs.i18n.ListFormatSymbols_az_Cyrl_AZ', 'goog.labs.i18n.ListFormatSymbols_az_Latn', 'goog.labs.i18n.ListFormatSymbols_az_Latn_AZ', 'goog.labs.i18n.ListFormatSymbols_bas', 'goog.labs.i18n.ListFormatSymbols_bas_CM', 'goog.labs.i18n.ListFormatSymbols_be', 'goog.labs.i18n.ListFormatSymbols_be_BY', 'goog.labs.i18n.ListFormatSymbols_bem', 'goog.labs.i18n.ListFormatSymbols_bem_ZM', 'goog.labs.i18n.ListFormatSymbols_bez', 'goog.labs.i18n.ListFormatSymbols_bez_TZ', 'goog.labs.i18n.ListFormatSymbols_bg_BG', 'goog.labs.i18n.ListFormatSymbols_bm', 'goog.labs.i18n.ListFormatSymbols_bm_ML', 'goog.labs.i18n.ListFormatSymbols_bn_BD', 'goog.labs.i18n.ListFormatSymbols_bn_IN', 'goog.labs.i18n.ListFormatSymbols_bo', 'goog.labs.i18n.ListFormatSymbols_bo_CN', 'goog.labs.i18n.ListFormatSymbols_bo_IN', 'goog.labs.i18n.ListFormatSymbols_br_FR', 'goog.labs.i18n.ListFormatSymbols_brx', 'goog.labs.i18n.ListFormatSymbols_brx_IN', 'goog.labs.i18n.ListFormatSymbols_bs', 'goog.labs.i18n.ListFormatSymbols_bs_Cyrl', 'goog.labs.i18n.ListFormatSymbols_bs_Cyrl_BA', 'goog.labs.i18n.ListFormatSymbols_bs_Latn', 'goog.labs.i18n.ListFormatSymbols_bs_Latn_BA', 'goog.labs.i18n.ListFormatSymbols_ca_AD', 'goog.labs.i18n.ListFormatSymbols_ca_ES', 'goog.labs.i18n.ListFormatSymbols_ca_FR', 'goog.labs.i18n.ListFormatSymbols_ca_IT', 'goog.labs.i18n.ListFormatSymbols_cgg', 'goog.labs.i18n.ListFormatSymbols_cgg_UG', 'goog.labs.i18n.ListFormatSymbols_chr_US', 'goog.labs.i18n.ListFormatSymbols_cs_CZ', 'goog.labs.i18n.ListFormatSymbols_cy_GB', 'goog.labs.i18n.ListFormatSymbols_da_DK', 'goog.labs.i18n.ListFormatSymbols_da_GL', 'goog.labs.i18n.ListFormatSymbols_dav', 'goog.labs.i18n.ListFormatSymbols_dav_KE', 'goog.labs.i18n.ListFormatSymbols_de_BE', 'goog.labs.i18n.ListFormatSymbols_de_DE', 'goog.labs.i18n.ListFormatSymbols_de_LI', 'goog.labs.i18n.ListFormatSymbols_de_LU', 'goog.labs.i18n.ListFormatSymbols_dje', 'goog.labs.i18n.ListFormatSymbols_dje_NE', 'goog.labs.i18n.ListFormatSymbols_dua', 'goog.labs.i18n.ListFormatSymbols_dua_CM', 'goog.labs.i18n.ListFormatSymbols_dyo', 'goog.labs.i18n.ListFormatSymbols_dyo_SN', 'goog.labs.i18n.ListFormatSymbols_dz', 'goog.labs.i18n.ListFormatSymbols_dz_BT', 'goog.labs.i18n.ListFormatSymbols_ebu', 'goog.labs.i18n.ListFormatSymbols_ebu_KE', 'goog.labs.i18n.ListFormatSymbols_ee', 'goog.labs.i18n.ListFormatSymbols_ee_GH', 'goog.labs.i18n.ListFormatSymbols_ee_TG', 'goog.labs.i18n.ListFormatSymbols_el_CY', 'goog.labs.i18n.ListFormatSymbols_el_GR', 'goog.labs.i18n.ListFormatSymbols_en_001', 'goog.labs.i18n.ListFormatSymbols_en_150', 'goog.labs.i18n.ListFormatSymbols_en_AG', 'goog.labs.i18n.ListFormatSymbols_en_AI', 'goog.labs.i18n.ListFormatSymbols_en_AS', 'goog.labs.i18n.ListFormatSymbols_en_BB', 'goog.labs.i18n.ListFormatSymbols_en_BE', 'goog.labs.i18n.ListFormatSymbols_en_BM', 'goog.labs.i18n.ListFormatSymbols_en_BS', 'goog.labs.i18n.ListFormatSymbols_en_BW', 'goog.labs.i18n.ListFormatSymbols_en_BZ', 'goog.labs.i18n.ListFormatSymbols_en_CA', 'goog.labs.i18n.ListFormatSymbols_en_CC', 'goog.labs.i18n.ListFormatSymbols_en_CK', 'goog.labs.i18n.ListFormatSymbols_en_CM', 'goog.labs.i18n.ListFormatSymbols_en_CX', 'goog.labs.i18n.ListFormatSymbols_en_DG', 'goog.labs.i18n.ListFormatSymbols_en_DM', 'goog.labs.i18n.ListFormatSymbols_en_ER', 'goog.labs.i18n.ListFormatSymbols_en_FJ', 'goog.labs.i18n.ListFormatSymbols_en_FK', 'goog.labs.i18n.ListFormatSymbols_en_FM', 'goog.labs.i18n.ListFormatSymbols_en_GD', 'goog.labs.i18n.ListFormatSymbols_en_GG', 'goog.labs.i18n.ListFormatSymbols_en_GH', 'goog.labs.i18n.ListFormatSymbols_en_GI', 'goog.labs.i18n.ListFormatSymbols_en_GM', 'goog.labs.i18n.ListFormatSymbols_en_GU', 'goog.labs.i18n.ListFormatSymbols_en_GY', 'goog.labs.i18n.ListFormatSymbols_en_HK', 'goog.labs.i18n.ListFormatSymbols_en_IM', 'goog.labs.i18n.ListFormatSymbols_en_IO', 'goog.labs.i18n.ListFormatSymbols_en_JE', 'goog.labs.i18n.ListFormatSymbols_en_JM', 'goog.labs.i18n.ListFormatSymbols_en_KE', 'goog.labs.i18n.ListFormatSymbols_en_KI', 'goog.labs.i18n.ListFormatSymbols_en_KN', 'goog.labs.i18n.ListFormatSymbols_en_KY', 'goog.labs.i18n.ListFormatSymbols_en_LC', 'goog.labs.i18n.ListFormatSymbols_en_LR', 'goog.labs.i18n.ListFormatSymbols_en_LS', 'goog.labs.i18n.ListFormatSymbols_en_MG', 'goog.labs.i18n.ListFormatSymbols_en_MH', 'goog.labs.i18n.ListFormatSymbols_en_MO', 'goog.labs.i18n.ListFormatSymbols_en_MP', 'goog.labs.i18n.ListFormatSymbols_en_MS', 'goog.labs.i18n.ListFormatSymbols_en_MT', 'goog.labs.i18n.ListFormatSymbols_en_MU', 'goog.labs.i18n.ListFormatSymbols_en_MW', 'goog.labs.i18n.ListFormatSymbols_en_NA', 'goog.labs.i18n.ListFormatSymbols_en_NF', 'goog.labs.i18n.ListFormatSymbols_en_NG', 'goog.labs.i18n.ListFormatSymbols_en_NR', 'goog.labs.i18n.ListFormatSymbols_en_NU', 'goog.labs.i18n.ListFormatSymbols_en_NZ', 'goog.labs.i18n.ListFormatSymbols_en_PG', 'goog.labs.i18n.ListFormatSymbols_en_PH', 'goog.labs.i18n.ListFormatSymbols_en_PK', 'goog.labs.i18n.ListFormatSymbols_en_PN', 'goog.labs.i18n.ListFormatSymbols_en_PR', 'goog.labs.i18n.ListFormatSymbols_en_PW', 'goog.labs.i18n.ListFormatSymbols_en_RW', 'goog.labs.i18n.ListFormatSymbols_en_SB', 'goog.labs.i18n.ListFormatSymbols_en_SC', 'goog.labs.i18n.ListFormatSymbols_en_SD', 'goog.labs.i18n.ListFormatSymbols_en_SH', 'goog.labs.i18n.ListFormatSymbols_en_SL', 'goog.labs.i18n.ListFormatSymbols_en_SS', 'goog.labs.i18n.ListFormatSymbols_en_SX', 'goog.labs.i18n.ListFormatSymbols_en_SZ', 'goog.labs.i18n.ListFormatSymbols_en_TC', 'goog.labs.i18n.ListFormatSymbols_en_TK', 'goog.labs.i18n.ListFormatSymbols_en_TO', 'goog.labs.i18n.ListFormatSymbols_en_TT', 'goog.labs.i18n.ListFormatSymbols_en_TV', 'goog.labs.i18n.ListFormatSymbols_en_TZ', 'goog.labs.i18n.ListFormatSymbols_en_UG', 'goog.labs.i18n.ListFormatSymbols_en_UM', 'goog.labs.i18n.ListFormatSymbols_en_US_POSIX', 'goog.labs.i18n.ListFormatSymbols_en_VC', 'goog.labs.i18n.ListFormatSymbols_en_VG', 'goog.labs.i18n.ListFormatSymbols_en_VI', 'goog.labs.i18n.ListFormatSymbols_en_VU', 'goog.labs.i18n.ListFormatSymbols_en_WS', 'goog.labs.i18n.ListFormatSymbols_en_ZM', 'goog.labs.i18n.ListFormatSymbols_en_ZW', 'goog.labs.i18n.ListFormatSymbols_eo', 'goog.labs.i18n.ListFormatSymbols_es_AR', 'goog.labs.i18n.ListFormatSymbols_es_BO', 'goog.labs.i18n.ListFormatSymbols_es_CL', 'goog.labs.i18n.ListFormatSymbols_es_CO', 'goog.labs.i18n.ListFormatSymbols_es_CR', 'goog.labs.i18n.ListFormatSymbols_es_CU', 'goog.labs.i18n.ListFormatSymbols_es_DO', 'goog.labs.i18n.ListFormatSymbols_es_EA', 'goog.labs.i18n.ListFormatSymbols_es_EC', 'goog.labs.i18n.ListFormatSymbols_es_GQ', 'goog.labs.i18n.ListFormatSymbols_es_GT', 'goog.labs.i18n.ListFormatSymbols_es_HN', 'goog.labs.i18n.ListFormatSymbols_es_IC', 'goog.labs.i18n.ListFormatSymbols_es_MX', 'goog.labs.i18n.ListFormatSymbols_es_NI', 'goog.labs.i18n.ListFormatSymbols_es_PA', 'goog.labs.i18n.ListFormatSymbols_es_PE', 'goog.labs.i18n.ListFormatSymbols_es_PH', 'goog.labs.i18n.ListFormatSymbols_es_PR', 'goog.labs.i18n.ListFormatSymbols_es_PY', 'goog.labs.i18n.ListFormatSymbols_es_SV', 'goog.labs.i18n.ListFormatSymbols_es_US', 'goog.labs.i18n.ListFormatSymbols_es_UY', 'goog.labs.i18n.ListFormatSymbols_es_VE', 'goog.labs.i18n.ListFormatSymbols_et_EE', 'goog.labs.i18n.ListFormatSymbols_eu_ES', 'goog.labs.i18n.ListFormatSymbols_ewo', 'goog.labs.i18n.ListFormatSymbols_ewo_CM', 'goog.labs.i18n.ListFormatSymbols_fa_AF', 'goog.labs.i18n.ListFormatSymbols_fa_IR', 'goog.labs.i18n.ListFormatSymbols_ff', 'goog.labs.i18n.ListFormatSymbols_ff_SN', 'goog.labs.i18n.ListFormatSymbols_fi_FI', 'goog.labs.i18n.ListFormatSymbols_fil_PH', 'goog.labs.i18n.ListFormatSymbols_fo', 'goog.labs.i18n.ListFormatSymbols_fo_FO', 'goog.labs.i18n.ListFormatSymbols_fr_BE', 'goog.labs.i18n.ListFormatSymbols_fr_BF', 'goog.labs.i18n.ListFormatSymbols_fr_BI', 'goog.labs.i18n.ListFormatSymbols_fr_BJ', 'goog.labs.i18n.ListFormatSymbols_fr_BL', 'goog.labs.i18n.ListFormatSymbols_fr_CD', 'goog.labs.i18n.ListFormatSymbols_fr_CF', 'goog.labs.i18n.ListFormatSymbols_fr_CG', 'goog.labs.i18n.ListFormatSymbols_fr_CH', 'goog.labs.i18n.ListFormatSymbols_fr_CI', 'goog.labs.i18n.ListFormatSymbols_fr_CM', 'goog.labs.i18n.ListFormatSymbols_fr_DJ', 'goog.labs.i18n.ListFormatSymbols_fr_DZ', 'goog.labs.i18n.ListFormatSymbols_fr_FR', 'goog.labs.i18n.ListFormatSymbols_fr_GA', 'goog.labs.i18n.ListFormatSymbols_fr_GF', 'goog.labs.i18n.ListFormatSymbols_fr_GN', 'goog.labs.i18n.ListFormatSymbols_fr_GP', 'goog.labs.i18n.ListFormatSymbols_fr_GQ', 'goog.labs.i18n.ListFormatSymbols_fr_HT', 'goog.labs.i18n.ListFormatSymbols_fr_KM', 'goog.labs.i18n.ListFormatSymbols_fr_LU', 'goog.labs.i18n.ListFormatSymbols_fr_MA', 'goog.labs.i18n.ListFormatSymbols_fr_MC', 'goog.labs.i18n.ListFormatSymbols_fr_MF', 'goog.labs.i18n.ListFormatSymbols_fr_MG', 'goog.labs.i18n.ListFormatSymbols_fr_ML', 'goog.labs.i18n.ListFormatSymbols_fr_MQ', 'goog.labs.i18n.ListFormatSymbols_fr_MR', 'goog.labs.i18n.ListFormatSymbols_fr_MU', 'goog.labs.i18n.ListFormatSymbols_fr_NC', 'goog.labs.i18n.ListFormatSymbols_fr_NE', 'goog.labs.i18n.ListFormatSymbols_fr_PF', 'goog.labs.i18n.ListFormatSymbols_fr_PM', 'goog.labs.i18n.ListFormatSymbols_fr_RE', 'goog.labs.i18n.ListFormatSymbols_fr_RW', 'goog.labs.i18n.ListFormatSymbols_fr_SC', 'goog.labs.i18n.ListFormatSymbols_fr_SN', 'goog.labs.i18n.ListFormatSymbols_fr_SY', 'goog.labs.i18n.ListFormatSymbols_fr_TD', 'goog.labs.i18n.ListFormatSymbols_fr_TG', 'goog.labs.i18n.ListFormatSymbols_fr_TN', 'goog.labs.i18n.ListFormatSymbols_fr_VU', 'goog.labs.i18n.ListFormatSymbols_fr_WF', 'goog.labs.i18n.ListFormatSymbols_fr_YT', 'goog.labs.i18n.ListFormatSymbols_ga', 'goog.labs.i18n.ListFormatSymbols_ga_IE', 'goog.labs.i18n.ListFormatSymbols_gl_ES', 'goog.labs.i18n.ListFormatSymbols_gsw_CH', 'goog.labs.i18n.ListFormatSymbols_gsw_LI', 'goog.labs.i18n.ListFormatSymbols_gu_IN', 'goog.labs.i18n.ListFormatSymbols_guz', 'goog.labs.i18n.ListFormatSymbols_guz_KE', 'goog.labs.i18n.ListFormatSymbols_gv', 'goog.labs.i18n.ListFormatSymbols_gv_IM', 'goog.labs.i18n.ListFormatSymbols_ha', 'goog.labs.i18n.ListFormatSymbols_ha_Latn', 'goog.labs.i18n.ListFormatSymbols_ha_Latn_GH', 'goog.labs.i18n.ListFormatSymbols_ha_Latn_NE', 'goog.labs.i18n.ListFormatSymbols_ha_Latn_NG', 'goog.labs.i18n.ListFormatSymbols_haw_US', 'goog.labs.i18n.ListFormatSymbols_he_IL', 'goog.labs.i18n.ListFormatSymbols_hi_IN', 'goog.labs.i18n.ListFormatSymbols_hr_BA', 'goog.labs.i18n.ListFormatSymbols_hr_HR', 'goog.labs.i18n.ListFormatSymbols_hu_HU', 'goog.labs.i18n.ListFormatSymbols_hy_AM', 'goog.labs.i18n.ListFormatSymbols_id_ID', 'goog.labs.i18n.ListFormatSymbols_ig', 'goog.labs.i18n.ListFormatSymbols_ig_NG', 'goog.labs.i18n.ListFormatSymbols_ii', 'goog.labs.i18n.ListFormatSymbols_ii_CN', 'goog.labs.i18n.ListFormatSymbols_is_IS', 'goog.labs.i18n.ListFormatSymbols_it_CH', 'goog.labs.i18n.ListFormatSymbols_it_IT', 'goog.labs.i18n.ListFormatSymbols_it_SM', 'goog.labs.i18n.ListFormatSymbols_ja_JP', 'goog.labs.i18n.ListFormatSymbols_jgo', 'goog.labs.i18n.ListFormatSymbols_jgo_CM', 'goog.labs.i18n.ListFormatSymbols_jmc', 'goog.labs.i18n.ListFormatSymbols_jmc_TZ', 'goog.labs.i18n.ListFormatSymbols_ka_GE', 'goog.labs.i18n.ListFormatSymbols_kab', 'goog.labs.i18n.ListFormatSymbols_kab_DZ', 'goog.labs.i18n.ListFormatSymbols_kam', 'goog.labs.i18n.ListFormatSymbols_kam_KE', 'goog.labs.i18n.ListFormatSymbols_kde', 'goog.labs.i18n.ListFormatSymbols_kde_TZ', 'goog.labs.i18n.ListFormatSymbols_kea', 'goog.labs.i18n.ListFormatSymbols_kea_CV', 'goog.labs.i18n.ListFormatSymbols_khq', 'goog.labs.i18n.ListFormatSymbols_khq_ML', 'goog.labs.i18n.ListFormatSymbols_ki', 'goog.labs.i18n.ListFormatSymbols_ki_KE', 'goog.labs.i18n.ListFormatSymbols_kk_Cyrl', 'goog.labs.i18n.ListFormatSymbols_kk_Cyrl_KZ', 'goog.labs.i18n.ListFormatSymbols_kkj', 'goog.labs.i18n.ListFormatSymbols_kkj_CM', 'goog.labs.i18n.ListFormatSymbols_kl', 'goog.labs.i18n.ListFormatSymbols_kl_GL', 'goog.labs.i18n.ListFormatSymbols_kln', 'goog.labs.i18n.ListFormatSymbols_kln_KE', 'goog.labs.i18n.ListFormatSymbols_km_KH', 'goog.labs.i18n.ListFormatSymbols_kn_IN', 'goog.labs.i18n.ListFormatSymbols_ko_KP', 'goog.labs.i18n.ListFormatSymbols_ko_KR', 'goog.labs.i18n.ListFormatSymbols_kok', 'goog.labs.i18n.ListFormatSymbols_kok_IN', 'goog.labs.i18n.ListFormatSymbols_ks', 'goog.labs.i18n.ListFormatSymbols_ks_Arab', 'goog.labs.i18n.ListFormatSymbols_ks_Arab_IN', 'goog.labs.i18n.ListFormatSymbols_ksb', 'goog.labs.i18n.ListFormatSymbols_ksb_TZ', 'goog.labs.i18n.ListFormatSymbols_ksf', 'goog.labs.i18n.ListFormatSymbols_ksf_CM', 'goog.labs.i18n.ListFormatSymbols_kw', 'goog.labs.i18n.ListFormatSymbols_kw_GB', 'goog.labs.i18n.ListFormatSymbols_ky_Cyrl', 'goog.labs.i18n.ListFormatSymbols_ky_Cyrl_KG', 'goog.labs.i18n.ListFormatSymbols_lag', 'goog.labs.i18n.ListFormatSymbols_lag_TZ', 'goog.labs.i18n.ListFormatSymbols_lg', 'goog.labs.i18n.ListFormatSymbols_lg_UG', 'goog.labs.i18n.ListFormatSymbols_lkt', 'goog.labs.i18n.ListFormatSymbols_lkt_US', 'goog.labs.i18n.ListFormatSymbols_ln_AO', 'goog.labs.i18n.ListFormatSymbols_ln_CD', 'goog.labs.i18n.ListFormatSymbols_ln_CF', 'goog.labs.i18n.ListFormatSymbols_ln_CG', 'goog.labs.i18n.ListFormatSymbols_lo_LA', 'goog.labs.i18n.ListFormatSymbols_lt_LT', 'goog.labs.i18n.ListFormatSymbols_lu', 'goog.labs.i18n.ListFormatSymbols_lu_CD', 'goog.labs.i18n.ListFormatSymbols_luo', 'goog.labs.i18n.ListFormatSymbols_luo_KE', 'goog.labs.i18n.ListFormatSymbols_luy', 'goog.labs.i18n.ListFormatSymbols_luy_KE', 'goog.labs.i18n.ListFormatSymbols_lv_LV', 'goog.labs.i18n.ListFormatSymbols_mas', 'goog.labs.i18n.ListFormatSymbols_mas_KE', 'goog.labs.i18n.ListFormatSymbols_mas_TZ', 'goog.labs.i18n.ListFormatSymbols_mer', 'goog.labs.i18n.ListFormatSymbols_mer_KE', 'goog.labs.i18n.ListFormatSymbols_mfe', 'goog.labs.i18n.ListFormatSymbols_mfe_MU', 'goog.labs.i18n.ListFormatSymbols_mg', 'goog.labs.i18n.ListFormatSymbols_mg_MG', 'goog.labs.i18n.ListFormatSymbols_mgh', 'goog.labs.i18n.ListFormatSymbols_mgh_MZ', 'goog.labs.i18n.ListFormatSymbols_mgo', 'goog.labs.i18n.ListFormatSymbols_mgo_CM', 'goog.labs.i18n.ListFormatSymbols_mk_MK', 'goog.labs.i18n.ListFormatSymbols_ml_IN', 'goog.labs.i18n.ListFormatSymbols_mn_Cyrl', 'goog.labs.i18n.ListFormatSymbols_mn_Cyrl_MN', 'goog.labs.i18n.ListFormatSymbols_mr_IN', 'goog.labs.i18n.ListFormatSymbols_ms_Latn', 'goog.labs.i18n.ListFormatSymbols_ms_Latn_BN', 'goog.labs.i18n.ListFormatSymbols_ms_Latn_MY', 'goog.labs.i18n.ListFormatSymbols_ms_Latn_SG', 'goog.labs.i18n.ListFormatSymbols_mt_MT', 'goog.labs.i18n.ListFormatSymbols_mua', 'goog.labs.i18n.ListFormatSymbols_mua_CM', 'goog.labs.i18n.ListFormatSymbols_my_MM', 'goog.labs.i18n.ListFormatSymbols_naq', 'goog.labs.i18n.ListFormatSymbols_naq_NA', 'goog.labs.i18n.ListFormatSymbols_nb_NO', 'goog.labs.i18n.ListFormatSymbols_nb_SJ', 'goog.labs.i18n.ListFormatSymbols_nd', 'goog.labs.i18n.ListFormatSymbols_nd_ZW', 'goog.labs.i18n.ListFormatSymbols_ne_IN', 'goog.labs.i18n.ListFormatSymbols_ne_NP', 'goog.labs.i18n.ListFormatSymbols_nl_AW', 'goog.labs.i18n.ListFormatSymbols_nl_BE', 'goog.labs.i18n.ListFormatSymbols_nl_BQ', 'goog.labs.i18n.ListFormatSymbols_nl_CW', 'goog.labs.i18n.ListFormatSymbols_nl_NL', 'goog.labs.i18n.ListFormatSymbols_nl_SR', 'goog.labs.i18n.ListFormatSymbols_nl_SX', 'goog.labs.i18n.ListFormatSymbols_nmg', 'goog.labs.i18n.ListFormatSymbols_nmg_CM', 'goog.labs.i18n.ListFormatSymbols_nn', 'goog.labs.i18n.ListFormatSymbols_nn_NO', 'goog.labs.i18n.ListFormatSymbols_nnh', 'goog.labs.i18n.ListFormatSymbols_nnh_CM', 'goog.labs.i18n.ListFormatSymbols_nus', 'goog.labs.i18n.ListFormatSymbols_nus_SD', 'goog.labs.i18n.ListFormatSymbols_nyn', 'goog.labs.i18n.ListFormatSymbols_nyn_UG', 'goog.labs.i18n.ListFormatSymbols_om', 'goog.labs.i18n.ListFormatSymbols_om_ET', 'goog.labs.i18n.ListFormatSymbols_om_KE', 'goog.labs.i18n.ListFormatSymbols_or_IN', 'goog.labs.i18n.ListFormatSymbols_pa_Arab', 'goog.labs.i18n.ListFormatSymbols_pa_Arab_PK', 'goog.labs.i18n.ListFormatSymbols_pa_Guru', 'goog.labs.i18n.ListFormatSymbols_pa_Guru_IN', 'goog.labs.i18n.ListFormatSymbols_pl_PL', 'goog.labs.i18n.ListFormatSymbols_ps', 'goog.labs.i18n.ListFormatSymbols_ps_AF', 'goog.labs.i18n.ListFormatSymbols_pt_AO', 'goog.labs.i18n.ListFormatSymbols_pt_CV', 'goog.labs.i18n.ListFormatSymbols_pt_GW', 'goog.labs.i18n.ListFormatSymbols_pt_MO', 'goog.labs.i18n.ListFormatSymbols_pt_MZ', 'goog.labs.i18n.ListFormatSymbols_pt_ST', 'goog.labs.i18n.ListFormatSymbols_pt_TL', 'goog.labs.i18n.ListFormatSymbols_rm', 'goog.labs.i18n.ListFormatSymbols_rm_CH', 'goog.labs.i18n.ListFormatSymbols_rn', 'goog.labs.i18n.ListFormatSymbols_rn_BI', 'goog.labs.i18n.ListFormatSymbols_ro_MD', 'goog.labs.i18n.ListFormatSymbols_ro_RO', 'goog.labs.i18n.ListFormatSymbols_rof', 'goog.labs.i18n.ListFormatSymbols_rof_TZ', 'goog.labs.i18n.ListFormatSymbols_ru_BY', 'goog.labs.i18n.ListFormatSymbols_ru_KG', 'goog.labs.i18n.ListFormatSymbols_ru_KZ', 'goog.labs.i18n.ListFormatSymbols_ru_MD', 'goog.labs.i18n.ListFormatSymbols_ru_RU', 'goog.labs.i18n.ListFormatSymbols_ru_UA', 'goog.labs.i18n.ListFormatSymbols_rw', 'goog.labs.i18n.ListFormatSymbols_rw_RW', 'goog.labs.i18n.ListFormatSymbols_rwk', 'goog.labs.i18n.ListFormatSymbols_rwk_TZ', 'goog.labs.i18n.ListFormatSymbols_saq', 'goog.labs.i18n.ListFormatSymbols_saq_KE', 'goog.labs.i18n.ListFormatSymbols_sbp', 'goog.labs.i18n.ListFormatSymbols_sbp_TZ', 'goog.labs.i18n.ListFormatSymbols_seh', 'goog.labs.i18n.ListFormatSymbols_seh_MZ', 'goog.labs.i18n.ListFormatSymbols_ses', 'goog.labs.i18n.ListFormatSymbols_ses_ML', 'goog.labs.i18n.ListFormatSymbols_sg', 'goog.labs.i18n.ListFormatSymbols_sg_CF', 'goog.labs.i18n.ListFormatSymbols_shi', 'goog.labs.i18n.ListFormatSymbols_shi_Latn', 'goog.labs.i18n.ListFormatSymbols_shi_Latn_MA', 'goog.labs.i18n.ListFormatSymbols_shi_Tfng', 'goog.labs.i18n.ListFormatSymbols_shi_Tfng_MA', 'goog.labs.i18n.ListFormatSymbols_si_LK', 'goog.labs.i18n.ListFormatSymbols_sk_SK', 'goog.labs.i18n.ListFormatSymbols_sl_SI', 'goog.labs.i18n.ListFormatSymbols_sn', 'goog.labs.i18n.ListFormatSymbols_sn_ZW', 'goog.labs.i18n.ListFormatSymbols_so', 'goog.labs.i18n.ListFormatSymbols_so_DJ', 'goog.labs.i18n.ListFormatSymbols_so_ET', 'goog.labs.i18n.ListFormatSymbols_so_KE', 'goog.labs.i18n.ListFormatSymbols_so_SO', 'goog.labs.i18n.ListFormatSymbols_sq_AL', 'goog.labs.i18n.ListFormatSymbols_sq_MK', 'goog.labs.i18n.ListFormatSymbols_sq_XK', 'goog.labs.i18n.ListFormatSymbols_sr_Cyrl', 'goog.labs.i18n.ListFormatSymbols_sr_Cyrl_BA', 'goog.labs.i18n.ListFormatSymbols_sr_Cyrl_ME', 'goog.labs.i18n.ListFormatSymbols_sr_Cyrl_RS', 'goog.labs.i18n.ListFormatSymbols_sr_Cyrl_XK', 'goog.labs.i18n.ListFormatSymbols_sr_Latn', 'goog.labs.i18n.ListFormatSymbols_sr_Latn_BA', 'goog.labs.i18n.ListFormatSymbols_sr_Latn_ME', 'goog.labs.i18n.ListFormatSymbols_sr_Latn_RS', 'goog.labs.i18n.ListFormatSymbols_sr_Latn_XK', 'goog.labs.i18n.ListFormatSymbols_sv_AX', 'goog.labs.i18n.ListFormatSymbols_sv_FI', 'goog.labs.i18n.ListFormatSymbols_sv_SE', 'goog.labs.i18n.ListFormatSymbols_sw_KE', 'goog.labs.i18n.ListFormatSymbols_sw_TZ', 'goog.labs.i18n.ListFormatSymbols_sw_UG', 'goog.labs.i18n.ListFormatSymbols_swc', 'goog.labs.i18n.ListFormatSymbols_swc_CD', 'goog.labs.i18n.ListFormatSymbols_ta_IN', 'goog.labs.i18n.ListFormatSymbols_ta_LK', 'goog.labs.i18n.ListFormatSymbols_ta_MY', 'goog.labs.i18n.ListFormatSymbols_ta_SG', 'goog.labs.i18n.ListFormatSymbols_te_IN', 'goog.labs.i18n.ListFormatSymbols_teo', 'goog.labs.i18n.ListFormatSymbols_teo_KE', 'goog.labs.i18n.ListFormatSymbols_teo_UG', 'goog.labs.i18n.ListFormatSymbols_th_TH', 'goog.labs.i18n.ListFormatSymbols_ti', 'goog.labs.i18n.ListFormatSymbols_ti_ER', 'goog.labs.i18n.ListFormatSymbols_ti_ET', 'goog.labs.i18n.ListFormatSymbols_to', 'goog.labs.i18n.ListFormatSymbols_to_TO', 'goog.labs.i18n.ListFormatSymbols_tr_CY', 'goog.labs.i18n.ListFormatSymbols_tr_TR', 'goog.labs.i18n.ListFormatSymbols_twq', 'goog.labs.i18n.ListFormatSymbols_twq_NE', 'goog.labs.i18n.ListFormatSymbols_tzm', 'goog.labs.i18n.ListFormatSymbols_tzm_Latn', 'goog.labs.i18n.ListFormatSymbols_tzm_Latn_MA', 'goog.labs.i18n.ListFormatSymbols_ug', 'goog.labs.i18n.ListFormatSymbols_ug_Arab', 'goog.labs.i18n.ListFormatSymbols_ug_Arab_CN', 'goog.labs.i18n.ListFormatSymbols_uk_UA', 'goog.labs.i18n.ListFormatSymbols_ur_IN', 'goog.labs.i18n.ListFormatSymbols_ur_PK', 'goog.labs.i18n.ListFormatSymbols_uz_Arab', 'goog.labs.i18n.ListFormatSymbols_uz_Arab_AF', 'goog.labs.i18n.ListFormatSymbols_uz_Cyrl', 'goog.labs.i18n.ListFormatSymbols_uz_Cyrl_UZ', 'goog.labs.i18n.ListFormatSymbols_uz_Latn', 'goog.labs.i18n.ListFormatSymbols_uz_Latn_UZ', 'goog.labs.i18n.ListFormatSymbols_vai', 'goog.labs.i18n.ListFormatSymbols_vai_Latn', 'goog.labs.i18n.ListFormatSymbols_vai_Latn_LR', 'goog.labs.i18n.ListFormatSymbols_vai_Vaii', 'goog.labs.i18n.ListFormatSymbols_vai_Vaii_LR', 'goog.labs.i18n.ListFormatSymbols_vi_VN', 'goog.labs.i18n.ListFormatSymbols_vun', 'goog.labs.i18n.ListFormatSymbols_vun_TZ', 'goog.labs.i18n.ListFormatSymbols_xog', 'goog.labs.i18n.ListFormatSymbols_xog_UG', 'goog.labs.i18n.ListFormatSymbols_yav', 'goog.labs.i18n.ListFormatSymbols_yav_CM', 'goog.labs.i18n.ListFormatSymbols_yo', 'goog.labs.i18n.ListFormatSymbols_yo_BJ', 'goog.labs.i18n.ListFormatSymbols_yo_NG', 'goog.labs.i18n.ListFormatSymbols_zgh', 'goog.labs.i18n.ListFormatSymbols_zgh_MA', 'goog.labs.i18n.ListFormatSymbols_zh_Hans', 'goog.labs.i18n.ListFormatSymbols_zh_Hans_CN', 'goog.labs.i18n.ListFormatSymbols_zh_Hans_HK', 'goog.labs.i18n.ListFormatSymbols_zh_Hans_MO', 'goog.labs.i18n.ListFormatSymbols_zh_Hans_SG', 'goog.labs.i18n.ListFormatSymbols_zh_Hant', 'goog.labs.i18n.ListFormatSymbols_zh_Hant_HK', 'goog.labs.i18n.ListFormatSymbols_zh_Hant_MO', 'goog.labs.i18n.ListFormatSymbols_zh_Hant_TW', 'goog.labs.i18n.ListFormatSymbols_zu_ZA'], ['goog.labs.i18n.ListFormatSymbols']);
-goog.addDependency('labs/mock/mock.js', ['goog.labs.mock', 'goog.labs.mock.VerificationError'], ['goog.array', 'goog.asserts', 'goog.debug', 'goog.debug.Error', 'goog.functions', 'goog.object']);
-goog.addDependency('labs/mock/mock_test.js', ['goog.labs.mockTest'], ['goog.array', 'goog.labs.mock', 'goog.labs.mock.VerificationError', 'goog.labs.testing.AnythingMatcher', 'goog.labs.testing.GreaterThanMatcher', 'goog.string', 'goog.testing.jsunit']);
-goog.addDependency('labs/net/image.js', ['goog.labs.net.image'], ['goog.Promise', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.net.EventType', 'goog.userAgent']);
-goog.addDependency('labs/net/image_test.js', ['goog.labs.net.imageTest'], ['goog.events', 'goog.labs.net.image', 'goog.string', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('labs/net/webchannel.js', ['goog.net.WebChannel'], ['goog.events', 'goog.events.Event']);
-goog.addDependency('labs/net/webchannel/basetestchannel.js', ['goog.labs.net.webChannel.BaseTestChannel'], ['goog.labs.net.webChannel.Channel', 'goog.labs.net.webChannel.ChannelRequest', 'goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.Stat']);
-goog.addDependency('labs/net/webchannel/channel.js', ['goog.labs.net.webChannel.Channel'], []);
-goog.addDependency('labs/net/webchannel/channelrequest.js', ['goog.labs.net.webChannel.ChannelRequest'], ['goog.Timer', 'goog.async.Throttle', 'goog.events.EventHandler', 'goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.ServerReachability', 'goog.labs.net.webChannel.requestStats.Stat', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.XmlHttp', 'goog.object', 'goog.uri.utils.StandardQueryParam', 'goog.userAgent']);
-goog.addDependency('labs/net/webchannel/channelrequest_test.js', ['goog.labs.net.webChannel.channelRequestTest'], ['goog.Uri', 'goog.functions', 'goog.labs.net.webChannel.ChannelRequest', 'goog.labs.net.webChannel.WebChannelDebug', 'goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.ServerReachability', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.net.XhrIo', 'goog.testing.recordFunction']);
-goog.addDependency('labs/net/webchannel/connectionstate.js', ['goog.labs.net.webChannel.ConnectionState'], []);
-goog.addDependency('labs/net/webchannel/forwardchannelrequestpool.js', ['goog.labs.net.webChannel.ForwardChannelRequestPool'], ['goog.array', 'goog.string', 'goog.structs.Set']);
-goog.addDependency('labs/net/webchannel/forwardchannelrequestpool_test.js', ['goog.labs.net.webChannel.forwardChannelRequestPoolTest'], ['goog.labs.net.webChannel.ChannelRequest', 'goog.labs.net.webChannel.ForwardChannelRequestPool', 'goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('labs/net/webchannel/netutils.js', ['goog.labs.net.webChannel.netUtils'], ['goog.Uri', 'goog.labs.net.webChannel.WebChannelDebug']);
-goog.addDependency('labs/net/webchannel/requeststats.js', ['goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.Event', 'goog.labs.net.webChannel.requestStats.ServerReachability', 'goog.labs.net.webChannel.requestStats.ServerReachabilityEvent', 'goog.labs.net.webChannel.requestStats.Stat', 'goog.labs.net.webChannel.requestStats.StatEvent', 'goog.labs.net.webChannel.requestStats.TimingEvent'], ['goog.events.Event', 'goog.events.EventTarget']);
-goog.addDependency('labs/net/webchannel/webchannelbase.js', ['goog.labs.net.webChannel.WebChannelBase'], ['goog.Uri', 'goog.array', 'goog.asserts', 'goog.debug.TextFormatter', 'goog.json', 'goog.labs.net.webChannel.BaseTestChannel', 'goog.labs.net.webChannel.Channel', 'goog.labs.net.webChannel.ChannelRequest', 'goog.labs.net.webChannel.ConnectionState', 'goog.labs.net.webChannel.ForwardChannelRequestPool', 'goog.labs.net.webChannel.WebChannelDebug', 'goog.labs.net.webChannel.Wire', 'goog.labs.net.webChannel.WireV8', 'goog.labs.net.webChannel.netUtils', 'goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.Stat', 'goog.log', 'goog.net.XhrIo', 'goog.object', 'goog.string', 'goog.structs', 'goog.structs.CircularBuffer']);
-goog.addDependency('labs/net/webchannel/webchannelbase_test.js', ['goog.labs.net.webChannel.webChannelBaseTest'], ['goog.Timer', 'goog.array', 'goog.dom', 'goog.functions', 'goog.json', 'goog.labs.net.webChannel.ChannelRequest', 'goog.labs.net.webChannel.ForwardChannelRequestPool', 'goog.labs.net.webChannel.WebChannelBase', 'goog.labs.net.webChannel.WebChannelBaseTransport', 'goog.labs.net.webChannel.WebChannelDebug', 'goog.labs.net.webChannel.Wire', 'goog.labs.net.webChannel.netUtils', 'goog.labs.net.webChannel.requestStats', 'goog.labs.net.webChannel.requestStats.Stat', 'goog.structs.Map', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('labs/net/webchannel/webchannelbasetransport.js', ['goog.labs.net.webChannel.WebChannelBaseTransport'], ['goog.asserts', 'goog.events.EventTarget', 'goog.labs.net.webChannel.WebChannelBase', 'goog.log', 'goog.net.WebChannel', 'goog.net.WebChannelTransport', 'goog.string.path']);
-goog.addDependency('labs/net/webchannel/webchannelbasetransport_test.js', ['goog.labs.net.webChannel.webChannelBaseTransportTest'], ['goog.events', 'goog.labs.net.webChannel.WebChannelBaseTransport', 'goog.net.WebChannel', 'goog.testing.jsunit']);
-goog.addDependency('labs/net/webchannel/webchanneldebug.js', ['goog.labs.net.webChannel.WebChannelDebug'], ['goog.json', 'goog.log']);
-goog.addDependency('labs/net/webchannel/wire.js', ['goog.labs.net.webChannel.Wire'], []);
-goog.addDependency('labs/net/webchannel/wirev8.js', ['goog.labs.net.webChannel.WireV8'], ['goog.asserts', 'goog.json', 'goog.json.EvalJsonProcessor', 'goog.structs']);
-goog.addDependency('labs/net/webchannel/wirev8_test.js', ['goog.labs.net.webChannel.WireV8Test'], ['goog.labs.net.webChannel.WireV8', 'goog.testing.jsunit']);
-goog.addDependency('labs/net/webchanneltransport.js', ['goog.net.WebChannelTransport'], []);
-goog.addDependency('labs/net/webchanneltransportfactory.js', ['goog.net.createWebChannelTransport'], ['goog.functions', 'goog.labs.net.webChannel.WebChannelBaseTransport']);
-goog.addDependency('labs/net/xhr.js', ['goog.labs.net.xhr', 'goog.labs.net.xhr.Error', 'goog.labs.net.xhr.HttpError', 'goog.labs.net.xhr.Options', 'goog.labs.net.xhr.PostData', 'goog.labs.net.xhr.TimeoutError'], ['goog.Promise', 'goog.debug.Error', 'goog.json', 'goog.net.HttpStatus', 'goog.net.XmlHttp', 'goog.string', 'goog.uri.utils']);
-goog.addDependency('labs/net/xhr_test.js', ['goog.labs.net.xhrTest'], ['goog.Promise', 'goog.labs.net.xhr', 'goog.net.XmlHttp', 'goog.string', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('labs/object/object.js', ['goog.labs.object'], []);
-goog.addDependency('labs/object/object_test.js', ['goog.labs.objectTest'], ['goog.labs.object', 'goog.testing.jsunit']);
-goog.addDependency('labs/promise/promise.js', ['goog.labs.Promise', 'goog.labs.Resolver'], ['goog.Promise', 'goog.Thenable', 'goog.promise.Resolver']);
-goog.addDependency('labs/storage/boundedcollectablestorage.js', ['goog.labs.storage.BoundedCollectableStorage'], ['goog.array', 'goog.asserts', 'goog.iter', 'goog.storage.CollectableStorage', 'goog.storage.ErrorCode', 'goog.storage.ExpiringStorage']);
-goog.addDependency('labs/storage/boundedcollectablestorage_test.js', ['goog.labs.storage.BoundedCollectableStorageTest'], ['goog.labs.storage.BoundedCollectableStorage', 'goog.storage.collectableStorageTester', 'goog.storage.storage_test', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.storage.FakeMechanism']);
-goog.addDependency('labs/structs/map.js', ['goog.labs.structs.Map'], ['goog.array', 'goog.asserts', 'goog.labs.object', 'goog.object']);
-goog.addDependency('labs/structs/map_perf.js', ['goog.labs.structs.mapPerf'], ['goog.dom', 'goog.labs.structs.Map', 'goog.structs.Map', 'goog.testing.PerformanceTable', 'goog.testing.jsunit']);
-goog.addDependency('labs/structs/map_test.js', ['goog.labs.structs.MapTest'], ['goog.labs.structs.Map', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('labs/structs/multimap.js', ['goog.labs.structs.Multimap'], ['goog.array', 'goog.labs.object', 'goog.labs.structs.Map']);
-goog.addDependency('labs/structs/multimap_test.js', ['goog.labs.structs.MultimapTest'], ['goog.labs.structs.Map', 'goog.labs.structs.Multimap', 'goog.testing.jsunit']);
-goog.addDependency('labs/style/pixeldensitymonitor.js', ['goog.labs.style.PixelDensityMonitor', 'goog.labs.style.PixelDensityMonitor.Density', 'goog.labs.style.PixelDensityMonitor.EventType'], ['goog.events', 'goog.events.EventTarget']);
-goog.addDependency('labs/style/pixeldensitymonitor_test.js', ['goog.labs.style.PixelDensityMonitorTest'], ['goog.array', 'goog.dom.DomHelper', 'goog.events', 'goog.labs.style.PixelDensityMonitor', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('labs/testing/assertthat.js', ['goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat'], ['goog.asserts', 'goog.debug.Error', 'goog.labs.testing.Matcher']);
-goog.addDependency('labs/testing/assertthat_test.js', ['goog.labs.testing.assertThatTest'], ['goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('labs/testing/decoratormatcher.js', ['goog.labs.testing.AnythingMatcher'], ['goog.labs.testing.Matcher']);
-goog.addDependency('labs/testing/decoratormatcher_test.js', ['goog.labs.testing.decoratorMatcherTest'], ['goog.labs.testing.AnythingMatcher', 'goog.labs.testing.GreaterThanMatcher', 'goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/dictionarymatcher.js', ['goog.labs.testing.HasEntriesMatcher', 'goog.labs.testing.HasEntryMatcher', 'goog.labs.testing.HasKeyMatcher', 'goog.labs.testing.HasValueMatcher'], ['goog.array', 'goog.asserts', 'goog.labs.testing.Matcher', 'goog.string']);
-goog.addDependency('labs/testing/dictionarymatcher_test.js', ['goog.labs.testing.dictionaryMatcherTest'], ['goog.labs.testing.HasEntryMatcher', 'goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/environment.js', ['goog.labs.testing.Environment'], ['goog.array', 'goog.testing.MockClock', 'goog.testing.MockControl', 'goog.testing.TestCase', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/environment_test.js', ['goog.labs.testing.environmentTest'], ['goog.labs.testing.Environment', 'goog.testing.MockControl', 'goog.testing.TestCase', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/environment_usage_test.js', ['goog.labs.testing.environmentUsageTest'], ['goog.labs.testing.Environment']);
-goog.addDependency('labs/testing/logicmatcher.js', ['goog.labs.testing.AllOfMatcher', 'goog.labs.testing.AnyOfMatcher', 'goog.labs.testing.IsNotMatcher'], ['goog.array', 'goog.labs.testing.Matcher']);
-goog.addDependency('labs/testing/logicmatcher_test.js', ['goog.labs.testing.logicMatcherTest'], ['goog.labs.testing.AllOfMatcher', 'goog.labs.testing.GreaterThanMatcher', 'goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/matcher.js', ['goog.labs.testing.Matcher'], []);
-goog.addDependency('labs/testing/numbermatcher.js', ['goog.labs.testing.CloseToMatcher', 'goog.labs.testing.EqualToMatcher', 'goog.labs.testing.GreaterThanEqualToMatcher', 'goog.labs.testing.GreaterThanMatcher', 'goog.labs.testing.LessThanEqualToMatcher', 'goog.labs.testing.LessThanMatcher'], ['goog.asserts', 'goog.labs.testing.Matcher']);
-goog.addDependency('labs/testing/numbermatcher_test.js', ['goog.labs.testing.numberMatcherTest'], ['goog.labs.testing.LessThanMatcher', 'goog.labs.testing.MatcherError', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/objectmatcher.js', ['goog.labs.testing.HasPropertyMatcher', 'goog.labs.testing.InstanceOfMatcher', 'goog.labs.testing.IsNullMatcher', 'goog.labs.testing.IsNullOrUndefinedMatcher', 'goog.labs.testing.IsUndefinedMatcher', 'goog.labs.testing.ObjectEqualsMatcher'], ['goog.labs.testing.Matcher', 'goog.string']);
-goog.addDependency('labs/testing/objectmatcher_test.js', ['goog.labs.testing.objectMatcherTest'], ['goog.labs.testing.MatcherError', 'goog.labs.testing.ObjectEqualsMatcher', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/testing/stringmatcher.js', ['goog.labs.testing.ContainsStringMatcher', 'goog.labs.testing.EndsWithMatcher', 'goog.labs.testing.EqualToIgnoringCaseMatcher', 'goog.labs.testing.EqualToIgnoringWhitespaceMatcher', 'goog.labs.testing.EqualsMatcher', 'goog.labs.testing.RegexMatcher', 'goog.labs.testing.StartsWithMatcher', 'goog.labs.testing.StringContainsInOrderMatcher'], ['goog.asserts', 'goog.labs.testing.Matcher', 'goog.string']);
-goog.addDependency('labs/testing/stringmatcher_test.js', ['goog.labs.testing.stringMatcherTest'], ['goog.labs.testing.MatcherError', 'goog.labs.testing.StringContainsInOrderMatcher', 'goog.labs.testing.assertThat', 'goog.testing.jsunit']);
-goog.addDependency('labs/useragent/browser.js', ['goog.labs.userAgent.browser'], ['goog.array', 'goog.asserts', 'goog.labs.userAgent.util', 'goog.string']);
-goog.addDependency('labs/useragent/browser_test.js', ['goog.labs.userAgent.browserTest'], ['goog.labs.userAgent.browser', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.jsunit']);
-goog.addDependency('labs/useragent/device.js', ['goog.labs.userAgent.device'], ['goog.labs.userAgent.util']);
-goog.addDependency('labs/useragent/device_test.js', ['goog.labs.userAgent.deviceTest'], ['goog.labs.userAgent.device', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.jsunit']);
-goog.addDependency('labs/useragent/engine.js', ['goog.labs.userAgent.engine'], ['goog.array', 'goog.labs.userAgent.util', 'goog.string']);
-goog.addDependency('labs/useragent/engine_test.js', ['goog.labs.userAgent.engineTest'], ['goog.labs.userAgent.engine', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.jsunit']);
-goog.addDependency('labs/useragent/platform.js', ['goog.labs.userAgent.platform'], ['goog.labs.userAgent.util', 'goog.string']);
-goog.addDependency('labs/useragent/platform_test.js', ['goog.labs.userAgent.platformTest'], ['goog.labs.userAgent.platform', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.jsunit']);
-goog.addDependency('labs/useragent/test_agents.js', ['goog.labs.userAgent.testAgents'], []);
-goog.addDependency('labs/useragent/util.js', ['goog.labs.userAgent.util'], ['goog.string']);
-goog.addDependency('labs/useragent/util_test.js', ['goog.labs.userAgent.utilTest'], ['goog.functions', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('locale/countries.js', ['goog.locale.countries'], []);
-goog.addDependency('locale/countrylanguagenames_test.js', ['goog.locale.countryLanguageNamesTest'], ['goog.locale', 'goog.testing.jsunit']);
-goog.addDependency('locale/defaultlocalenameconstants.js', ['goog.locale.defaultLocaleNameConstants'], []);
-goog.addDependency('locale/genericfontnames.js', ['goog.locale.genericFontNames'], []);
-goog.addDependency('locale/genericfontnames_test.js', ['goog.locale.genericFontNamesTest'], ['goog.locale.genericFontNames', 'goog.testing.jsunit']);
-goog.addDependency('locale/genericfontnamesdata.js', ['goog.locale.genericFontNamesData'], []);
-goog.addDependency('locale/locale.js', ['goog.locale'], ['goog.locale.nativeNameConstants']);
-goog.addDependency('locale/nativenameconstants.js', ['goog.locale.nativeNameConstants'], []);
-goog.addDependency('locale/scriptToLanguages.js', ['goog.locale.scriptToLanguages'], ['goog.locale']);
-goog.addDependency('locale/timezonedetection.js', ['goog.locale.timeZoneDetection'], ['goog.locale', 'goog.locale.TimeZoneFingerprint']);
-goog.addDependency('locale/timezonedetection_test.js', ['goog.locale.timeZoneDetectionTest'], ['goog.locale.timeZoneDetection', 'goog.testing.jsunit']);
-goog.addDependency('locale/timezonefingerprint.js', ['goog.locale.TimeZoneFingerprint'], []);
-goog.addDependency('locale/timezonelist.js', ['goog.locale.TimeZoneList'], ['goog.locale']);
-goog.addDependency('locale/timezonelist_test.js', ['goog.locale.TimeZoneListTest'], ['goog.locale', 'goog.locale.TimeZoneList', 'goog.testing.jsunit']);
-goog.addDependency('log/log.js', ['goog.log', 'goog.log.Level', 'goog.log.LogRecord', 'goog.log.Logger'], ['goog.debug', 'goog.debug.LogManager', 'goog.debug.LogRecord', 'goog.debug.Logger']);
-goog.addDependency('log/log_test.js', ['goog.logTest'], ['goog.debug.LogManager', 'goog.log', 'goog.log.Level', 'goog.testing.jsunit']);
-goog.addDependency('math/affinetransform.js', ['goog.math.AffineTransform'], ['goog.math']);
-goog.addDependency('math/affinetransform_test.js', ['goog.math.AffineTransformTest'], ['goog.array', 'goog.math', 'goog.math.AffineTransform', 'goog.testing.jsunit']);
-goog.addDependency('math/bezier.js', ['goog.math.Bezier'], ['goog.math', 'goog.math.Coordinate']);
-goog.addDependency('math/bezier_test.js', ['goog.math.BezierTest'], ['goog.math', 'goog.math.Bezier', 'goog.math.Coordinate', 'goog.testing.jsunit']);
-goog.addDependency('math/box.js', ['goog.math.Box'], ['goog.math.Coordinate']);
-goog.addDependency('math/box_test.js', ['goog.math.BoxTest'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.testing.jsunit']);
-goog.addDependency('math/coordinate.js', ['goog.math.Coordinate'], ['goog.math']);
-goog.addDependency('math/coordinate3.js', ['goog.math.Coordinate3'], []);
-goog.addDependency('math/coordinate3_test.js', ['goog.math.Coordinate3Test'], ['goog.math.Coordinate3', 'goog.testing.jsunit']);
-goog.addDependency('math/coordinate_test.js', ['goog.math.CoordinateTest'], ['goog.math.Coordinate', 'goog.testing.jsunit']);
-goog.addDependency('math/exponentialbackoff.js', ['goog.math.ExponentialBackoff'], ['goog.asserts']);
-goog.addDependency('math/exponentialbackoff_test.js', ['goog.math.ExponentialBackoffTest'], ['goog.math.ExponentialBackoff', 'goog.testing.jsunit']);
-goog.addDependency('math/integer.js', ['goog.math.Integer'], []);
-goog.addDependency('math/integer_test.js', ['goog.math.IntegerTest'], ['goog.math.Integer', 'goog.testing.jsunit']);
-goog.addDependency('math/interpolator/interpolator1.js', ['goog.math.interpolator.Interpolator1'], []);
-goog.addDependency('math/interpolator/linear1.js', ['goog.math.interpolator.Linear1'], ['goog.array', 'goog.math', 'goog.math.interpolator.Interpolator1']);
-goog.addDependency('math/interpolator/linear1_test.js', ['goog.math.interpolator.Linear1Test'], ['goog.math.interpolator.Linear1', 'goog.testing.jsunit']);
-goog.addDependency('math/interpolator/pchip1.js', ['goog.math.interpolator.Pchip1'], ['goog.math', 'goog.math.interpolator.Spline1']);
-goog.addDependency('math/interpolator/pchip1_test.js', ['goog.math.interpolator.Pchip1Test'], ['goog.math.interpolator.Pchip1', 'goog.testing.jsunit']);
-goog.addDependency('math/interpolator/spline1.js', ['goog.math.interpolator.Spline1'], ['goog.array', 'goog.math', 'goog.math.interpolator.Interpolator1', 'goog.math.tdma']);
-goog.addDependency('math/interpolator/spline1_test.js', ['goog.math.interpolator.Spline1Test'], ['goog.math.interpolator.Spline1', 'goog.testing.jsunit']);
-goog.addDependency('math/line.js', ['goog.math.Line'], ['goog.math', 'goog.math.Coordinate']);
-goog.addDependency('math/line_test.js', ['goog.math.LineTest'], ['goog.math.Coordinate', 'goog.math.Line', 'goog.testing.jsunit']);
-goog.addDependency('math/long.js', ['goog.math.Long'], []);
-goog.addDependency('math/long_test.js', ['goog.math.LongTest'], ['goog.math.Long', 'goog.testing.jsunit']);
-goog.addDependency('math/math.js', ['goog.math'], ['goog.array', 'goog.asserts']);
-goog.addDependency('math/math_test.js', ['goog.mathTest'], ['goog.math', 'goog.testing.jsunit']);
-goog.addDependency('math/matrix.js', ['goog.math.Matrix'], ['goog.array', 'goog.math', 'goog.math.Size', 'goog.string']);
-goog.addDependency('math/matrix_test.js', ['goog.math.MatrixTest'], ['goog.math.Matrix', 'goog.testing.jsunit']);
-goog.addDependency('math/path.js', ['goog.math.Path', 'goog.math.Path.Segment'], ['goog.array', 'goog.math']);
-goog.addDependency('math/path_test.js', ['goog.math.PathTest'], ['goog.array', 'goog.math.AffineTransform', 'goog.math.Path', 'goog.testing.jsunit']);
-goog.addDependency('math/paths.js', ['goog.math.paths'], ['goog.math.Coordinate', 'goog.math.Path']);
-goog.addDependency('math/paths_test.js', ['goog.math.pathsTest'], ['goog.math.Coordinate', 'goog.math.paths', 'goog.testing.jsunit']);
-goog.addDependency('math/range.js', ['goog.math.Range'], ['goog.asserts']);
-goog.addDependency('math/range_test.js', ['goog.math.RangeTest'], ['goog.math.Range', 'goog.testing.jsunit']);
-goog.addDependency('math/rangeset.js', ['goog.math.RangeSet'], ['goog.array', 'goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.math.Range']);
-goog.addDependency('math/rangeset_test.js', ['goog.math.RangeSetTest'], ['goog.iter', 'goog.math.Range', 'goog.math.RangeSet', 'goog.testing.jsunit']);
-goog.addDependency('math/rect.js', ['goog.math.Rect'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size']);
-goog.addDependency('math/rect_test.js', ['goog.math.RectTest'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.math.Rect', 'goog.math.Size', 'goog.testing.jsunit']);
-goog.addDependency('math/size.js', ['goog.math.Size'], []);
-goog.addDependency('math/size_test.js', ['goog.math.SizeTest'], ['goog.math.Size', 'goog.testing.jsunit']);
-goog.addDependency('math/tdma.js', ['goog.math.tdma'], []);
-goog.addDependency('math/tdma_test.js', ['goog.math.tdmaTest'], ['goog.math.tdma', 'goog.testing.jsunit']);
-goog.addDependency('math/vec2.js', ['goog.math.Vec2'], ['goog.math', 'goog.math.Coordinate']);
-goog.addDependency('math/vec2_test.js', ['goog.math.Vec2Test'], ['goog.math.Vec2', 'goog.testing.jsunit']);
-goog.addDependency('math/vec3.js', ['goog.math.Vec3'], ['goog.math', 'goog.math.Coordinate3']);
-goog.addDependency('math/vec3_test.js', ['goog.math.Vec3Test'], ['goog.math.Coordinate3', 'goog.math.Vec3', 'goog.testing.jsunit']);
-goog.addDependency('memoize/memoize.js', ['goog.memoize'], []);
-goog.addDependency('memoize/memoize_test.js', ['goog.memoizeTest'], ['goog.memoize', 'goog.testing.jsunit']);
-goog.addDependency('messaging/abstractchannel.js', ['goog.messaging.AbstractChannel'], ['goog.Disposable', 'goog.debug', 'goog.json', 'goog.log', 'goog.messaging.MessageChannel']);
-goog.addDependency('messaging/abstractchannel_test.js', ['goog.messaging.AbstractChannelTest'], ['goog.messaging.AbstractChannel', 'goog.testing.MockControl', 'goog.testing.async.MockControl', 'goog.testing.jsunit']);
-goog.addDependency('messaging/bufferedchannel.js', ['goog.messaging.BufferedChannel'], ['goog.Timer', 'goog.Uri', 'goog.debug.Error', 'goog.events', 'goog.log', 'goog.messaging.MessageChannel', 'goog.messaging.MultiChannel']);
-goog.addDependency('messaging/bufferedchannel_test.js', ['goog.messaging.BufferedChannelTest'], ['goog.debug.Console', 'goog.dom', 'goog.log', 'goog.log.Level', 'goog.messaging.BufferedChannel', 'goog.testing.MockClock', 'goog.testing.MockControl', 'goog.testing.async.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/deferredchannel.js', ['goog.messaging.DeferredChannel'], ['goog.Disposable', 'goog.async.Deferred', 'goog.messaging.MessageChannel']);
-goog.addDependency('messaging/deferredchannel_test.js', ['goog.messaging.DeferredChannelTest'], ['goog.async.Deferred', 'goog.messaging.DeferredChannel', 'goog.testing.MockControl', 'goog.testing.async.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/loggerclient.js', ['goog.messaging.LoggerClient'], ['goog.Disposable', 'goog.debug', 'goog.debug.LogManager', 'goog.debug.Logger']);
-goog.addDependency('messaging/loggerclient_test.js', ['goog.messaging.LoggerClientTest'], ['goog.debug', 'goog.debug.Logger', 'goog.messaging.LoggerClient', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/loggerserver.js', ['goog.messaging.LoggerServer'], ['goog.Disposable', 'goog.log']);
-goog.addDependency('messaging/loggerserver_test.js', ['goog.messaging.LoggerServerTest'], ['goog.debug.LogManager', 'goog.debug.Logger', 'goog.log', 'goog.log.Level', 'goog.messaging.LoggerServer', 'goog.testing.MockControl', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/messagechannel.js', ['goog.messaging.MessageChannel'], []);
-goog.addDependency('messaging/messaging.js', ['goog.messaging'], ['goog.messaging.MessageChannel']);
-goog.addDependency('messaging/messaging_test.js', ['goog.testing.messaging.MockMessageChannelTest'], ['goog.messaging', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/multichannel.js', ['goog.messaging.MultiChannel', 'goog.messaging.MultiChannel.VirtualChannel'], ['goog.Disposable', 'goog.events.EventHandler', 'goog.log', 'goog.messaging.MessageChannel', 'goog.object']);
-goog.addDependency('messaging/multichannel_test.js', ['goog.messaging.MultiChannelTest'], ['goog.messaging.MultiChannel', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel', 'goog.testing.mockmatchers.IgnoreArgument']);
-goog.addDependency('messaging/portcaller.js', ['goog.messaging.PortCaller'], ['goog.Disposable', 'goog.async.Deferred', 'goog.messaging.DeferredChannel', 'goog.messaging.PortChannel', 'goog.messaging.PortNetwork', 'goog.object']);
-goog.addDependency('messaging/portcaller_test.js', ['goog.messaging.PortCallerTest'], ['goog.events.EventTarget', 'goog.messaging.PortCaller', 'goog.messaging.PortNetwork', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/portchannel.js', ['goog.messaging.PortChannel'], ['goog.Timer', 'goog.array', 'goog.async.Deferred', 'goog.debug', 'goog.dom', 'goog.dom.DomHelper', 'goog.events', 'goog.events.EventType', 'goog.json', 'goog.log', 'goog.messaging.AbstractChannel', 'goog.messaging.DeferredChannel', 'goog.object', 'goog.string']);
-goog.addDependency('messaging/portnetwork.js', ['goog.messaging.PortNetwork'], []);
-goog.addDependency('messaging/portoperator.js', ['goog.messaging.PortOperator'], ['goog.Disposable', 'goog.asserts', 'goog.log', 'goog.messaging.PortChannel', 'goog.messaging.PortNetwork', 'goog.object']);
-goog.addDependency('messaging/portoperator_test.js', ['goog.messaging.PortOperatorTest'], ['goog.messaging.PortNetwork', 'goog.messaging.PortOperator', 'goog.testing.MockControl', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel', 'goog.testing.messaging.MockMessagePort']);
-goog.addDependency('messaging/respondingchannel.js', ['goog.messaging.RespondingChannel'], ['goog.Disposable', 'goog.log', 'goog.messaging.MessageChannel', 'goog.messaging.MultiChannel', 'goog.messaging.MultiChannel.VirtualChannel']);
-goog.addDependency('messaging/respondingchannel_test.js', ['goog.messaging.RespondingChannelTest'], ['goog.messaging.RespondingChannel', 'goog.testing.MockControl', 'goog.testing.jsunit', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('messaging/testdata/portchannel_worker.js', ['goog.messaging.testdata.portchannel_worker'], ['goog.messaging.PortChannel']);
-goog.addDependency('messaging/testdata/portnetwork_worker1.js', ['goog.messaging.testdata.portnetwork_worker1'], ['goog.messaging.PortCaller', 'goog.messaging.PortChannel']);
-goog.addDependency('messaging/testdata/portnetwork_worker2.js', ['goog.messaging.testdata.portnetwork_worker2'], ['goog.messaging.PortCaller', 'goog.messaging.PortChannel']);
-goog.addDependency('module/abstractmoduleloader.js', ['goog.module.AbstractModuleLoader'], []);
-goog.addDependency('module/basemodule.js', ['goog.module.BaseModule'], ['goog.Disposable']);
-goog.addDependency('module/loader.js', ['goog.module.Loader'], ['goog.Timer', 'goog.array', 'goog.dom', 'goog.object']);
-goog.addDependency('module/module.js', ['goog.module'], ['goog.array', 'goog.module.Loader']);
-goog.addDependency('module/moduleinfo.js', ['goog.module.ModuleInfo'], ['goog.Disposable', 'goog.functions', 'goog.module.BaseModule', 'goog.module.ModuleLoadCallback']);
-goog.addDependency('module/moduleinfo_test.js', ['goog.module.ModuleInfoTest'], ['goog.module.BaseModule', 'goog.module.ModuleInfo', 'goog.testing.jsunit']);
-goog.addDependency('module/moduleloadcallback.js', ['goog.module.ModuleLoadCallback'], ['goog.debug.entryPointRegistry', 'goog.debug.errorHandlerWeakDep']);
-goog.addDependency('module/moduleloadcallback_test.js', ['goog.module.ModuleLoadCallbackTest'], ['goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.functions', 'goog.module.ModuleLoadCallback', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('module/moduleloader.js', ['goog.module.ModuleLoader'], ['goog.Timer', 'goog.array', 'goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.log', 'goog.module.AbstractModuleLoader', 'goog.net.BulkLoader', 'goog.net.EventType', 'goog.net.jsloader', 'goog.userAgent.product']);
-goog.addDependency('module/moduleloader_test.js', ['goog.module.ModuleLoaderTest'], ['goog.array', 'goog.dom', 'goog.functions', 'goog.module.ModuleLoader', 'goog.module.ModuleManager', 'goog.module.ModuleManager.CallbackType', 'goog.object', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.events.EventObserver', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent.product']);
-goog.addDependency('module/modulemanager.js', ['goog.module.ModuleManager', 'goog.module.ModuleManager.CallbackType', 'goog.module.ModuleManager.FailureType'], ['goog.Disposable', 'goog.array', 'goog.asserts', 'goog.async.Deferred', 'goog.debug.Trace', 'goog.dispose', 'goog.log', 'goog.module.ModuleInfo', 'goog.module.ModuleLoadCallback', 'goog.object']);
-goog.addDependency('module/modulemanager_test.js', ['goog.module.ModuleManagerTest'], ['goog.array', 'goog.functions', 'goog.module.BaseModule', 'goog.module.ModuleManager', 'goog.testing', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('module/testdata/modA_1.js', ['goog.module.testdata.modA_1'], []);
-goog.addDependency('module/testdata/modA_2.js', ['goog.module.testdata.modA_2'], ['goog.module.ModuleManager']);
-goog.addDependency('module/testdata/modB_1.js', ['goog.module.testdata.modB_1'], ['goog.module.ModuleManager']);
-goog.addDependency('net/browserchannel.js', ['goog.net.BrowserChannel', 'goog.net.BrowserChannel.Error', 'goog.net.BrowserChannel.Event', 'goog.net.BrowserChannel.Handler', 'goog.net.BrowserChannel.LogSaver', 'goog.net.BrowserChannel.QueuedMap', 'goog.net.BrowserChannel.ServerReachability', 'goog.net.BrowserChannel.ServerReachabilityEvent', 'goog.net.BrowserChannel.Stat', 'goog.net.BrowserChannel.StatEvent', 'goog.net.BrowserChannel.State', 'goog.net.BrowserChannel.TimingEvent'], ['goog.Uri', 'goog.array', 'goog.asserts', 'goog.debug.TextFormatter', 'goog.events.Event', 'goog.events.EventTarget', 'goog.json', 'goog.json.EvalJsonProcessor', 'goog.log', 'goog.net.BrowserTestChannel', 'goog.net.ChannelDebug', 'goog.net.ChannelRequest', 'goog.net.XhrIo', 'goog.net.tmpnetwork', 'goog.object', 'goog.string', 'goog.structs', 'goog.structs.CircularBuffer']);
-goog.addDependency('net/browserchannel_test.js', ['goog.net.BrowserChannelTest'], ['goog.Timer', 'goog.array', 'goog.dom', 'goog.functions', 'goog.json', 'goog.net.BrowserChannel', 'goog.net.ChannelDebug', 'goog.net.ChannelRequest', 'goog.net.tmpnetwork', 'goog.structs.Map', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('net/browsertestchannel.js', ['goog.net.BrowserTestChannel'], ['goog.json.EvalJsonProcessor', 'goog.net.ChannelRequest', 'goog.net.ChannelRequest.Error', 'goog.net.tmpnetwork', 'goog.string.Parser', 'goog.userAgent']);
-goog.addDependency('net/bulkloader.js', ['goog.net.BulkLoader'], ['goog.events.EventHandler', 'goog.events.EventTarget', 'goog.log', 'goog.net.BulkLoaderHelper', 'goog.net.EventType', 'goog.net.XhrIo']);
-goog.addDependency('net/bulkloader_test.js', ['goog.net.BulkLoaderTest'], ['goog.events.Event', 'goog.events.EventHandler', 'goog.net.BulkLoader', 'goog.net.EventType', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('net/bulkloaderhelper.js', ['goog.net.BulkLoaderHelper'], ['goog.Disposable', 'goog.log']);
-goog.addDependency('net/channeldebug.js', ['goog.net.ChannelDebug'], ['goog.json', 'goog.log']);
-goog.addDependency('net/channelrequest.js', ['goog.net.ChannelRequest', 'goog.net.ChannelRequest.Error'], ['goog.Timer', 'goog.async.Throttle', 'goog.events.EventHandler', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.XmlHttp', 'goog.object', 'goog.userAgent']);
-goog.addDependency('net/channelrequest_test.js', ['goog.net.ChannelRequestTest'], ['goog.Uri', 'goog.functions', 'goog.net.BrowserChannel', 'goog.net.ChannelDebug', 'goog.net.ChannelRequest', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.net.XhrIo', 'goog.testing.recordFunction']);
-goog.addDependency('net/cookies.js', ['goog.net.Cookies', 'goog.net.cookies'], []);
-goog.addDependency('net/cookies_test.js', ['goog.net.cookiesTest'], ['goog.array', 'goog.net.cookies', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('net/corsxmlhttpfactory.js', ['goog.net.CorsXmlHttpFactory', 'goog.net.IeCorsXhrAdapter'], ['goog.net.HttpStatus', 'goog.net.XhrLike', 'goog.net.XmlHttp', 'goog.net.XmlHttpFactory']);
-goog.addDependency('net/corsxmlhttpfactory_test.js', ['goog.net.CorsXmlHttpFactoryTest'], ['goog.net.CorsXmlHttpFactory', 'goog.net.IeCorsXhrAdapter', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('net/crossdomainrpc.js', ['goog.net.CrossDomainRpc'], ['goog.Uri', 'goog.dom', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.json', 'goog.log', 'goog.net.EventType', 'goog.net.HttpStatus', 'goog.string', 'goog.userAgent']);
-goog.addDependency('net/crossdomainrpc_test.js', ['goog.net.CrossDomainRpcTest'], ['goog.log', 'goog.log.Level', 'goog.net.CrossDomainRpc', 'goog.testing.jsunit']);
-goog.addDependency('net/errorcode.js', ['goog.net.ErrorCode'], []);
-goog.addDependency('net/eventtype.js', ['goog.net.EventType'], []);
-goog.addDependency('net/filedownloader.js', ['goog.net.FileDownloader', 'goog.net.FileDownloader.Error'], ['goog.Disposable', 'goog.asserts', 'goog.async.Deferred', 'goog.crypt.hash32', 'goog.debug.Error', 'goog.events', 'goog.events.EventHandler', 'goog.fs', 'goog.fs.DirectoryEntry', 'goog.fs.Error', 'goog.fs.FileSaver', 'goog.net.EventType', 'goog.net.XhrIo', 'goog.net.XhrIoPool', 'goog.object']);
-goog.addDependency('net/filedownloader_test.js', ['goog.net.FileDownloaderTest'], ['goog.fs.Error', 'goog.net.ErrorCode', 'goog.net.FileDownloader', 'goog.net.XhrIo', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.fs', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit', 'goog.testing.net.XhrIoPool']);
-goog.addDependency('net/httpstatus.js', ['goog.net.HttpStatus'], []);
-goog.addDependency('net/iframe_xhr_test.js', ['goog.net.iframeXhrTest'], ['goog.Timer', 'goog.debug.Console', 'goog.debug.LogManager', 'goog.debug.Logger', 'goog.events', 'goog.net.IframeIo', 'goog.net.XhrIo', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('net/iframeio.js', ['goog.net.IframeIo', 'goog.net.IframeIo.IncrementalDataEvent'], ['goog.Timer', 'goog.Uri', 'goog.asserts', 'goog.debug', 'goog.dom', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.json', 'goog.log', 'goog.log.Level', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.reflect', 'goog.string', 'goog.structs', 'goog.userAgent']);
-goog.addDependency('net/iframeio_different_base_test.js', ['goog.net.iframeIoDifferentBaseTest'], ['goog.events', 'goog.net.EventType', 'goog.net.IframeIo', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('net/iframeio_test.js', ['goog.net.IframeIoTest'], ['goog.debug', 'goog.debug.DivConsole', 'goog.debug.LogManager', 'goog.dom', 'goog.events', 'goog.events.EventType', 'goog.log', 'goog.log.Level', 'goog.net.IframeIo', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('net/iframeloadmonitor.js', ['goog.net.IframeLoadMonitor'], ['goog.dom', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.userAgent']);
-goog.addDependency('net/iframeloadmonitor_test.js', ['goog.net.IframeLoadMonitorTest'], ['goog.dom', 'goog.events', 'goog.net.IframeLoadMonitor', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('net/imageloader.js', ['goog.net.ImageLoader'], ['goog.array', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.net.EventType', 'goog.object', 'goog.userAgent']);
-goog.addDependency('net/imageloader_test.js', ['goog.net.ImageLoaderTest'], ['goog.Timer', 'goog.array', 'goog.dispose', 'goog.events', 'goog.events.Event', 'goog.events.EventType', 'goog.net.EventType', 'goog.net.ImageLoader', 'goog.object', 'goog.string', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('net/ipaddress.js', ['goog.net.IpAddress', 'goog.net.Ipv4Address', 'goog.net.Ipv6Address'], ['goog.array', 'goog.math.Integer', 'goog.object', 'goog.string']);
-goog.addDependency('net/ipaddress_test.js', ['goog.net.IpAddressTest'], ['goog.math.Integer', 'goog.net.IpAddress', 'goog.net.Ipv4Address', 'goog.net.Ipv6Address', 'goog.testing.jsunit']);
-goog.addDependency('net/jsloader.js', ['goog.net.jsloader', 'goog.net.jsloader.Error', 'goog.net.jsloader.ErrorCode', 'goog.net.jsloader.Options'], ['goog.array', 'goog.async.Deferred', 'goog.debug.Error', 'goog.dom', 'goog.dom.TagName']);
-goog.addDependency('net/jsloader_test.js', ['goog.net.jsloaderTest'], ['goog.array', 'goog.dom', 'goog.net.jsloader', 'goog.net.jsloader.ErrorCode', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('net/jsonp.js', ['goog.net.Jsonp'], ['goog.Uri', 'goog.net.jsloader']);
-goog.addDependency('net/jsonp_test.js', ['goog.net.JsonpTest'], ['goog.net.Jsonp', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('net/mockiframeio.js', ['goog.net.MockIFrameIo'], ['goog.events.EventTarget', 'goog.json', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.IframeIo']);
-goog.addDependency('net/multiiframeloadmonitor.js', ['goog.net.MultiIframeLoadMonitor'], ['goog.events', 'goog.net.IframeLoadMonitor']);
-goog.addDependency('net/multiiframeloadmonitor_test.js', ['goog.net.MultiIframeLoadMonitorTest'], ['goog.dom', 'goog.net.IframeLoadMonitor', 'goog.net.MultiIframeLoadMonitor', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('net/networkstatusmonitor.js', ['goog.net.NetworkStatusMonitor'], ['goog.events.Listenable']);
-goog.addDependency('net/networktester.js', ['goog.net.NetworkTester'], ['goog.Timer', 'goog.Uri', 'goog.log']);
-goog.addDependency('net/networktester_test.js', ['goog.net.NetworkTesterTest'], ['goog.Uri', 'goog.net.NetworkTester', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('net/testdata/jsloader_test1.js', ['goog.net.testdata.jsloader_test1'], []);
-goog.addDependency('net/testdata/jsloader_test2.js', ['goog.net.testdata.jsloader_test2'], []);
-goog.addDependency('net/testdata/jsloader_test3.js', ['goog.net.testdata.jsloader_test3'], []);
-goog.addDependency('net/testdata/jsloader_test4.js', ['goog.net.testdata.jsloader_test4'], []);
-goog.addDependency('net/tmpnetwork.js', ['goog.net.tmpnetwork'], ['goog.Uri', 'goog.net.ChannelDebug']);
-goog.addDependency('net/websocket.js', ['goog.net.WebSocket', 'goog.net.WebSocket.ErrorEvent', 'goog.net.WebSocket.EventType', 'goog.net.WebSocket.MessageEvent'], ['goog.Timer', 'goog.asserts', 'goog.debug.entryPointRegistry', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.log']);
-goog.addDependency('net/websocket_test.js', ['goog.net.WebSocketTest'], ['goog.debug.EntryPointMonitor', 'goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.events', 'goog.functions', 'goog.net.WebSocket', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('net/wrapperxmlhttpfactory.js', ['goog.net.WrapperXmlHttpFactory'], ['goog.net.XhrLike', 'goog.net.XmlHttpFactory']);
-goog.addDependency('net/xhrio.js', ['goog.net.XhrIo', 'goog.net.XhrIo.ResponseType'], ['goog.Timer', 'goog.array', 'goog.debug.entryPointRegistry', 'goog.events.EventTarget', 'goog.json', 'goog.log', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.HttpStatus', 'goog.net.XmlHttp', 'goog.object', 'goog.string', 'goog.structs', 'goog.structs.Map', 'goog.uri.utils', 'goog.userAgent']);
-goog.addDependency('net/xhrio_test.js', ['goog.net.XhrIoTest'], ['goog.Uri', 'goog.debug.EntryPointMonitor', 'goog.debug.ErrorHandler', 'goog.debug.entryPointRegistry', 'goog.events', 'goog.functions', 'goog.net.EventType', 'goog.net.WrapperXmlHttpFactory', 'goog.net.XhrIo', 'goog.net.XmlHttp', 'goog.object', 'goog.string', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.net.XhrIo', 'goog.testing.recordFunction']);
-goog.addDependency('net/xhriopool.js', ['goog.net.XhrIoPool'], ['goog.net.XhrIo', 'goog.structs.PriorityPool']);
-goog.addDependency('net/xhrlike.js', ['goog.net.XhrLike'], []);
-goog.addDependency('net/xhrmanager.js', ['goog.net.XhrManager', 'goog.net.XhrManager.Event', 'goog.net.XhrManager.Request'], ['goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.XhrIo', 'goog.net.XhrIoPool', 'goog.structs.Map']);
-goog.addDependency('net/xhrmanager_test.js', ['goog.net.XhrManagerTest'], ['goog.events', 'goog.net.EventType', 'goog.net.XhrIo', 'goog.net.XhrManager', 'goog.testing.jsunit', 'goog.testing.net.XhrIoPool', 'goog.testing.recordFunction']);
-goog.addDependency('net/xmlhttp.js', ['goog.net.DefaultXmlHttpFactory', 'goog.net.XmlHttp', 'goog.net.XmlHttp.OptionType', 'goog.net.XmlHttp.ReadyState', 'goog.net.XmlHttpDefines'], ['goog.asserts', 'goog.net.WrapperXmlHttpFactory', 'goog.net.XmlHttpFactory']);
-goog.addDependency('net/xmlhttpfactory.js', ['goog.net.XmlHttpFactory'], ['goog.net.XhrLike']);
-goog.addDependency('net/xpc/crosspagechannel.js', ['goog.net.xpc.CrossPageChannel'], ['goog.Uri', 'goog.async.Deferred', 'goog.async.Delay', 'goog.dispose', 'goog.dom', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.json', 'goog.log', 'goog.messaging.AbstractChannel', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.ChannelStates', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.DirectTransport', 'goog.net.xpc.FrameElementMethodTransport', 'goog.net.xpc.IframePollingTransport', 'goog.net.xpc.IframeRelayTransport', 'goog.net.xpc.NativeMessagingTransport', 'goog.net.xpc.NixTransport', 'goog.net.xpc.TransportTypes', 'goog.net.xpc.UriCfgFields', 'goog.string', 'goog.uri.utils', 'goog.userAgent']);
-goog.addDependency('net/xpc/crosspagechannel_test.js', ['goog.net.xpc.CrossPageChannelTest'], ['goog.Disposable', 'goog.Uri', 'goog.async.Deferred', 'goog.dom', 'goog.log', 'goog.log.Level', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannel', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.TransportTypes', 'goog.object', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('net/xpc/crosspagechannelrole.js', ['goog.net.xpc.CrossPageChannelRole'], []);
-goog.addDependency('net/xpc/directtransport.js', ['goog.net.xpc.DirectTransport'], ['goog.Timer', 'goog.async.Deferred', 'goog.events.EventHandler', 'goog.log', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes', 'goog.object']);
-goog.addDependency('net/xpc/directtransport_test.js', ['goog.net.xpc.DirectTransportTest'], ['goog.dom', 'goog.log', 'goog.log.Level', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannel', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.TransportTypes', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('net/xpc/frameelementmethodtransport.js', ['goog.net.xpc.FrameElementMethodTransport'], ['goog.log', 'goog.net.xpc', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes']);
-goog.addDependency('net/xpc/iframepollingtransport.js', ['goog.net.xpc.IframePollingTransport', 'goog.net.xpc.IframePollingTransport.Receiver', 'goog.net.xpc.IframePollingTransport.Sender'], ['goog.array', 'goog.dom', 'goog.log', 'goog.log.Level', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes', 'goog.userAgent']);
-goog.addDependency('net/xpc/iframepollingtransport_test.js', ['goog.net.xpc.IframePollingTransportTest'], ['goog.Timer', 'goog.dom', 'goog.dom.TagName', 'goog.functions', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannel', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.TransportTypes', 'goog.object', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('net/xpc/iframerelaytransport.js', ['goog.net.xpc.IframeRelayTransport'], ['goog.dom', 'goog.dom.safe', 'goog.events', 'goog.html.SafeHtml', 'goog.log', 'goog.log.Level', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes', 'goog.string', 'goog.string.Const', 'goog.userAgent']);
-goog.addDependency('net/xpc/nativemessagingtransport.js', ['goog.net.xpc.NativeMessagingTransport'], ['goog.Timer', 'goog.asserts', 'goog.async.Deferred', 'goog.events', 'goog.events.EventHandler', 'goog.log', 'goog.net.xpc', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes']);
-goog.addDependency('net/xpc/nativemessagingtransport_test.js', ['goog.net.xpc.NativeMessagingTransportTest'], ['goog.dom', 'goog.events', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannel', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.NativeMessagingTransport', 'goog.testing.jsunit']);
-goog.addDependency('net/xpc/nixtransport.js', ['goog.net.xpc.NixTransport'], ['goog.log', 'goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.CrossPageChannelRole', 'goog.net.xpc.Transport', 'goog.net.xpc.TransportTypes', 'goog.reflect']);
-goog.addDependency('net/xpc/relay.js', ['goog.net.xpc.relay'], []);
-goog.addDependency('net/xpc/transport.js', ['goog.net.xpc.Transport'], ['goog.Disposable', 'goog.dom', 'goog.net.xpc.TransportNames']);
-goog.addDependency('net/xpc/xpc.js', ['goog.net.xpc', 'goog.net.xpc.CfgFields', 'goog.net.xpc.ChannelStates', 'goog.net.xpc.TransportNames', 'goog.net.xpc.TransportTypes', 'goog.net.xpc.UriCfgFields'], ['goog.log']);
-goog.addDependency('object/object.js', ['goog.object'], []);
-goog.addDependency('object/object_test.js', ['goog.objectTest'], ['goog.functions', 'goog.object', 'goog.testing.jsunit']);
-goog.addDependency('positioning/absoluteposition.js', ['goog.positioning.AbsolutePosition'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size', 'goog.positioning', 'goog.positioning.AbstractPosition']);
-goog.addDependency('positioning/abstractposition.js', ['goog.positioning.AbstractPosition'], ['goog.math.Box', 'goog.math.Size', 'goog.positioning.Corner']);
-goog.addDependency('positioning/anchoredposition.js', ['goog.positioning.AnchoredPosition'], ['goog.math.Box', 'goog.positioning', 'goog.positioning.AbstractPosition']);
-goog.addDependency('positioning/anchoredposition_test.js', ['goog.positioning.AnchoredPositionTest'], ['goog.dom', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.style', 'goog.testing.jsunit']);
-goog.addDependency('positioning/anchoredviewportposition.js', ['goog.positioning.AnchoredViewportPosition'], ['goog.math.Box', 'goog.positioning', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.OverflowStatus']);
-goog.addDependency('positioning/anchoredviewportposition_test.js', ['goog.positioning.AnchoredViewportPositionTest'], ['goog.dom', 'goog.math.Box', 'goog.positioning.AnchoredViewportPosition', 'goog.positioning.Corner', 'goog.positioning.OverflowStatus', 'goog.style', 'goog.testing.jsunit']);
-goog.addDependency('positioning/clientposition.js', ['goog.positioning.ClientPosition'], ['goog.asserts', 'goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size', 'goog.positioning', 'goog.positioning.AbstractPosition', 'goog.style']);
-goog.addDependency('positioning/clientposition_test.js', ['goog.positioning.clientPositionTest'], ['goog.dom', 'goog.positioning.ClientPosition', 'goog.style', 'goog.testing.jsunit']);
-goog.addDependency('positioning/menuanchoredposition.js', ['goog.positioning.MenuAnchoredPosition'], ['goog.math.Box', 'goog.math.Size', 'goog.positioning', 'goog.positioning.AnchoredViewportPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow']);
-goog.addDependency('positioning/menuanchoredposition_test.js', ['goog.positioning.MenuAnchoredPositionTest'], ['goog.dom', 'goog.positioning.Corner', 'goog.positioning.MenuAnchoredPosition', 'goog.testing.jsunit']);
-goog.addDependency('positioning/positioning.js', ['goog.positioning', 'goog.positioning.Corner', 'goog.positioning.CornerBit', 'goog.positioning.Overflow', 'goog.positioning.OverflowStatus'], ['goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size', 'goog.style', 'goog.style.bidi']);
-goog.addDependency('positioning/positioning_test.js', ['goog.positioningTest'], ['goog.dom', 'goog.dom.DomHelper', 'goog.math.Box', 'goog.math.Coordinate', 'goog.math.Rect', 'goog.math.Size', 'goog.positioning', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.OverflowStatus', 'goog.style', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('positioning/viewportclientposition.js', ['goog.positioning.ViewportClientPosition'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size', 'goog.positioning.ClientPosition']);
-goog.addDependency('positioning/viewportclientposition_test.js', ['goog.positioning.ViewportClientPositionTest'], ['goog.dom', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.ViewportClientPosition', 'goog.style', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('positioning/viewportposition.js', ['goog.positioning.ViewportPosition'], ['goog.math.Box', 'goog.math.Coordinate', 'goog.math.Size', 'goog.positioning.AbstractPosition']);
-goog.addDependency('promise/promise.js', ['goog.Promise'], ['goog.Thenable', 'goog.asserts', 'goog.async.run', 'goog.async.throwException', 'goog.debug.Error', 'goog.promise.Resolver']);
-goog.addDependency('promise/promise_test.js', ['goog.PromiseTest'], ['goog.Promise', 'goog.Thenable', 'goog.functions', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('promise/resolver.js', ['goog.promise.Resolver'], []);
-goog.addDependency('promise/testsuiteadapter.js', ['goog.promise.testSuiteAdapter'], ['goog.Promise']);
-goog.addDependency('promise/thenable.js', ['goog.Thenable'], []);
-goog.addDependency('proto/proto.js', ['goog.proto'], ['goog.proto.Serializer']);
-goog.addDependency('proto/serializer.js', ['goog.proto.Serializer'], ['goog.json.Serializer', 'goog.string']);
-goog.addDependency('proto/serializer_test.js', ['goog.protoTest'], ['goog.proto', 'goog.testing.jsunit']);
-goog.addDependency('proto2/descriptor.js', ['goog.proto2.Descriptor', 'goog.proto2.Metadata'], ['goog.array', 'goog.asserts', 'goog.object', 'goog.string']);
-goog.addDependency('proto2/descriptor_test.js', ['goog.proto2.DescriptorTest'], ['goog.proto2.Descriptor', 'goog.testing.jsunit']);
-goog.addDependency('proto2/fielddescriptor.js', ['goog.proto2.FieldDescriptor'], ['goog.asserts', 'goog.string']);
-goog.addDependency('proto2/fielddescriptor_test.js', ['goog.proto2.FieldDescriptorTest'], ['goog.proto2.FieldDescriptor', 'goog.proto2.Message', 'goog.testing.jsunit']);
-goog.addDependency('proto2/lazydeserializer.js', ['goog.proto2.LazyDeserializer'], ['goog.asserts', 'goog.proto2.Message', 'goog.proto2.Serializer']);
-goog.addDependency('proto2/message.js', ['goog.proto2.Message'], ['goog.asserts', 'goog.proto2.Descriptor', 'goog.proto2.FieldDescriptor']);
-goog.addDependency('proto2/message_test.js', ['goog.proto2.MessageTest'], ['goog.testing.jsunit', 'proto2.TestAllTypes', 'proto2.TestAllTypes.NestedEnum', 'proto2.TestAllTypes.NestedMessage', 'proto2.TestAllTypes.OptionalGroup', 'proto2.TestAllTypes.RepeatedGroup']);
-goog.addDependency('proto2/objectserializer.js', ['goog.proto2.ObjectSerializer'], ['goog.asserts', 'goog.proto2.Serializer', 'goog.string']);
-goog.addDependency('proto2/objectserializer_test.js', ['goog.proto2.ObjectSerializerTest'], ['goog.proto2.ObjectSerializer', 'goog.proto2.Serializer', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'proto2.TestAllTypes']);
-goog.addDependency('proto2/package_test.pb.js', ['someprotopackage.TestPackageTypes'], ['goog.proto2.Message', 'proto2.TestAllTypes']);
-goog.addDependency('proto2/pbliteserializer.js', ['goog.proto2.PbLiteSerializer'], ['goog.asserts', 'goog.proto2.FieldDescriptor', 'goog.proto2.LazyDeserializer', 'goog.proto2.Serializer']);
-goog.addDependency('proto2/pbliteserializer_test.js', ['goog.proto2.PbLiteSerializerTest'], ['goog.proto2.PbLiteSerializer', 'goog.testing.jsunit', 'proto2.TestAllTypes']);
-goog.addDependency('proto2/proto_test.js', ['goog.proto2.messageTest'], ['goog.proto2.FieldDescriptor', 'goog.testing.jsunit', 'proto2.TestAllTypes', 'someprotopackage.TestPackageTypes']);
-goog.addDependency('proto2/serializer.js', ['goog.proto2.Serializer'], ['goog.asserts', 'goog.proto2.FieldDescriptor', 'goog.proto2.Message']);
-goog.addDependency('proto2/test.pb.js', ['proto2.TestAllTypes', 'proto2.TestAllTypes.NestedEnum', 'proto2.TestAllTypes.NestedMessage', 'proto2.TestAllTypes.OptionalGroup', 'proto2.TestAllTypes.RepeatedGroup', 'proto2.TestDefaultChild', 'proto2.TestDefaultParent'], ['goog.proto2.Message']);
-goog.addDependency('proto2/textformatserializer.js', ['goog.proto2.TextFormatSerializer'], ['goog.array', 'goog.asserts', 'goog.json', 'goog.math', 'goog.object', 'goog.proto2.FieldDescriptor', 'goog.proto2.Message', 'goog.proto2.Serializer', 'goog.string']);
-goog.addDependency('proto2/textformatserializer_test.js', ['goog.proto2.TextFormatSerializerTest'], ['goog.proto2.ObjectSerializer', 'goog.proto2.TextFormatSerializer', 'goog.testing.jsunit', 'proto2.TestAllTypes']);
-goog.addDependency('proto2/util.js', ['goog.proto2.Util'], ['goog.asserts']);
-goog.addDependency('pubsub/pubsub.js', ['goog.pubsub.PubSub'], ['goog.Disposable', 'goog.array']);
-goog.addDependency('pubsub/pubsub_test.js', ['goog.pubsub.PubSubTest'], ['goog.array', 'goog.pubsub.PubSub', 'goog.testing.jsunit']);
-goog.addDependency('pubsub/topicid.js', ['goog.pubsub.TopicId'], []);
-goog.addDependency('pubsub/typedpubsub.js', ['goog.pubsub.TypedPubSub'], ['goog.Disposable', 'goog.pubsub.PubSub']);
-goog.addDependency('pubsub/typedpubsub_test.js', ['goog.pubsub.TypedPubSubTest'], ['goog.array', 'goog.pubsub.TopicId', 'goog.pubsub.TypedPubSub', 'goog.testing.jsunit']);
-goog.addDependency('reflect/reflect.js', ['goog.reflect'], []);
-goog.addDependency('result/deferredadaptor.js', ['goog.result.DeferredAdaptor'], ['goog.async.Deferred', 'goog.result', 'goog.result.Result']);
-goog.addDependency('result/dependentresult.js', ['goog.result.DependentResult'], ['goog.result.Result']);
-goog.addDependency('result/result_interface.js', ['goog.result.Result'], ['goog.Thenable']);
-goog.addDependency('result/resultutil.js', ['goog.result'], ['goog.array', 'goog.result.DependentResult', 'goog.result.Result', 'goog.result.SimpleResult']);
-goog.addDependency('result/simpleresult.js', ['goog.result.SimpleResult', 'goog.result.SimpleResult.StateError'], ['goog.Promise', 'goog.Thenable', 'goog.debug.Error', 'goog.result.Result']);
-goog.addDependency('soy/data.js', ['goog.soy.data', 'goog.soy.data.SanitizedContent', 'goog.soy.data.SanitizedContentKind'], ['goog.html.SafeHtml', 'goog.html.uncheckedconversions', 'goog.string.Const']);
-goog.addDependency('soy/data_test.js', ['goog.soy.dataTest'], ['goog.html.SafeHtml', 'goog.soy.testHelper', 'goog.testing.jsunit']);
-goog.addDependency('soy/renderer.js', ['goog.soy.InjectedDataSupplier', 'goog.soy.Renderer'], ['goog.asserts', 'goog.dom', 'goog.soy', 'goog.soy.data.SanitizedContent', 'goog.soy.data.SanitizedContentKind']);
-goog.addDependency('soy/renderer_test.js', ['goog.soy.RendererTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.html.SafeHtml', 'goog.i18n.bidi.Dir', 'goog.soy.Renderer', 'goog.soy.data.SanitizedContentKind', 'goog.soy.testHelper', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('soy/soy.js', ['goog.soy'], ['goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.soy.data.SanitizedContent', 'goog.soy.data.SanitizedContentKind', 'goog.string']);
-goog.addDependency('soy/soy_test.js', ['goog.soyTest'], ['goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.functions', 'goog.soy', 'goog.soy.testHelper', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('soy/soy_testhelper.js', ['goog.soy.testHelper'], ['goog.dom', 'goog.dom.TagName', 'goog.i18n.bidi.Dir', 'goog.soy.data.SanitizedContent', 'goog.soy.data.SanitizedContentKind', 'goog.string', 'goog.userAgent']);
-goog.addDependency('spell/spellcheck.js', ['goog.spell.SpellCheck', 'goog.spell.SpellCheck.WordChangedEvent'], ['goog.Timer', 'goog.events.EventTarget', 'goog.structs.Set']);
-goog.addDependency('spell/spellcheck_test.js', ['goog.spell.SpellCheckTest'], ['goog.spell.SpellCheck', 'goog.testing.jsunit']);
-goog.addDependency('stats/basicstat.js', ['goog.stats.BasicStat'], ['goog.array', 'goog.iter', 'goog.log', 'goog.object', 'goog.string.format', 'goog.structs.CircularBuffer']);
-goog.addDependency('stats/basicstat_test.js', ['goog.stats.BasicStatTest'], ['goog.array', 'goog.stats.BasicStat', 'goog.string.format', 'goog.testing.PseudoRandom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('storage/collectablestorage.js', ['goog.storage.CollectableStorage'], ['goog.array', 'goog.iter', 'goog.storage.ErrorCode', 'goog.storage.ExpiringStorage', 'goog.storage.RichStorage']);
-goog.addDependency('storage/collectablestorage_test.js', ['goog.storage.CollectableStorageTest'], ['goog.storage.CollectableStorage', 'goog.storage.collectableStorageTester', 'goog.storage.storage_test', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.storage.FakeMechanism']);
-goog.addDependency('storage/collectablestoragetester.js', ['goog.storage.collectableStorageTester'], ['goog.testing.asserts']);
-goog.addDependency('storage/encryptedstorage.js', ['goog.storage.EncryptedStorage'], ['goog.crypt', 'goog.crypt.Arc4', 'goog.crypt.Sha1', 'goog.crypt.base64', 'goog.json', 'goog.json.Serializer', 'goog.storage.CollectableStorage', 'goog.storage.ErrorCode', 'goog.storage.RichStorage', 'goog.storage.RichStorage.Wrapper', 'goog.storage.mechanism.IterableMechanism']);
-goog.addDependency('storage/encryptedstorage_test.js', ['goog.storage.EncryptedStorageTest'], ['goog.json', 'goog.storage.EncryptedStorage', 'goog.storage.ErrorCode', 'goog.storage.RichStorage', 'goog.storage.collectableStorageTester', 'goog.storage.storage_test', 'goog.testing.MockClock', 'goog.testing.PseudoRandom', 'goog.testing.jsunit', 'goog.testing.storage.FakeMechanism']);
-goog.addDependency('storage/errorcode.js', ['goog.storage.ErrorCode'], []);
-goog.addDependency('storage/expiringstorage.js', ['goog.storage.ExpiringStorage'], ['goog.storage.RichStorage', 'goog.storage.RichStorage.Wrapper', 'goog.storage.mechanism.Mechanism']);
-goog.addDependency('storage/expiringstorage_test.js', ['goog.storage.ExpiringStorageTest'], ['goog.storage.ExpiringStorage', 'goog.storage.storage_test', 'goog.testing.MockClock', 'goog.testing.jsunit', 'goog.testing.storage.FakeMechanism']);
-goog.addDependency('storage/mechanism/errorcode.js', ['goog.storage.mechanism.ErrorCode'], []);
-goog.addDependency('storage/mechanism/errorhandlingmechanism.js', ['goog.storage.mechanism.ErrorHandlingMechanism'], ['goog.storage.mechanism.Mechanism']);
-goog.addDependency('storage/mechanism/errorhandlingmechanism_test.js', ['goog.storage.mechanism.ErrorHandlingMechanismTest'], ['goog.storage.mechanism.ErrorHandlingMechanism', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('storage/mechanism/html5localstorage.js', ['goog.storage.mechanism.HTML5LocalStorage'], ['goog.storage.mechanism.HTML5WebStorage']);
-goog.addDependency('storage/mechanism/html5localstorage_test.js', ['goog.storage.mechanism.HTML5LocalStorageTest'], ['goog.storage.mechanism.HTML5LocalStorage', 'goog.storage.mechanism.mechanismSeparationTester', 'goog.storage.mechanism.mechanismSharingTester', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('storage/mechanism/html5sessionstorage.js', ['goog.storage.mechanism.HTML5SessionStorage'], ['goog.storage.mechanism.HTML5WebStorage']);
-goog.addDependency('storage/mechanism/html5sessionstorage_test.js', ['goog.storage.mechanism.HTML5SessionStorageTest'], ['goog.storage.mechanism.HTML5SessionStorage', 'goog.storage.mechanism.mechanismSeparationTester', 'goog.storage.mechanism.mechanismSharingTester', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('storage/mechanism/html5webstorage.js', ['goog.storage.mechanism.HTML5WebStorage'], ['goog.asserts', 'goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.storage.mechanism.ErrorCode', 'goog.storage.mechanism.IterableMechanism']);
-goog.addDependency('storage/mechanism/html5webstorage_test.js', ['goog.storage.mechanism.HTML5MockStorage', 'goog.storage.mechanism.HTML5WebStorageTest', 'goog.storage.mechanism.MockThrowableStorage'], ['goog.storage.mechanism.ErrorCode', 'goog.storage.mechanism.HTML5WebStorage', 'goog.testing.jsunit']);
-goog.addDependency('storage/mechanism/ieuserdata.js', ['goog.storage.mechanism.IEUserData'], ['goog.asserts', 'goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.storage.mechanism.ErrorCode', 'goog.storage.mechanism.IterableMechanism', 'goog.structs.Map', 'goog.userAgent']);
-goog.addDependency('storage/mechanism/ieuserdata_test.js', ['goog.storage.mechanism.IEUserDataTest'], ['goog.storage.mechanism.IEUserData', 'goog.storage.mechanism.mechanismSeparationTester', 'goog.storage.mechanism.mechanismSharingTester', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('storage/mechanism/iterablemechanism.js', ['goog.storage.mechanism.IterableMechanism'], ['goog.array', 'goog.asserts', 'goog.iter', 'goog.iter.Iterator', 'goog.storage.mechanism.Mechanism']);
-goog.addDependency('storage/mechanism/iterablemechanismtester.js', ['goog.storage.mechanism.iterableMechanismTester'], ['goog.iter.Iterator', 'goog.storage.mechanism.IterableMechanism', 'goog.testing.asserts']);
-goog.addDependency('storage/mechanism/mechanism.js', ['goog.storage.mechanism.Mechanism'], []);
-goog.addDependency('storage/mechanism/mechanismfactory.js', ['goog.storage.mechanism.mechanismfactory'], ['goog.storage.mechanism.HTML5LocalStorage', 'goog.storage.mechanism.HTML5SessionStorage', 'goog.storage.mechanism.IEUserData', 'goog.storage.mechanism.IterableMechanism', 'goog.storage.mechanism.PrefixedMechanism']);
-goog.addDependency('storage/mechanism/mechanismfactory_test.js', ['goog.storage.mechanism.mechanismfactoryTest'], ['goog.storage.mechanism.mechanismfactory', 'goog.testing.jsunit']);
-goog.addDependency('storage/mechanism/mechanismseparationtester.js', ['goog.storage.mechanism.mechanismSeparationTester'], ['goog.iter.Iterator', 'goog.storage.mechanism.IterableMechanism', 'goog.testing.asserts']);
-goog.addDependency('storage/mechanism/mechanismsharingtester.js', ['goog.storage.mechanism.mechanismSharingTester'], ['goog.iter.Iterator', 'goog.storage.mechanism.IterableMechanism', 'goog.testing.asserts']);
-goog.addDependency('storage/mechanism/mechanismtester.js', ['goog.storage.mechanism.mechanismTester'], ['goog.storage.mechanism.ErrorCode', 'goog.storage.mechanism.HTML5LocalStorage', 'goog.storage.mechanism.Mechanism', 'goog.testing.asserts', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('storage/mechanism/prefixedmechanism.js', ['goog.storage.mechanism.PrefixedMechanism'], ['goog.iter.Iterator', 'goog.storage.mechanism.IterableMechanism']);
-goog.addDependency('storage/mechanism/prefixedmechanism_test.js', ['goog.storage.mechanism.PrefixedMechanismTest'], ['goog.storage.mechanism.HTML5LocalStorage', 'goog.storage.mechanism.PrefixedMechanism', 'goog.storage.mechanism.mechanismSeparationTester', 'goog.storage.mechanism.mechanismSharingTester', 'goog.testing.jsunit']);
-goog.addDependency('storage/richstorage.js', ['goog.storage.RichStorage', 'goog.storage.RichStorage.Wrapper'], ['goog.storage.ErrorCode', 'goog.storage.Storage', 'goog.storage.mechanism.Mechanism']);
-goog.addDependency('storage/richstorage_test.js', ['goog.storage.RichStorageTest'], ['goog.storage.ErrorCode', 'goog.storage.RichStorage', 'goog.storage.storage_test', 'goog.testing.jsunit', 'goog.testing.storage.FakeMechanism']);
-goog.addDependency('storage/storage.js', ['goog.storage.Storage'], ['goog.json', 'goog.storage.ErrorCode']);
-goog.addDependency('storage/storage_test.js', ['goog.storage.storage_test'], ['goog.storage.Storage', 'goog.structs.Map', 'goog.testing.asserts']);
-goog.addDependency('string/const.js', ['goog.string.Const'], ['goog.asserts', 'goog.string.TypedString']);
-goog.addDependency('string/const_test.js', ['goog.string.constTest'], ['goog.string.Const', 'goog.testing.jsunit']);
-goog.addDependency('string/linkify.js', ['goog.string.linkify'], ['goog.string']);
-goog.addDependency('string/linkify_test.js', ['goog.string.linkifyTest'], ['goog.string', 'goog.string.linkify', 'goog.testing.dom', 'goog.testing.jsunit']);
-goog.addDependency('string/newlines.js', ['goog.string.newlines', 'goog.string.newlines.Line'], ['goog.array']);
-goog.addDependency('string/newlines_test.js', ['goog.string.newlinesTest'], ['goog.string.newlines', 'goog.testing.jsunit']);
-goog.addDependency('string/parser.js', ['goog.string.Parser'], []);
-goog.addDependency('string/path.js', ['goog.string.path'], ['goog.array', 'goog.string']);
-goog.addDependency('string/path_test.js', ['goog.string.pathTest'], ['goog.string.path', 'goog.testing.jsunit']);
-goog.addDependency('string/string.js', ['goog.string', 'goog.string.Unicode'], []);
-goog.addDependency('string/string_test.js', ['goog.stringTest'], ['goog.functions', 'goog.object', 'goog.string', 'goog.string.Unicode', 'goog.testing.MockControl', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit']);
-goog.addDependency('string/stringbuffer.js', ['goog.string.StringBuffer'], []);
-goog.addDependency('string/stringbuffer_test.js', ['goog.string.StringBufferTest'], ['goog.string.StringBuffer', 'goog.testing.jsunit']);
-goog.addDependency('string/stringformat.js', ['goog.string.format'], ['goog.string']);
-goog.addDependency('string/stringformat_test.js', ['goog.string.formatTest'], ['goog.string.format', 'goog.testing.jsunit']);
-goog.addDependency('string/stringifier.js', ['goog.string.Stringifier'], []);
-goog.addDependency('string/typedstring.js', ['goog.string.TypedString'], []);
-goog.addDependency('structs/avltree.js', ['goog.structs.AvlTree', 'goog.structs.AvlTree.Node'], ['goog.structs.Collection']);
-goog.addDependency('structs/avltree_test.js', ['goog.structs.AvlTreeTest'], ['goog.array', 'goog.structs.AvlTree', 'goog.testing.jsunit']);
-goog.addDependency('structs/circularbuffer.js', ['goog.structs.CircularBuffer'], []);
-goog.addDependency('structs/circularbuffer_test.js', ['goog.structs.CircularBufferTest'], ['goog.structs.CircularBuffer', 'goog.testing.jsunit']);
-goog.addDependency('structs/collection.js', ['goog.structs.Collection'], []);
-goog.addDependency('structs/collection_test.js', ['goog.structs.CollectionTest'], ['goog.structs.AvlTree', 'goog.structs.Set', 'goog.testing.jsunit']);
-goog.addDependency('structs/heap.js', ['goog.structs.Heap'], ['goog.array', 'goog.object', 'goog.structs.Node']);
-goog.addDependency('structs/heap_test.js', ['goog.structs.HeapTest'], ['goog.structs', 'goog.structs.Heap', 'goog.testing.jsunit']);
-goog.addDependency('structs/inversionmap.js', ['goog.structs.InversionMap'], ['goog.array']);
-goog.addDependency('structs/inversionmap_test.js', ['goog.structs.InversionMapTest'], ['goog.structs.InversionMap', 'goog.testing.jsunit']);
-goog.addDependency('structs/linkedmap.js', ['goog.structs.LinkedMap'], ['goog.structs.Map']);
-goog.addDependency('structs/linkedmap_test.js', ['goog.structs.LinkedMapTest'], ['goog.structs.LinkedMap', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('structs/map.js', ['goog.structs.Map'], ['goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.object']);
-goog.addDependency('structs/map_test.js', ['goog.structs.MapTest'], ['goog.iter', 'goog.structs', 'goog.structs.Map', 'goog.testing.jsunit']);
-goog.addDependency('structs/node.js', ['goog.structs.Node'], []);
-goog.addDependency('structs/pool.js', ['goog.structs.Pool'], ['goog.Disposable', 'goog.structs.Queue', 'goog.structs.Set']);
-goog.addDependency('structs/pool_test.js', ['goog.structs.PoolTest'], ['goog.structs.Pool', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('structs/prioritypool.js', ['goog.structs.PriorityPool'], ['goog.structs.Pool', 'goog.structs.PriorityQueue']);
-goog.addDependency('structs/prioritypool_test.js', ['goog.structs.PriorityPoolTest'], ['goog.structs.PriorityPool', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('structs/priorityqueue.js', ['goog.structs.PriorityQueue'], ['goog.structs.Heap']);
-goog.addDependency('structs/priorityqueue_test.js', ['goog.structs.PriorityQueueTest'], ['goog.structs', 'goog.structs.PriorityQueue', 'goog.testing.jsunit']);
-goog.addDependency('structs/quadtree.js', ['goog.structs.QuadTree', 'goog.structs.QuadTree.Node', 'goog.structs.QuadTree.Point'], ['goog.math.Coordinate']);
-goog.addDependency('structs/quadtree_test.js', ['goog.structs.QuadTreeTest'], ['goog.structs', 'goog.structs.QuadTree', 'goog.testing.jsunit']);
-goog.addDependency('structs/queue.js', ['goog.structs.Queue'], ['goog.array']);
-goog.addDependency('structs/queue_test.js', ['goog.structs.QueueTest'], ['goog.structs.Queue', 'goog.testing.jsunit']);
-goog.addDependency('structs/set.js', ['goog.structs.Set'], ['goog.structs', 'goog.structs.Collection', 'goog.structs.Map']);
-goog.addDependency('structs/set_test.js', ['goog.structs.SetTest'], ['goog.iter', 'goog.structs', 'goog.structs.Set', 'goog.testing.jsunit']);
-goog.addDependency('structs/simplepool.js', ['goog.structs.SimplePool'], ['goog.Disposable']);
-goog.addDependency('structs/stringset.js', ['goog.structs.StringSet'], ['goog.asserts', 'goog.iter']);
-goog.addDependency('structs/stringset_test.js', ['goog.structs.StringSetTest'], ['goog.array', 'goog.iter', 'goog.structs.StringSet', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('structs/structs.js', ['goog.structs'], ['goog.array', 'goog.object']);
-goog.addDependency('structs/structs_test.js', ['goog.structsTest'], ['goog.array', 'goog.structs', 'goog.structs.Map', 'goog.structs.Set', 'goog.testing.jsunit']);
-goog.addDependency('structs/treenode.js', ['goog.structs.TreeNode'], ['goog.array', 'goog.asserts', 'goog.structs.Node']);
-goog.addDependency('structs/treenode_test.js', ['goog.structs.TreeNodeTest'], ['goog.structs.TreeNode', 'goog.testing.jsunit']);
-goog.addDependency('structs/trie.js', ['goog.structs.Trie'], ['goog.object', 'goog.structs']);
-goog.addDependency('structs/trie_test.js', ['goog.structs.TrieTest'], ['goog.object', 'goog.structs', 'goog.structs.Trie', 'goog.testing.jsunit']);
-goog.addDependency('structs/weak/weak.js', ['goog.structs.weak'], ['goog.userAgent']);
-goog.addDependency('structs/weak/weak_test.js', ['goog.structs.weakTest'], ['goog.array', 'goog.structs.weak', 'goog.testing.jsunit']);
-goog.addDependency('style/bidi.js', ['goog.style.bidi'], ['goog.dom', 'goog.style', 'goog.userAgent']);
-goog.addDependency('style/bidi_test.js', ['goog.style.bidiTest'], ['goog.dom', 'goog.style', 'goog.style.bidi', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('style/cursor.js', ['goog.style.cursor'], ['goog.userAgent']);
-goog.addDependency('style/cursor_test.js', ['goog.style.cursorTest'], ['goog.style.cursor', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('style/style.js', ['goog.style'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.vendor', 'goog.math.Box', 'goog.math.Coordinate', 'goog.math.Rect', 'goog.math.Size', 'goog.object', 'goog.string', 'goog.userAgent']);
-goog.addDependency('style/style_test.js', ['goog.style_test'], ['goog.array', 'goog.color', 'goog.dom', 'goog.events.BrowserEvent', 'goog.labs.userAgent.util', 'goog.math.Box', 'goog.math.Coordinate', 'goog.math.Rect', 'goog.math.Size', 'goog.object', 'goog.string', 'goog.style', 'goog.testing.ExpectedFailures', 'goog.testing.MockUserAgent', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product', 'goog.userAgent.product.isVersion', 'goog.userAgentTestUtil', 'goog.userAgentTestUtil.UserAgents']);
-goog.addDependency('style/style_webkit_scrollbars_test.js', ['goog.style.webkitScrollbarsTest'], ['goog.asserts', 'goog.style', 'goog.styleScrollbarTester', 'goog.testing.ExpectedFailures', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('style/stylescrollbartester.js', ['goog.styleScrollbarTester'], ['goog.dom', 'goog.style', 'goog.testing.asserts']);
-goog.addDependency('style/transform.js', ['goog.style.transform'], ['goog.functions', 'goog.math.Coordinate', 'goog.style', 'goog.userAgent', 'goog.userAgent.product.isVersion']);
-goog.addDependency('style/transform_test.js', ['goog.style.transformTest'], ['goog.dom', 'goog.style.transform', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product.isVersion']);
-goog.addDependency('style/transition.js', ['goog.style.transition', 'goog.style.transition.Css3Property'], ['goog.array', 'goog.asserts', 'goog.dom.safe', 'goog.dom.vendor', 'goog.functions', 'goog.html.SafeHtml', 'goog.style', 'goog.userAgent']);
-goog.addDependency('style/transition_test.js', ['goog.style.transitionTest'], ['goog.style', 'goog.style.transition', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('testing/asserts.js', ['goog.testing.JsUnitException', 'goog.testing.asserts'], ['goog.testing.stacktrace']);
-goog.addDependency('testing/asserts_test.js', ['goog.testing.assertsTest'], ['goog.array', 'goog.dom', 'goog.iter.Iterator', 'goog.iter.StopIteration', 'goog.structs.Map', 'goog.structs.Set', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('testing/async/mockcontrol.js', ['goog.testing.async.MockControl'], ['goog.asserts', 'goog.async.Deferred', 'goog.debug', 'goog.testing.asserts', 'goog.testing.mockmatchers.IgnoreArgument']);
-goog.addDependency('testing/async/mockcontrol_test.js', ['goog.testing.async.MockControlTest'], ['goog.async.Deferred', 'goog.testing.MockControl', 'goog.testing.asserts', 'goog.testing.async.MockControl', 'goog.testing.jsunit']);
-goog.addDependency('testing/asynctestcase.js', ['goog.testing.AsyncTestCase', 'goog.testing.AsyncTestCase.ControlBreakingException'], ['goog.testing.TestCase', 'goog.testing.TestCase.Test', 'goog.testing.asserts']);
-goog.addDependency('testing/asynctestcase_async_test.js', ['goog.testing.AsyncTestCaseAsyncTest'], ['goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('testing/asynctestcase_noasync_test.js', ['goog.testing.AsyncTestCaseSyncTest'], ['goog.testing.AsyncTestCase', 'goog.testing.jsunit']);
-goog.addDependency('testing/asynctestcase_test.js', ['goog.testing.AsyncTestCaseTest'], ['goog.debug.Error', 'goog.testing.AsyncTestCase', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('testing/benchmark.js', ['goog.testing.benchmark'], ['goog.dom', 'goog.dom.TagName', 'goog.testing.PerformanceTable', 'goog.testing.PerformanceTimer', 'goog.testing.TestCase']);
-goog.addDependency('testing/continuationtestcase.js', ['goog.testing.ContinuationTestCase', 'goog.testing.ContinuationTestCase.Step', 'goog.testing.ContinuationTestCase.Test'], ['goog.array', 'goog.events.EventHandler', 'goog.testing.TestCase', 'goog.testing.TestCase.Test', 'goog.testing.asserts']);
-goog.addDependency('testing/continuationtestcase_test.js', ['goog.testing.ContinuationTestCaseTest'], ['goog.events', 'goog.events.EventTarget', 'goog.testing.ContinuationTestCase', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.TestCase', 'goog.testing.jsunit']);
-goog.addDependency('testing/deferredtestcase.js', ['goog.testing.DeferredTestCase'], ['goog.async.Deferred', 'goog.testing.AsyncTestCase', 'goog.testing.TestCase']);
-goog.addDependency('testing/deferredtestcase_test.js', ['goog.testing.DeferredTestCaseTest'], ['goog.async.Deferred', 'goog.testing.DeferredTestCase', 'goog.testing.TestCase', 'goog.testing.TestRunner', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('testing/dom.js', ['goog.testing.dom'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeIterator', 'goog.dom.NodeType', 'goog.dom.TagIterator', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.iter', 'goog.object', 'goog.string', 'goog.style', 'goog.testing.asserts', 'goog.userAgent']);
-goog.addDependency('testing/dom_test.js', ['goog.testing.domTest'], ['goog.dom', 'goog.dom.TagName', 'goog.testing.dom', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('testing/editor/dom.js', ['goog.testing.editor.dom'], ['goog.dom.NodeType', 'goog.dom.TagIterator', 'goog.dom.TagWalkType', 'goog.iter', 'goog.string', 'goog.testing.asserts']);
-goog.addDependency('testing/editor/dom_test.js', ['goog.testing.editor.domTest'], ['goog.dom', 'goog.dom.TagName', 'goog.functions', 'goog.testing.editor.dom', 'goog.testing.jsunit']);
-goog.addDependency('testing/editor/fieldmock.js', ['goog.testing.editor.FieldMock'], ['goog.dom', 'goog.dom.Range', 'goog.editor.Field', 'goog.testing.LooseMock', 'goog.testing.mockmatchers']);
-goog.addDependency('testing/editor/testhelper.js', ['goog.testing.editor.TestHelper'], ['goog.Disposable', 'goog.dom', 'goog.dom.Range', 'goog.editor.BrowserFeature', 'goog.editor.node', 'goog.editor.plugins.AbstractBubblePlugin', 'goog.testing.dom']);
-goog.addDependency('testing/editor/testhelper_test.js', ['goog.testing.editor.TestHelperTest'], ['goog.dom', 'goog.dom.TagName', 'goog.editor.node', 'goog.testing.editor.TestHelper', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('testing/events/eventobserver.js', ['goog.testing.events.EventObserver'], ['goog.array']);
-goog.addDependency('testing/events/eventobserver_test.js', ['goog.testing.events.EventObserverTest'], ['goog.array', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.testing.events.EventObserver', 'goog.testing.jsunit']);
-goog.addDependency('testing/events/events.js', ['goog.testing.events', 'goog.testing.events.Event'], ['goog.Disposable', 'goog.asserts', 'goog.dom.NodeType', 'goog.events', 'goog.events.BrowserEvent', 'goog.events.BrowserFeature', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.object', 'goog.style', 'goog.userAgent']);
-goog.addDependency('testing/events/events_test.js', ['goog.testing.eventsTest'], ['goog.array', 'goog.dom', 'goog.events', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.math.Coordinate', 'goog.string', 'goog.style', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.userAgent']);
-goog.addDependency('testing/events/matchers.js', ['goog.testing.events.EventMatcher'], ['goog.events.Event', 'goog.testing.mockmatchers.ArgumentMatcher']);
-goog.addDependency('testing/events/matchers_test.js', ['goog.testing.events.EventMatcherTest'], ['goog.events.Event', 'goog.testing.events.EventMatcher', 'goog.testing.jsunit']);
-goog.addDependency('testing/events/onlinehandler.js', ['goog.testing.events.OnlineHandler'], ['goog.events.EventTarget', 'goog.net.NetworkStatusMonitor']);
-goog.addDependency('testing/events/onlinehandler_test.js', ['goog.testing.events.OnlineHandlerTest'], ['goog.events', 'goog.net.NetworkStatusMonitor', 'goog.testing.events.EventObserver', 'goog.testing.events.OnlineHandler', 'goog.testing.jsunit']);
-goog.addDependency('testing/expectedfailures.js', ['goog.testing.ExpectedFailures'], ['goog.debug.DivConsole', 'goog.dom', 'goog.dom.TagName', 'goog.events', 'goog.events.EventType', 'goog.log', 'goog.style', 'goog.testing.JsUnitException', 'goog.testing.TestCase', 'goog.testing.asserts']);
-goog.addDependency('testing/expectedfailures_test.js', ['goog.testing.ExpectedFailuresTest'], ['goog.debug.Logger', 'goog.testing.ExpectedFailures', 'goog.testing.JsUnitException', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/blob.js', ['goog.testing.fs.Blob'], ['goog.crypt.base64']);
-goog.addDependency('testing/fs/blob_test.js', ['goog.testing.fs.BlobTest'], ['goog.testing.fs.Blob', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/directoryentry_test.js', ['goog.testing.fs.DirectoryEntryTest'], ['goog.array', 'goog.fs.DirectoryEntry', 'goog.fs.Error', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/entry.js', ['goog.testing.fs.DirectoryEntry', 'goog.testing.fs.Entry', 'goog.testing.fs.FileEntry'], ['goog.Timer', 'goog.array', 'goog.asserts', 'goog.async.Deferred', 'goog.fs.DirectoryEntry', 'goog.fs.DirectoryEntryImpl', 'goog.fs.Entry', 'goog.fs.Error', 'goog.fs.FileEntry', 'goog.functions', 'goog.object', 'goog.string', 'goog.testing.fs.File', 'goog.testing.fs.FileWriter']);
-goog.addDependency('testing/fs/entry_test.js', ['goog.testing.fs.EntryTest'], ['goog.fs.DirectoryEntry', 'goog.fs.Error', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/file.js', ['goog.testing.fs.File'], ['goog.testing.fs.Blob']);
-goog.addDependency('testing/fs/fileentry_test.js', ['goog.testing.fs.FileEntryTest'], ['goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.fs.FileEntry', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/filereader.js', ['goog.testing.fs.FileReader'], ['goog.Timer', 'goog.events.EventTarget', 'goog.fs.Error', 'goog.fs.FileReader', 'goog.testing.fs.ProgressEvent']);
-goog.addDependency('testing/fs/filereader_test.js', ['goog.testing.fs.FileReaderTest'], ['goog.Timer', 'goog.async.Deferred', 'goog.events', 'goog.fs.Error', 'goog.fs.FileReader', 'goog.fs.FileSaver', 'goog.testing.AsyncTestCase', 'goog.testing.fs.FileReader', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/filesystem.js', ['goog.testing.fs.FileSystem'], ['goog.fs.FileSystem', 'goog.testing.fs.DirectoryEntry']);
-goog.addDependency('testing/fs/filewriter.js', ['goog.testing.fs.FileWriter'], ['goog.Timer', 'goog.events.EventTarget', 'goog.fs.Error', 'goog.fs.FileSaver', 'goog.string', 'goog.testing.fs.ProgressEvent']);
-goog.addDependency('testing/fs/filewriter_test.js', ['goog.testing.fs.FileWriterTest'], ['goog.async.Deferred', 'goog.events', 'goog.fs.Error', 'goog.fs.FileSaver', 'goog.testing.AsyncTestCase', 'goog.testing.MockClock', 'goog.testing.fs.Blob', 'goog.testing.fs.FileSystem', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/fs.js', ['goog.testing.fs'], ['goog.Timer', 'goog.array', 'goog.async.Deferred', 'goog.fs', 'goog.testing.fs.Blob', 'goog.testing.fs.FileSystem']);
-goog.addDependency('testing/fs/fs_test.js', ['goog.testing.fsTest'], ['goog.testing.AsyncTestCase', 'goog.testing.fs', 'goog.testing.fs.Blob', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/integration_test.js', ['goog.testing.fs.integrationTest'], ['goog.async.Deferred', 'goog.async.DeferredList', 'goog.events', 'goog.fs', 'goog.fs.DirectoryEntry', 'goog.fs.Error', 'goog.fs.FileSaver', 'goog.testing.AsyncTestCase', 'goog.testing.PropertyReplacer', 'goog.testing.fs', 'goog.testing.jsunit']);
-goog.addDependency('testing/fs/progressevent.js', ['goog.testing.fs.ProgressEvent'], ['goog.events.Event']);
-goog.addDependency('testing/functionmock.js', ['goog.testing', 'goog.testing.FunctionMock', 'goog.testing.GlobalFunctionMock', 'goog.testing.MethodMock'], ['goog.object', 'goog.testing.LooseMock', 'goog.testing.Mock', 'goog.testing.MockInterface', 'goog.testing.PropertyReplacer', 'goog.testing.StrictMock']);
-goog.addDependency('testing/functionmock_test.js', ['goog.testing.FunctionMockTest'], ['goog.array', 'goog.string', 'goog.testing', 'goog.testing.FunctionMock', 'goog.testing.Mock', 'goog.testing.StrictMock', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.mockmatchers']);
-goog.addDependency('testing/graphics.js', ['goog.testing.graphics'], ['goog.graphics.Path.Segment', 'goog.testing.asserts']);
-goog.addDependency('testing/i18n/asserts.js', ['goog.testing.i18n.asserts'], ['goog.testing.jsunit']);
-goog.addDependency('testing/i18n/asserts_test.js', ['goog.testing.i18n.assertsTest'], ['goog.testing.ExpectedFailures', 'goog.testing.i18n.asserts']);
-goog.addDependency('testing/jsunit.js', ['goog.testing.jsunit'], ['goog.testing.TestCase', 'goog.testing.TestRunner']);
-goog.addDependency('testing/loosemock.js', ['goog.testing.LooseExpectationCollection', 'goog.testing.LooseMock'], ['goog.array', 'goog.structs.Map', 'goog.testing.Mock']);
-goog.addDependency('testing/loosemock_test.js', ['goog.testing.LooseMockTest'], ['goog.testing.LooseMock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.mockmatchers']);
-goog.addDependency('testing/messaging/mockmessagechannel.js', ['goog.testing.messaging.MockMessageChannel'], ['goog.messaging.AbstractChannel', 'goog.testing.asserts']);
-goog.addDependency('testing/messaging/mockmessageevent.js', ['goog.testing.messaging.MockMessageEvent'], ['goog.events.BrowserEvent', 'goog.events.EventType', 'goog.testing.events']);
-goog.addDependency('testing/messaging/mockmessageport.js', ['goog.testing.messaging.MockMessagePort'], ['goog.events.EventTarget']);
-goog.addDependency('testing/messaging/mockportnetwork.js', ['goog.testing.messaging.MockPortNetwork'], ['goog.messaging.PortNetwork', 'goog.testing.messaging.MockMessageChannel']);
-goog.addDependency('testing/mock.js', ['goog.testing.Mock', 'goog.testing.MockExpectation'], ['goog.array', 'goog.object', 'goog.testing.JsUnitException', 'goog.testing.MockInterface', 'goog.testing.mockmatchers']);
-goog.addDependency('testing/mock_test.js', ['goog.testing.MockTest'], ['goog.array', 'goog.testing', 'goog.testing.Mock', 'goog.testing.MockControl', 'goog.testing.MockExpectation', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockclassfactory.js', ['goog.testing.MockClassFactory', 'goog.testing.MockClassRecord'], ['goog.array', 'goog.object', 'goog.testing.LooseMock', 'goog.testing.StrictMock', 'goog.testing.TestCase', 'goog.testing.mockmatchers']);
-goog.addDependency('testing/mockclassfactory_test.js', ['fake.BaseClass', 'fake.ChildClass', 'goog.testing.MockClassFactoryTest'], ['goog.testing', 'goog.testing.MockClassFactory', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockclock.js', ['goog.testing.MockClock'], ['goog.Disposable', 'goog.async.run', 'goog.testing.PropertyReplacer', 'goog.testing.events', 'goog.testing.events.Event', 'goog.testing.watchers']);
-goog.addDependency('testing/mockclock_test.js', ['goog.testing.MockClockTest'], ['goog.events', 'goog.functions', 'goog.testing.MockClock', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordFunction']);
-goog.addDependency('testing/mockcontrol.js', ['goog.testing.MockControl'], ['goog.array', 'goog.testing', 'goog.testing.LooseMock', 'goog.testing.StrictMock']);
-goog.addDependency('testing/mockcontrol_test.js', ['goog.testing.MockControlTest'], ['goog.testing.Mock', 'goog.testing.MockControl', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockinterface.js', ['goog.testing.MockInterface'], []);
-goog.addDependency('testing/mockmatchers.js', ['goog.testing.mockmatchers', 'goog.testing.mockmatchers.ArgumentMatcher', 'goog.testing.mockmatchers.IgnoreArgument', 'goog.testing.mockmatchers.InstanceOf', 'goog.testing.mockmatchers.ObjectEquals', 'goog.testing.mockmatchers.RegexpMatch', 'goog.testing.mockmatchers.SaveArgument', 'goog.testing.mockmatchers.TypeOf'], ['goog.array', 'goog.dom', 'goog.testing.asserts']);
-goog.addDependency('testing/mockmatchers_test.js', ['goog.testing.mockmatchersTest'], ['goog.dom', 'goog.testing.jsunit', 'goog.testing.mockmatchers', 'goog.testing.mockmatchers.ArgumentMatcher']);
-goog.addDependency('testing/mockrandom.js', ['goog.testing.MockRandom'], ['goog.Disposable']);
-goog.addDependency('testing/mockrandom_test.js', ['goog.testing.MockRandomTest'], ['goog.testing.MockRandom', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockrange.js', ['goog.testing.MockRange'], ['goog.dom.AbstractRange', 'goog.testing.LooseMock']);
-goog.addDependency('testing/mockrange_test.js', ['goog.testing.MockRangeTest'], ['goog.testing.MockRange', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockstorage.js', ['goog.testing.MockStorage'], ['goog.structs.Map']);
-goog.addDependency('testing/mockstorage_test.js', ['goog.testing.MockStorageTest'], ['goog.testing.MockStorage', 'goog.testing.jsunit']);
-goog.addDependency('testing/mockuseragent.js', ['goog.testing.MockUserAgent'], ['goog.Disposable', 'goog.labs.userAgent.util', 'goog.testing.PropertyReplacer', 'goog.userAgent']);
-goog.addDependency('testing/mockuseragent_test.js', ['goog.testing.MockUserAgentTest'], ['goog.dispose', 'goog.testing.MockUserAgent', 'goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('testing/multitestrunner.js', ['goog.testing.MultiTestRunner', 'goog.testing.MultiTestRunner.TestFrame'], ['goog.Timer', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventHandler', 'goog.functions', 'goog.string', 'goog.ui.Component', 'goog.ui.ServerChart', 'goog.ui.TableSorter']);
-goog.addDependency('testing/net/xhrio.js', ['goog.testing.net.XhrIo'], ['goog.array', 'goog.dom.xml', 'goog.events', 'goog.events.EventTarget', 'goog.json', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.HttpStatus', 'goog.net.XhrIo', 'goog.net.XmlHttp', 'goog.object', 'goog.structs.Map']);
-goog.addDependency('testing/net/xhrio_test.js', ['goog.testing.net.XhrIoTest'], ['goog.dom.xml', 'goog.events', 'goog.events.Event', 'goog.net.ErrorCode', 'goog.net.EventType', 'goog.net.XmlHttp', 'goog.object', 'goog.testing.MockControl', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.mockmatchers.InstanceOf', 'goog.testing.net.XhrIo']);
-goog.addDependency('testing/net/xhriopool.js', ['goog.testing.net.XhrIoPool'], ['goog.net.XhrIoPool', 'goog.testing.net.XhrIo']);
-goog.addDependency('testing/objectpropertystring.js', ['goog.testing.ObjectPropertyString'], []);
-goog.addDependency('testing/performancetable.js', ['goog.testing.PerformanceTable'], ['goog.dom', 'goog.testing.PerformanceTimer']);
-goog.addDependency('testing/performancetimer.js', ['goog.testing.PerformanceTimer', 'goog.testing.PerformanceTimer.Task'], ['goog.array', 'goog.async.Deferred', 'goog.math']);
-goog.addDependency('testing/performancetimer_test.js', ['goog.testing.PerformanceTimerTest'], ['goog.async.Deferred', 'goog.dom', 'goog.math', 'goog.testing.MockClock', 'goog.testing.PerformanceTimer', 'goog.testing.jsunit']);
-goog.addDependency('testing/propertyreplacer.js', ['goog.testing.PropertyReplacer'], ['goog.testing.ObjectPropertyString', 'goog.userAgent']);
-goog.addDependency('testing/propertyreplacer_test.js', ['goog.testing.PropertyReplacerTest'], ['goog.testing.PropertyReplacer', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('testing/proto2/proto2.js', ['goog.testing.proto2'], ['goog.proto2.Message', 'goog.proto2.ObjectSerializer', 'goog.testing.asserts']);
-goog.addDependency('testing/proto2/proto2_test.js', ['goog.testing.proto2Test'], ['goog.testing.jsunit', 'goog.testing.proto2', 'proto2.TestAllTypes']);
-goog.addDependency('testing/pseudorandom.js', ['goog.testing.PseudoRandom'], ['goog.Disposable']);
-goog.addDependency('testing/pseudorandom_test.js', ['goog.testing.PseudoRandomTest'], ['goog.testing.PseudoRandom', 'goog.testing.jsunit']);
-goog.addDependency('testing/recordfunction.js', ['goog.testing.FunctionCall', 'goog.testing.recordConstructor', 'goog.testing.recordFunction'], ['goog.testing.asserts']);
-goog.addDependency('testing/recordfunction_test.js', ['goog.testing.recordFunctionTest'], ['goog.functions', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.testing.recordConstructor', 'goog.testing.recordFunction']);
-goog.addDependency('testing/shardingtestcase.js', ['goog.testing.ShardingTestCase'], ['goog.asserts', 'goog.testing.TestCase']);
-goog.addDependency('testing/shardingtestcase_test.js', ['goog.testing.ShardingTestCaseTest'], ['goog.testing.ShardingTestCase', 'goog.testing.TestCase', 'goog.testing.asserts', 'goog.testing.jsunit']);
-goog.addDependency('testing/singleton.js', ['goog.testing.singleton'], []);
-goog.addDependency('testing/singleton_test.js', ['goog.testing.singletonTest'], ['goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.singleton']);
-goog.addDependency('testing/stacktrace.js', ['goog.testing.stacktrace', 'goog.testing.stacktrace.Frame'], []);
-goog.addDependency('testing/stacktrace_test.js', ['goog.testing.stacktraceTest'], ['goog.functions', 'goog.string', 'goog.testing.ExpectedFailures', 'goog.testing.PropertyReplacer', 'goog.testing.StrictMock', 'goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.stacktrace', 'goog.testing.stacktrace.Frame', 'goog.userAgent']);
-goog.addDependency('testing/storage/fakemechanism.js', ['goog.testing.storage.FakeMechanism'], ['goog.storage.mechanism.IterableMechanism', 'goog.structs.Map']);
-goog.addDependency('testing/strictmock.js', ['goog.testing.StrictMock'], ['goog.array', 'goog.testing.Mock']);
-goog.addDependency('testing/strictmock_test.js', ['goog.testing.StrictMockTest'], ['goog.testing.StrictMock', 'goog.testing.jsunit']);
-goog.addDependency('testing/style/layoutasserts.js', ['goog.testing.style.layoutasserts'], ['goog.style', 'goog.testing.asserts', 'goog.testing.style']);
-goog.addDependency('testing/style/layoutasserts_test.js', ['goog.testing.style.layoutassertsTest'], ['goog.dom', 'goog.style', 'goog.testing.jsunit', 'goog.testing.style.layoutasserts']);
-goog.addDependency('testing/style/style.js', ['goog.testing.style'], ['goog.dom', 'goog.math.Rect', 'goog.style']);
-goog.addDependency('testing/style/style_test.js', ['goog.testing.styleTest'], ['goog.dom', 'goog.style', 'goog.testing.jsunit', 'goog.testing.style']);
-goog.addDependency('testing/testcase.js', ['goog.testing.TestCase', 'goog.testing.TestCase.Error', 'goog.testing.TestCase.Order', 'goog.testing.TestCase.Result', 'goog.testing.TestCase.Test'], ['goog.object', 'goog.testing.asserts', 'goog.testing.stacktrace']);
-goog.addDependency('testing/testqueue.js', ['goog.testing.TestQueue'], []);
-goog.addDependency('testing/testrunner.js', ['goog.testing.TestRunner'], ['goog.testing.TestCase']);
-goog.addDependency('testing/ui/rendererasserts.js', ['goog.testing.ui.rendererasserts'], ['goog.testing.asserts']);
-goog.addDependency('testing/ui/rendererasserts_test.js', ['goog.testing.ui.rendererassertsTest'], ['goog.testing.asserts', 'goog.testing.jsunit', 'goog.testing.ui.rendererasserts', 'goog.ui.ControlRenderer']);
-goog.addDependency('testing/ui/rendererharness.js', ['goog.testing.ui.RendererHarness'], ['goog.Disposable', 'goog.dom.NodeType', 'goog.testing.asserts', 'goog.testing.dom']);
-goog.addDependency('testing/ui/style.js', ['goog.testing.ui.style'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.testing.asserts']);
-goog.addDependency('testing/ui/style_test.js', ['goog.testing.ui.styleTest'], ['goog.dom', 'goog.testing.jsunit', 'goog.testing.ui.style']);
-goog.addDependency('testing/watchers.js', ['goog.testing.watchers'], []);
-goog.addDependency('timer/timer.js', ['goog.Timer'], ['goog.events.EventTarget']);
-goog.addDependency('timer/timer_test.js', ['goog.TimerTest'], ['goog.Timer', 'goog.events', 'goog.testing.MockClock', 'goog.testing.jsunit']);
-goog.addDependency('tweak/entries.js', ['goog.tweak.BaseEntry', 'goog.tweak.BasePrimitiveSetting', 'goog.tweak.BaseSetting', 'goog.tweak.BooleanGroup', 'goog.tweak.BooleanInGroupSetting', 'goog.tweak.BooleanSetting', 'goog.tweak.ButtonAction', 'goog.tweak.NumericSetting', 'goog.tweak.StringSetting'], ['goog.array', 'goog.asserts', 'goog.log', 'goog.object']);
-goog.addDependency('tweak/entries_test.js', ['goog.tweak.BaseEntryTest'], ['goog.testing.MockControl', 'goog.testing.jsunit', 'goog.tweak.testhelpers']);
-goog.addDependency('tweak/registry.js', ['goog.tweak.Registry'], ['goog.asserts', 'goog.log', 'goog.object', 'goog.string', 'goog.tweak.BaseEntry', 'goog.uri.utils']);
-goog.addDependency('tweak/registry_test.js', ['goog.tweak.RegistryTest'], ['goog.asserts.AssertionError', 'goog.testing.jsunit', 'goog.tweak', 'goog.tweak.testhelpers']);
-goog.addDependency('tweak/testhelpers.js', ['goog.tweak.testhelpers'], ['goog.tweak', 'goog.tweak.BooleanGroup', 'goog.tweak.BooleanInGroupSetting', 'goog.tweak.BooleanSetting', 'goog.tweak.ButtonAction', 'goog.tweak.NumericSetting', 'goog.tweak.Registry', 'goog.tweak.StringSetting']);
-goog.addDependency('tweak/tweak.js', ['goog.tweak', 'goog.tweak.ConfigParams'], ['goog.asserts', 'goog.tweak.BaseSetting', 'goog.tweak.BooleanGroup', 'goog.tweak.BooleanInGroupSetting', 'goog.tweak.BooleanSetting', 'goog.tweak.ButtonAction', 'goog.tweak.NumericSetting', 'goog.tweak.Registry', 'goog.tweak.StringSetting']);
-goog.addDependency('tweak/tweakui.js', ['goog.tweak.EntriesPanel', 'goog.tweak.TweakUi'], ['goog.array', 'goog.asserts', 'goog.dom.DomHelper', 'goog.object', 'goog.style', 'goog.tweak', 'goog.ui.Zippy', 'goog.userAgent']);
-goog.addDependency('tweak/tweakui_test.js', ['goog.tweak.TweakUiTest'], ['goog.dom', 'goog.string', 'goog.testing.jsunit', 'goog.tweak', 'goog.tweak.TweakUi', 'goog.tweak.testhelpers']);
-goog.addDependency('ui/abstractspellchecker.js', ['goog.ui.AbstractSpellChecker', 'goog.ui.AbstractSpellChecker.AsyncResult'], ['goog.a11y.aria', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.dom.selection', 'goog.events', 'goog.events.Event', 'goog.events.EventType', 'goog.math.Coordinate', 'goog.spell.SpellCheck', 'goog.structs.Set', 'goog.style', 'goog.ui.Component', 'goog.ui.MenuItem', 'goog.ui.MenuSeparator', 'goog.ui.PopupMenu']);
-goog.addDependency('ui/ac/ac.js', ['goog.ui.ac'], ['goog.ui.ac.ArrayMatcher', 'goog.ui.ac.AutoComplete', 'goog.ui.ac.InputHandler', 'goog.ui.ac.Renderer']);
-goog.addDependency('ui/ac/arraymatcher.js', ['goog.ui.ac.ArrayMatcher'], ['goog.string']);
-goog.addDependency('ui/ac/autocomplete.js', ['goog.ui.ac.AutoComplete', 'goog.ui.ac.AutoComplete.EventType'], ['goog.array', 'goog.asserts', 'goog.events', 'goog.events.EventTarget', 'goog.object']);
-goog.addDependency('ui/ac/cachingmatcher.js', ['goog.ui.ac.CachingMatcher'], ['goog.array', 'goog.async.Throttle', 'goog.ui.ac.ArrayMatcher', 'goog.ui.ac.RenderOptions']);
-goog.addDependency('ui/ac/inputhandler.js', ['goog.ui.ac.InputHandler'], ['goog.Disposable', 'goog.Timer', 'goog.a11y.aria', 'goog.dom', 'goog.dom.selection', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.string', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('ui/ac/remote.js', ['goog.ui.ac.Remote'], ['goog.ui.ac.AutoComplete', 'goog.ui.ac.InputHandler', 'goog.ui.ac.RemoteArrayMatcher', 'goog.ui.ac.Renderer']);
-goog.addDependency('ui/ac/remotearraymatcher.js', ['goog.ui.ac.RemoteArrayMatcher'], ['goog.Disposable', 'goog.Uri', 'goog.events', 'goog.json', 'goog.net.EventType', 'goog.net.XhrIo']);
-goog.addDependency('ui/ac/renderer.js', ['goog.ui.ac.Renderer', 'goog.ui.ac.Renderer.CustomRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dispose', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.events', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.fx.dom.FadeInAndShow', 'goog.fx.dom.FadeOutAndHide', 'goog.positioning', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.string', 'goog.style', 'goog.ui.IdGenerator', 'goog.ui.ac.AutoComplete']);
-goog.addDependency('ui/ac/renderoptions.js', ['goog.ui.ac.RenderOptions'], []);
-goog.addDependency('ui/ac/richinputhandler.js', ['goog.ui.ac.RichInputHandler'], ['goog.ui.ac.InputHandler']);
-goog.addDependency('ui/ac/richremote.js', ['goog.ui.ac.RichRemote'], ['goog.ui.ac.AutoComplete', 'goog.ui.ac.Remote', 'goog.ui.ac.Renderer', 'goog.ui.ac.RichInputHandler', 'goog.ui.ac.RichRemoteArrayMatcher']);
-goog.addDependency('ui/ac/richremotearraymatcher.js', ['goog.ui.ac.RichRemoteArrayMatcher'], ['goog.json', 'goog.ui.ac.RemoteArrayMatcher']);
-goog.addDependency('ui/activitymonitor.js', ['goog.ui.ActivityMonitor'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType']);
-goog.addDependency('ui/advancedtooltip.js', ['goog.ui.AdvancedTooltip'], ['goog.events', 'goog.events.EventType', 'goog.math.Box', 'goog.math.Coordinate', 'goog.style', 'goog.ui.Tooltip', 'goog.userAgent']);
-goog.addDependency('ui/animatedzippy.js', ['goog.ui.AnimatedZippy'], ['goog.dom', 'goog.events', 'goog.fx.Animation', 'goog.fx.Transition', 'goog.fx.easing', 'goog.ui.Zippy', 'goog.ui.ZippyEvent']);
-goog.addDependency('ui/attachablemenu.js', ['goog.ui.AttachableMenu'], ['goog.a11y.aria', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.Event', 'goog.events.KeyCodes', 'goog.string', 'goog.style', 'goog.ui.ItemEvent', 'goog.ui.MenuBase', 'goog.ui.PopupBase', 'goog.userAgent']);
-goog.addDependency('ui/bidiinput.js', ['goog.ui.BidiInput'], ['goog.dom', 'goog.events', 'goog.events.InputHandler', 'goog.i18n.bidi', 'goog.ui.Component']);
-goog.addDependency('ui/bubble.js', ['goog.ui.Bubble'], ['goog.Timer', 'goog.events', 'goog.events.EventType', 'goog.math.Box', 'goog.positioning', 'goog.positioning.AbsolutePosition', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.positioning.CornerBit', 'goog.style', 'goog.ui.Component', 'goog.ui.Popup']);
-goog.addDependency('ui/button.js', ['goog.ui.Button', 'goog.ui.Button.Side'], ['goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.ui.ButtonRenderer', 'goog.ui.ButtonSide', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.NativeButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/buttonrenderer.js', ['goog.ui.ButtonRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.asserts', 'goog.ui.ButtonSide', 'goog.ui.Component', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/buttonside.js', ['goog.ui.ButtonSide'], []);
-goog.addDependency('ui/charcounter.js', ['goog.ui.CharCounter', 'goog.ui.CharCounter.Display'], ['goog.dom', 'goog.events', 'goog.events.EventTarget', 'goog.events.InputHandler']);
-goog.addDependency('ui/charpicker.js', ['goog.ui.CharPicker'], ['goog.a11y.aria', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.i18n.CharListDecompressor', 'goog.i18n.uChar', 'goog.structs.Set', 'goog.style', 'goog.ui.Button', 'goog.ui.Component', 'goog.ui.ContainerScroller', 'goog.ui.FlatButtonRenderer', 'goog.ui.HoverCard', 'goog.ui.LabelInput', 'goog.ui.Menu', 'goog.ui.MenuButton', 'goog.ui.MenuItem', 'goog.ui.Tooltip']);
-goog.addDependency('ui/checkbox.js', ['goog.ui.Checkbox', 'goog.ui.Checkbox.State'], ['goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.ui.CheckboxRenderer', 'goog.ui.Component.EventType', 'goog.ui.Component.State', 'goog.ui.Control', 'goog.ui.registry']);
-goog.addDependency('ui/checkboxmenuitem.js', ['goog.ui.CheckBoxMenuItem'], ['goog.ui.MenuItem', 'goog.ui.registry']);
-goog.addDependency('ui/checkboxrenderer.js', ['goog.ui.CheckboxRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom.classlist', 'goog.object', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/colorbutton.js', ['goog.ui.ColorButton'], ['goog.ui.Button', 'goog.ui.ColorButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/colorbuttonrenderer.js', ['goog.ui.ColorButtonRenderer'], ['goog.asserts', 'goog.dom.classlist', 'goog.functions', 'goog.ui.ColorMenuButtonRenderer']);
-goog.addDependency('ui/colormenubutton.js', ['goog.ui.ColorMenuButton'], ['goog.array', 'goog.object', 'goog.ui.ColorMenuButtonRenderer', 'goog.ui.ColorPalette', 'goog.ui.Component', 'goog.ui.Menu', 'goog.ui.MenuButton', 'goog.ui.registry']);
-goog.addDependency('ui/colormenubuttonrenderer.js', ['goog.ui.ColorMenuButtonRenderer'], ['goog.asserts', 'goog.color', 'goog.dom.classlist', 'goog.ui.MenuButtonRenderer', 'goog.userAgent']);
-goog.addDependency('ui/colorpalette.js', ['goog.ui.ColorPalette'], ['goog.array', 'goog.color', 'goog.style', 'goog.ui.Palette', 'goog.ui.PaletteRenderer']);
-goog.addDependency('ui/colorpicker.js', ['goog.ui.ColorPicker', 'goog.ui.ColorPicker.EventType'], ['goog.ui.ColorPalette', 'goog.ui.Component']);
-goog.addDependency('ui/colorsplitbehavior.js', ['goog.ui.ColorSplitBehavior'], ['goog.ui.ColorMenuButton', 'goog.ui.SplitBehavior']);
-goog.addDependency('ui/combobox.js', ['goog.ui.ComboBox', 'goog.ui.ComboBoxItem'], ['goog.Timer', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.log', 'goog.positioning.Corner', 'goog.positioning.MenuAnchoredPosition', 'goog.string', 'goog.style', 'goog.ui.Component', 'goog.ui.ItemEvent', 'goog.ui.LabelInput', 'goog.ui.Menu', 'goog.ui.MenuItem', 'goog.ui.MenuSeparator', 'goog.ui.registry', 'goog.userAgent']);
-goog.addDependency('ui/component.js', ['goog.ui.Component', 'goog.ui.Component.Error', 'goog.ui.Component.EventType', 'goog.ui.Component.State'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.object', 'goog.style', 'goog.ui.IdGenerator']);
-goog.addDependency('ui/container.js', ['goog.ui.Container', 'goog.ui.Container.EventType', 'goog.ui.Container.Orientation'], ['goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.object', 'goog.style', 'goog.ui.Component', 'goog.ui.ContainerRenderer', 'goog.ui.Control']);
-goog.addDependency('ui/containerrenderer.js', ['goog.ui.ContainerRenderer'], ['goog.a11y.aria', 'goog.array', 'goog.asserts', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.string', 'goog.style', 'goog.ui.registry', 'goog.userAgent']);
-goog.addDependency('ui/containerscroller.js', ['goog.ui.ContainerScroller'], ['goog.Disposable', 'goog.Timer', 'goog.events.EventHandler', 'goog.style', 'goog.ui.Component', 'goog.ui.Container']);
-goog.addDependency('ui/control.js', ['goog.ui.Control'], ['goog.array', 'goog.dom', 'goog.events.Event', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.string', 'goog.ui.Component', 'goog.ui.ControlContent', 'goog.ui.ControlRenderer', 'goog.ui.decorate', 'goog.ui.registry', 'goog.userAgent']);
-goog.addDependency('ui/controlcontent.js', ['goog.ui.ControlContent'], []);
-goog.addDependency('ui/controlrenderer.js', ['goog.ui.ControlRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.object', 'goog.string', 'goog.style', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/cookieeditor.js', ['goog.ui.CookieEditor'], ['goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.events.EventType', 'goog.net.cookies', 'goog.string', 'goog.style', 'goog.ui.Component']);
-goog.addDependency('ui/css3buttonrenderer.js', ['goog.ui.Css3ButtonRenderer'], ['goog.asserts', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.ui.Button', 'goog.ui.ButtonRenderer', 'goog.ui.Component', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.registry']);
-goog.addDependency('ui/css3menubuttonrenderer.js', ['goog.ui.Css3MenuButtonRenderer'], ['goog.dom', 'goog.dom.TagName', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.MenuButton', 'goog.ui.MenuButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/cssnames.js', ['goog.ui.INLINE_BLOCK_CLASSNAME'], []);
-goog.addDependency('ui/custombutton.js', ['goog.ui.CustomButton'], ['goog.ui.Button', 'goog.ui.CustomButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/custombuttonrenderer.js', ['goog.ui.CustomButtonRenderer'], ['goog.a11y.aria.Role', 'goog.asserts', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.string', 'goog.ui.ButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME']);
-goog.addDependency('ui/customcolorpalette.js', ['goog.ui.CustomColorPalette'], ['goog.color', 'goog.dom', 'goog.dom.classlist', 'goog.ui.ColorPalette', 'goog.ui.Component']);
-goog.addDependency('ui/datepicker.js', ['goog.ui.DatePicker', 'goog.ui.DatePicker.Events', 'goog.ui.DatePickerEvent'], ['goog.a11y.aria', 'goog.asserts', 'goog.date.Date', 'goog.date.DateRange', 'goog.date.Interval', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.events.Event', 'goog.events.EventType', 'goog.events.KeyHandler', 'goog.i18n.DateTimeFormat', 'goog.i18n.DateTimePatterns', 'goog.i18n.DateTimeSymbols', 'goog.style', 'goog.ui.Component', 'goog.ui.DefaultDatePickerRenderer', 'goog.ui.IdGenerator']);
-goog.addDependency('ui/datepickerrenderer.js', ['goog.ui.DatePickerRenderer'], []);
-goog.addDependency('ui/decorate.js', ['goog.ui.decorate'], ['goog.ui.registry']);
-goog.addDependency('ui/defaultdatepickerrenderer.js', ['goog.ui.DefaultDatePickerRenderer'], ['goog.dom', 'goog.dom.TagName', 'goog.ui.DatePickerRenderer']);
-goog.addDependency('ui/dialog.js', ['goog.ui.Dialog', 'goog.ui.Dialog.ButtonSet', 'goog.ui.Dialog.ButtonSet.DefaultButtons', 'goog.ui.Dialog.DefaultButtonCaptions', 'goog.ui.Dialog.DefaultButtonKeys', 'goog.ui.Dialog.Event', 'goog.ui.Dialog.EventType'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.dom.safe', 'goog.events', 'goog.events.Event', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.fx.Dragger', 'goog.html.SafeHtml', 'goog.html.legacyconversions', 'goog.math.Rect', 'goog.string', 'goog.structs.Map', 'goog.style', 'goog.ui.ModalPopup']);
-goog.addDependency('ui/dimensionpicker.js', ['goog.ui.DimensionPicker'], ['goog.events.EventType', 'goog.events.KeyCodes', 'goog.math.Size', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.DimensionPickerRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/dimensionpickerrenderer.js', ['goog.ui.DimensionPickerRenderer'], ['goog.a11y.aria.Announcer', 'goog.a11y.aria.LivePriority', 'goog.dom', 'goog.dom.TagName', 'goog.i18n.bidi', 'goog.style', 'goog.ui.ControlRenderer', 'goog.userAgent']);
-goog.addDependency('ui/dragdropdetector.js', ['goog.ui.DragDropDetector', 'goog.ui.DragDropDetector.EventType', 'goog.ui.DragDropDetector.ImageDropEvent', 'goog.ui.DragDropDetector.LinkDropEvent'], ['goog.dom', 'goog.dom.TagName', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.math.Coordinate', 'goog.string', 'goog.style', 'goog.userAgent']);
-goog.addDependency('ui/drilldownrow.js', ['goog.ui.DrilldownRow'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.ui.Component']);
-goog.addDependency('ui/editor/abstractdialog.js', ['goog.ui.editor.AbstractDialog', 'goog.ui.editor.AbstractDialog.Builder', 'goog.ui.editor.AbstractDialog.EventType'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventTarget', 'goog.string', 'goog.ui.Dialog']);
-goog.addDependency('ui/editor/bubble.js', ['goog.ui.editor.Bubble'], ['goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.dom.ViewportSizeMonitor', 'goog.dom.classlist', 'goog.editor.style', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.functions', 'goog.log', 'goog.math.Box', 'goog.object', 'goog.positioning', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.OverflowStatus', 'goog.string', 'goog.style', 'goog.ui.Component', 'goog.ui.PopupBase', 'goog.userAgent']);
-goog.addDependency('ui/editor/defaulttoolbar.js', ['goog.ui.editor.ButtonDescriptor', 'goog.ui.editor.DefaultToolbar'], ['goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.editor.Command', 'goog.style', 'goog.ui.editor.ToolbarFactory', 'goog.ui.editor.messages', 'goog.userAgent']);
-goog.addDependency('ui/editor/equationeditordialog.js', ['goog.ui.editor.EquationEditorDialog'], ['goog.editor.Command', 'goog.ui.Dialog', 'goog.ui.editor.AbstractDialog', 'goog.ui.editor.EquationEditorOkEvent', 'goog.ui.equation.TexEditor']);
-goog.addDependency('ui/editor/equationeditorokevent.js', ['goog.ui.editor.EquationEditorOkEvent'], ['goog.events.Event', 'goog.ui.editor.AbstractDialog']);
-goog.addDependency('ui/editor/linkdialog.js', ['goog.ui.editor.LinkDialog', 'goog.ui.editor.LinkDialog.BeforeTestLinkEvent', 'goog.ui.editor.LinkDialog.EventType', 'goog.ui.editor.LinkDialog.OkEvent'], ['goog.dom', 'goog.dom.TagName', 'goog.dom.safe', 'goog.editor.BrowserFeature', 'goog.editor.Link', 'goog.editor.focus', 'goog.editor.node', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.html.SafeHtml', 'goog.string', 'goog.string.Unicode', 'goog.style', 'goog.ui.Button', 'goog.ui.Component', 'goog.ui.LinkButtonRenderer', 'goog.ui.editor.AbstractDialog', 'goog.ui.editor.TabPane', 'goog.ui.editor.messages', 'goog.userAgent', 'goog.window']);
-goog.addDependency('ui/editor/messages.js', ['goog.ui.editor.messages'], ['goog.html.uncheckedconversions', 'goog.string.Const']);
-goog.addDependency('ui/editor/tabpane.js', ['goog.ui.editor.TabPane'], ['goog.asserts', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.style', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.Tab', 'goog.ui.TabBar']);
-goog.addDependency('ui/editor/toolbarcontroller.js', ['goog.ui.editor.ToolbarController'], ['goog.editor.Field', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.ui.Component']);
-goog.addDependency('ui/editor/toolbarfactory.js', ['goog.ui.editor.ToolbarFactory'], ['goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.string', 'goog.string.Unicode', 'goog.style', 'goog.ui.Component', 'goog.ui.Container', 'goog.ui.Option', 'goog.ui.Toolbar', 'goog.ui.ToolbarButton', 'goog.ui.ToolbarColorMenuButton', 'goog.ui.ToolbarMenuButton', 'goog.ui.ToolbarRenderer', 'goog.ui.ToolbarSelect', 'goog.userAgent']);
-goog.addDependency('ui/emoji/emoji.js', ['goog.ui.emoji.Emoji'], []);
-goog.addDependency('ui/emoji/emojipalette.js', ['goog.ui.emoji.EmojiPalette'], ['goog.events.EventType', 'goog.net.ImageLoader', 'goog.ui.Palette', 'goog.ui.emoji.Emoji', 'goog.ui.emoji.EmojiPaletteRenderer']);
-goog.addDependency('ui/emoji/emojipaletterenderer.js', ['goog.ui.emoji.EmojiPaletteRenderer'], ['goog.a11y.aria', 'goog.asserts', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.style', 'goog.ui.PaletteRenderer', 'goog.ui.emoji.Emoji']);
-goog.addDependency('ui/emoji/emojipicker.js', ['goog.ui.emoji.EmojiPicker'], ['goog.log', 'goog.style', 'goog.ui.Component', 'goog.ui.TabPane', 'goog.ui.emoji.Emoji', 'goog.ui.emoji.EmojiPalette', 'goog.ui.emoji.EmojiPaletteRenderer', 'goog.ui.emoji.ProgressiveEmojiPaletteRenderer']);
-goog.addDependency('ui/emoji/popupemojipicker.js', ['goog.ui.emoji.PopupEmojiPicker'], ['goog.events.EventType', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.ui.Component', 'goog.ui.Popup', 'goog.ui.emoji.EmojiPicker']);
-goog.addDependency('ui/emoji/progressiveemojipaletterenderer.js', ['goog.ui.emoji.ProgressiveEmojiPaletteRenderer'], ['goog.style', 'goog.ui.emoji.EmojiPaletteRenderer']);
-goog.addDependency('ui/emoji/spriteinfo.js', ['goog.ui.emoji.SpriteInfo'], []);
-goog.addDependency('ui/equation/arrowpalette.js', ['goog.ui.equation.ArrowPalette'], ['goog.math.Size', 'goog.ui.equation.Palette']);
-goog.addDependency('ui/equation/changeevent.js', ['goog.ui.equation.ChangeEvent'], ['goog.events.Event']);
-goog.addDependency('ui/equation/comparisonpalette.js', ['goog.ui.equation.ComparisonPalette'], ['goog.math.Size', 'goog.ui.equation.Palette']);
-goog.addDependency('ui/equation/editorpane.js', ['goog.ui.equation.EditorPane'], ['goog.style', 'goog.ui.Component']);
-goog.addDependency('ui/equation/equationeditor.js', ['goog.ui.equation.EquationEditor'], ['goog.events', 'goog.ui.Component', 'goog.ui.TabBar', 'goog.ui.equation.ImageRenderer', 'goog.ui.equation.TexPane']);
-goog.addDependency('ui/equation/equationeditordialog.js', ['goog.ui.equation.EquationEditorDialog'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.ui.Dialog', 'goog.ui.equation.EquationEditor', 'goog.ui.equation.PaletteManager', 'goog.ui.equation.TexEditor']);
-goog.addDependency('ui/equation/greekpalette.js', ['goog.ui.equation.GreekPalette'], ['goog.math.Size', 'goog.ui.equation.Palette']);
-goog.addDependency('ui/equation/imagerenderer.js', ['goog.ui.equation.ImageRenderer'], ['goog.asserts', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.string', 'goog.uri.utils']);
-goog.addDependency('ui/equation/mathpalette.js', ['goog.ui.equation.MathPalette'], ['goog.math.Size', 'goog.ui.equation.Palette']);
-goog.addDependency('ui/equation/menupalette.js', ['goog.ui.equation.MenuPalette', 'goog.ui.equation.MenuPaletteRenderer'], ['goog.math.Size', 'goog.ui.PaletteRenderer', 'goog.ui.equation.Palette', 'goog.ui.equation.PaletteRenderer']);
-goog.addDependency('ui/equation/palette.js', ['goog.ui.equation.Palette', 'goog.ui.equation.PaletteEvent', 'goog.ui.equation.PaletteRenderer'], ['goog.dom', 'goog.dom.TagName', 'goog.events.Event', 'goog.ui.Palette', 'goog.ui.PaletteRenderer']);
-goog.addDependency('ui/equation/palettemanager.js', ['goog.ui.equation.PaletteManager'], ['goog.Timer', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.ui.equation.ArrowPalette', 'goog.ui.equation.ComparisonPalette', 'goog.ui.equation.GreekPalette', 'goog.ui.equation.MathPalette', 'goog.ui.equation.MenuPalette', 'goog.ui.equation.Palette', 'goog.ui.equation.SymbolPalette']);
-goog.addDependency('ui/equation/symbolpalette.js', ['goog.ui.equation.SymbolPalette'], ['goog.math.Size', 'goog.ui.equation.Palette']);
-goog.addDependency('ui/equation/texeditor.js', ['goog.ui.equation.TexEditor'], ['goog.ui.Component', 'goog.ui.equation.ImageRenderer', 'goog.ui.equation.TexPane']);
-goog.addDependency('ui/equation/texpane.js', ['goog.ui.equation.TexPane'], ['goog.Timer', 'goog.dom', 'goog.dom.TagName', 'goog.dom.selection', 'goog.events', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.style', 'goog.ui.equation.ChangeEvent', 'goog.ui.equation.EditorPane', 'goog.ui.equation.ImageRenderer', 'goog.ui.equation.Palette', 'goog.ui.equation.PaletteEvent']);
-goog.addDependency('ui/filteredmenu.js', ['goog.ui.FilteredMenu'], ['goog.a11y.aria', 'goog.a11y.aria.AutoCompleteValues', 'goog.a11y.aria.State', 'goog.dom', 'goog.events', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.events.KeyCodes', 'goog.object', 'goog.string', 'goog.style', 'goog.ui.Component', 'goog.ui.FilterObservingMenuItem', 'goog.ui.Menu', 'goog.ui.MenuItem', 'goog.userAgent']);
-goog.addDependency('ui/filterobservingmenuitem.js', ['goog.ui.FilterObservingMenuItem'], ['goog.ui.FilterObservingMenuItemRenderer', 'goog.ui.MenuItem', 'goog.ui.registry']);
-goog.addDependency('ui/filterobservingmenuitemrenderer.js', ['goog.ui.FilterObservingMenuItemRenderer'], ['goog.ui.MenuItemRenderer']);
-goog.addDependency('ui/flatbuttonrenderer.js', ['goog.ui.FlatButtonRenderer'], ['goog.a11y.aria.Role', 'goog.asserts', 'goog.dom.classlist', 'goog.ui.Button', 'goog.ui.ButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.registry']);
-goog.addDependency('ui/flatmenubuttonrenderer.js', ['goog.ui.FlatMenuButtonRenderer'], ['goog.dom', 'goog.style', 'goog.ui.FlatButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.Menu', 'goog.ui.MenuButton', 'goog.ui.MenuRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/formpost.js', ['goog.ui.FormPost'], ['goog.array', 'goog.dom.TagName', 'goog.dom.safe', 'goog.html.SafeHtml', 'goog.ui.Component']);
-goog.addDependency('ui/gauge.js', ['goog.ui.Gauge', 'goog.ui.GaugeColoredRange'], ['goog.a11y.aria', 'goog.asserts', 'goog.events', 'goog.fx.Animation', 'goog.fx.Transition', 'goog.fx.easing', 'goog.graphics', 'goog.graphics.Font', 'goog.graphics.Path', 'goog.graphics.SolidFill', 'goog.math', 'goog.ui.Component', 'goog.ui.GaugeTheme']);
-goog.addDependency('ui/gaugetheme.js', ['goog.ui.GaugeTheme'], ['goog.graphics.LinearGradient', 'goog.graphics.SolidFill', 'goog.graphics.Stroke']);
-goog.addDependency('ui/hovercard.js', ['goog.ui.HoverCard', 'goog.ui.HoverCard.EventType', 'goog.ui.HoverCard.TriggerEvent'], ['goog.array', 'goog.dom', 'goog.events', 'goog.events.Event', 'goog.events.EventType', 'goog.ui.AdvancedTooltip', 'goog.ui.PopupBase', 'goog.ui.Tooltip']);
-goog.addDependency('ui/hsvapalette.js', ['goog.ui.HsvaPalette'], ['goog.array', 'goog.color.alpha', 'goog.dom.TagName', 'goog.events', 'goog.events.EventType', 'goog.style', 'goog.ui.Component', 'goog.ui.HsvPalette']);
-goog.addDependency('ui/hsvpalette.js', ['goog.ui.HsvPalette'], ['goog.color', 'goog.dom.TagName', 'goog.events', 'goog.events.EventType', 'goog.events.InputHandler', 'goog.style', 'goog.style.bidi', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/idgenerator.js', ['goog.ui.IdGenerator'], []);
-goog.addDependency('ui/idletimer.js', ['goog.ui.IdleTimer'], ['goog.Timer', 'goog.events', 'goog.events.EventTarget', 'goog.structs.Set', 'goog.ui.ActivityMonitor']);
-goog.addDependency('ui/iframemask.js', ['goog.ui.IframeMask'], ['goog.Disposable', 'goog.Timer', 'goog.dom', 'goog.dom.iframe', 'goog.events.EventHandler', 'goog.style']);
-goog.addDependency('ui/imagelessbuttonrenderer.js', ['goog.ui.ImagelessButtonRenderer'], ['goog.dom.classlist', 'goog.ui.Button', 'goog.ui.Component', 'goog.ui.CustomButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.registry']);
-goog.addDependency('ui/imagelessmenubuttonrenderer.js', ['goog.ui.ImagelessMenuButtonRenderer'], ['goog.dom', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.MenuButton', 'goog.ui.MenuButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/inputdatepicker.js', ['goog.ui.InputDatePicker'], ['goog.date.DateTime', 'goog.dom', 'goog.string', 'goog.ui.Component', 'goog.ui.DatePicker', 'goog.ui.PopupBase', 'goog.ui.PopupDatePicker']);
-goog.addDependency('ui/itemevent.js', ['goog.ui.ItemEvent'], ['goog.events.Event']);
-goog.addDependency('ui/keyboardshortcuthandler.js', ['goog.ui.KeyboardShortcutEvent', 'goog.ui.KeyboardShortcutHandler', 'goog.ui.KeyboardShortcutHandler.EventType'], ['goog.Timer', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyNames', 'goog.object', 'goog.userAgent']);
-goog.addDependency('ui/labelinput.js', ['goog.ui.LabelInput'], ['goog.Timer', 'goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/linkbuttonrenderer.js', ['goog.ui.LinkButtonRenderer'], ['goog.ui.Button', 'goog.ui.FlatButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/media/flashobject.js', ['goog.ui.media.FlashObject', 'goog.ui.media.FlashObject.ScriptAccessLevel', 'goog.ui.media.FlashObject.Wmodes'], ['goog.asserts', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.log', 'goog.object', 'goog.string', 'goog.structs.Map', 'goog.style', 'goog.ui.Component', 'goog.userAgent', 'goog.userAgent.flash']);
-goog.addDependency('ui/media/flickr.js', ['goog.ui.media.FlickrSet', 'goog.ui.media.FlickrSetModel'], ['goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaModel', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/googlevideo.js', ['goog.ui.media.GoogleVideo', 'goog.ui.media.GoogleVideoModel'], ['goog.string', 'goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaModel', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/media.js', ['goog.ui.media.Media', 'goog.ui.media.MediaRenderer'], ['goog.style', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/media/mediamodel.js', ['goog.ui.media.MediaModel', 'goog.ui.media.MediaModel.Category', 'goog.ui.media.MediaModel.Credit', 'goog.ui.media.MediaModel.Credit.Role', 'goog.ui.media.MediaModel.Credit.Scheme', 'goog.ui.media.MediaModel.Medium', 'goog.ui.media.MediaModel.MimeType', 'goog.ui.media.MediaModel.Player', 'goog.ui.media.MediaModel.SubTitle', 'goog.ui.media.MediaModel.Thumbnail'], ['goog.array']);
-goog.addDependency('ui/media/mp3.js', ['goog.ui.media.Mp3'], ['goog.string', 'goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/photo.js', ['goog.ui.media.Photo'], ['goog.ui.media.Media', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/picasa.js', ['goog.ui.media.PicasaAlbum', 'goog.ui.media.PicasaAlbumModel'], ['goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaModel', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/vimeo.js', ['goog.ui.media.Vimeo', 'goog.ui.media.VimeoModel'], ['goog.string', 'goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaModel', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/media/youtube.js', ['goog.ui.media.Youtube', 'goog.ui.media.YoutubeModel'], ['goog.string', 'goog.ui.Component', 'goog.ui.media.FlashObject', 'goog.ui.media.Media', 'goog.ui.media.MediaModel', 'goog.ui.media.MediaRenderer']);
-goog.addDependency('ui/menu.js', ['goog.ui.Menu', 'goog.ui.Menu.EventType'], ['goog.math.Coordinate', 'goog.string', 'goog.style', 'goog.ui.Component.EventType', 'goog.ui.Component.State', 'goog.ui.Container', 'goog.ui.Container.Orientation', 'goog.ui.MenuHeader', 'goog.ui.MenuItem', 'goog.ui.MenuRenderer', 'goog.ui.MenuSeparator']);
-goog.addDependency('ui/menubar.js', ['goog.ui.menuBar'], ['goog.ui.Container', 'goog.ui.MenuBarRenderer']);
-goog.addDependency('ui/menubardecorator.js', ['goog.ui.menuBarDecorator'], ['goog.ui.MenuBarRenderer', 'goog.ui.menuBar', 'goog.ui.registry']);
-goog.addDependency('ui/menubarrenderer.js', ['goog.ui.MenuBarRenderer'], ['goog.a11y.aria.Role', 'goog.ui.Container', 'goog.ui.ContainerRenderer']);
-goog.addDependency('ui/menubase.js', ['goog.ui.MenuBase'], ['goog.events.EventHandler', 'goog.events.EventType', 'goog.events.KeyHandler', 'goog.ui.Popup']);
-goog.addDependency('ui/menubutton.js', ['goog.ui.MenuButton'], ['goog.Timer', 'goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.math.Box', 'goog.math.Rect', 'goog.positioning', 'goog.positioning.Corner', 'goog.positioning.MenuAnchoredPosition', 'goog.positioning.Overflow', 'goog.style', 'goog.ui.Button', 'goog.ui.Component', 'goog.ui.IdGenerator', 'goog.ui.Menu', 'goog.ui.MenuButtonRenderer', 'goog.ui.MenuRenderer', 'goog.ui.registry', 'goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('ui/menubuttonrenderer.js', ['goog.ui.MenuButtonRenderer'], ['goog.dom', 'goog.style', 'goog.ui.CustomButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.Menu', 'goog.ui.MenuRenderer']);
-goog.addDependency('ui/menuheader.js', ['goog.ui.MenuHeader'], ['goog.ui.Component', 'goog.ui.Control', 'goog.ui.MenuHeaderRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/menuheaderrenderer.js', ['goog.ui.MenuHeaderRenderer'], ['goog.ui.ControlRenderer']);
-goog.addDependency('ui/menuitem.js', ['goog.ui.MenuItem'], ['goog.a11y.aria.Role', 'goog.array', 'goog.dom', 'goog.dom.classlist', 'goog.math.Coordinate', 'goog.string', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.MenuItemRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/menuitemrenderer.js', ['goog.ui.MenuItemRenderer'], ['goog.a11y.aria.Role', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.ui.Component', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/menurenderer.js', ['goog.ui.MenuRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.ui.ContainerRenderer', 'goog.ui.Separator']);
-goog.addDependency('ui/menuseparator.js', ['goog.ui.MenuSeparator'], ['goog.ui.MenuSeparatorRenderer', 'goog.ui.Separator', 'goog.ui.registry']);
-goog.addDependency('ui/menuseparatorrenderer.js', ['goog.ui.MenuSeparatorRenderer'], ['goog.dom', 'goog.dom.classlist', 'goog.ui.ControlContent', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/mockactivitymonitor.js', ['goog.ui.MockActivityMonitor'], ['goog.events.EventType', 'goog.ui.ActivityMonitor']);
-goog.addDependency('ui/mockactivitymonitor_test.js', ['goog.ui.MockActivityMonitorTest'], ['goog.events', 'goog.functions', 'goog.testing.jsunit', 'goog.testing.recordFunction', 'goog.ui.ActivityMonitor', 'goog.ui.MockActivityMonitor']);
-goog.addDependency('ui/modalpopup.js', ['goog.ui.ModalPopup'], ['goog.Timer', 'goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.dom.iframe', 'goog.events', 'goog.events.EventType', 'goog.events.FocusHandler', 'goog.fx.Transition', 'goog.string', 'goog.style', 'goog.ui.Component', 'goog.ui.PopupBase', 'goog.userAgent']);
-goog.addDependency('ui/nativebuttonrenderer.js', ['goog.ui.NativeButtonRenderer'], ['goog.asserts', 'goog.dom.classlist', 'goog.events.EventType', 'goog.ui.ButtonRenderer', 'goog.ui.Component']);
-goog.addDependency('ui/option.js', ['goog.ui.Option'], ['goog.ui.Component', 'goog.ui.MenuItem', 'goog.ui.registry']);
-goog.addDependency('ui/palette.js', ['goog.ui.Palette'], ['goog.array', 'goog.dom', 'goog.events', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.math.Size', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.PaletteRenderer', 'goog.ui.SelectionModel']);
-goog.addDependency('ui/paletterenderer.js', ['goog.ui.PaletteRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.NodeIterator', 'goog.dom.NodeType', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.iter', 'goog.style', 'goog.ui.ControlRenderer', 'goog.userAgent']);
-goog.addDependency('ui/plaintextspellchecker.js', ['goog.ui.PlainTextSpellChecker'], ['goog.Timer', 'goog.a11y.aria', 'goog.asserts', 'goog.dom', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.spell.SpellCheck', 'goog.style', 'goog.ui.AbstractSpellChecker', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/popup.js', ['goog.ui.Popup', 'goog.ui.Popup.AbsolutePosition', 'goog.ui.Popup.AnchoredPosition', 'goog.ui.Popup.AnchoredViewPortPosition', 'goog.ui.Popup.ClientPosition', 'goog.ui.Popup.Corner', 'goog.ui.Popup.Overflow', 'goog.ui.Popup.ViewPortClientPosition', 'goog.ui.Popup.ViewPortPosition'], ['goog.math.Box', 'goog.positioning.AbsolutePosition', 'goog.positioning.AnchoredPosition', 'goog.positioning.AnchoredViewportPosition', 'goog.positioning.ClientPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.ViewportClientPosition', 'goog.positioning.ViewportPosition', 'goog.style', 'goog.ui.PopupBase']);
-goog.addDependency('ui/popupbase.js', ['goog.ui.PopupBase', 'goog.ui.PopupBase.EventType', 'goog.ui.PopupBase.Type'], ['goog.Timer', 'goog.array', 'goog.dom', 'goog.events', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.fx.Transition', 'goog.style', 'goog.userAgent']);
-goog.addDependency('ui/popupcolorpicker.js', ['goog.ui.PopupColorPicker'], ['goog.asserts', 'goog.dom.classlist', 'goog.events.EventType', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.ui.ColorPicker', 'goog.ui.Component', 'goog.ui.Popup']);
-goog.addDependency('ui/popupdatepicker.js', ['goog.ui.PopupDatePicker'], ['goog.events.EventType', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.style', 'goog.ui.Component', 'goog.ui.DatePicker', 'goog.ui.Popup', 'goog.ui.PopupBase']);
-goog.addDependency('ui/popupmenu.js', ['goog.ui.PopupMenu'], ['goog.events.EventType', 'goog.positioning.AnchoredViewportPosition', 'goog.positioning.Corner', 'goog.positioning.MenuAnchoredPosition', 'goog.positioning.Overflow', 'goog.positioning.ViewportClientPosition', 'goog.structs.Map', 'goog.style', 'goog.ui.Component', 'goog.ui.Menu', 'goog.ui.PopupBase', 'goog.userAgent']);
-goog.addDependency('ui/progressbar.js', ['goog.ui.ProgressBar', 'goog.ui.ProgressBar.Orientation'], ['goog.a11y.aria', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.EventType', 'goog.ui.Component', 'goog.ui.RangeModel', 'goog.userAgent']);
-goog.addDependency('ui/prompt.js', ['goog.ui.Prompt'], ['goog.Timer', 'goog.dom', 'goog.events', 'goog.events.EventType', 'goog.functions', 'goog.html.SafeHtml', 'goog.html.legacyconversions', 'goog.ui.Component', 'goog.ui.Dialog', 'goog.userAgent']);
-goog.addDependency('ui/rangemodel.js', ['goog.ui.RangeModel'], ['goog.events.EventTarget', 'goog.ui.Component']);
-goog.addDependency('ui/ratings.js', ['goog.ui.Ratings', 'goog.ui.Ratings.EventType'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom.classlist', 'goog.events.EventType', 'goog.ui.Component']);
-goog.addDependency('ui/registry.js', ['goog.ui.registry'], ['goog.asserts', 'goog.dom.classlist']);
-goog.addDependency('ui/richtextspellchecker.js', ['goog.ui.RichTextSpellChecker'], ['goog.Timer', 'goog.asserts', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.Range', 'goog.events.EventHandler', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.math.Coordinate', 'goog.spell.SpellCheck', 'goog.string.StringBuffer', 'goog.style', 'goog.ui.AbstractSpellChecker', 'goog.ui.Component', 'goog.ui.PopupMenu']);
-goog.addDependency('ui/roundedpanel.js', ['goog.ui.BaseRoundedPanel', 'goog.ui.CssRoundedPanel', 'goog.ui.GraphicsRoundedPanel', 'goog.ui.RoundedPanel', 'goog.ui.RoundedPanel.Corner'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.graphics', 'goog.graphics.Path', 'goog.graphics.SolidFill', 'goog.graphics.Stroke', 'goog.math', 'goog.math.Coordinate', 'goog.style', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/roundedtabrenderer.js', ['goog.ui.RoundedTabRenderer'], ['goog.dom', 'goog.ui.Tab', 'goog.ui.TabBar', 'goog.ui.TabRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/scrollfloater.js', ['goog.ui.ScrollFloater', 'goog.ui.ScrollFloater.EventType'], ['goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventType', 'goog.style', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/select.js', ['goog.ui.Select'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.events.EventType', 'goog.ui.Component', 'goog.ui.IdGenerator', 'goog.ui.MenuButton', 'goog.ui.MenuItem', 'goog.ui.MenuRenderer', 'goog.ui.SelectionModel', 'goog.ui.registry']);
-goog.addDependency('ui/selectionmenubutton.js', ['goog.ui.SelectionMenuButton', 'goog.ui.SelectionMenuButton.SelectionState'], ['goog.events.EventType', 'goog.style', 'goog.ui.Component', 'goog.ui.MenuButton', 'goog.ui.MenuItem', 'goog.ui.registry']);
-goog.addDependency('ui/selectionmodel.js', ['goog.ui.SelectionModel'], ['goog.array', 'goog.events.EventTarget', 'goog.events.EventType']);
-goog.addDependency('ui/separator.js', ['goog.ui.Separator'], ['goog.a11y.aria', 'goog.asserts', 'goog.ui.Component', 'goog.ui.Control', 'goog.ui.MenuSeparatorRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/serverchart.js', ['goog.ui.ServerChart', 'goog.ui.ServerChart.AxisDisplayType', 'goog.ui.ServerChart.ChartType', 'goog.ui.ServerChart.EncodingType', 'goog.ui.ServerChart.Event', 'goog.ui.ServerChart.LegendPosition', 'goog.ui.ServerChart.MaximumValue', 'goog.ui.ServerChart.MultiAxisAlignment', 'goog.ui.ServerChart.MultiAxisType', 'goog.ui.ServerChart.UriParam', 'goog.ui.ServerChart.UriTooLongEvent'], ['goog.Uri', 'goog.array', 'goog.asserts', 'goog.events.Event', 'goog.string', 'goog.ui.Component']);
-goog.addDependency('ui/slider.js', ['goog.ui.Slider', 'goog.ui.Slider.Orientation'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.dom', 'goog.ui.SliderBase']);
-goog.addDependency('ui/sliderbase.js', ['goog.ui.SliderBase', 'goog.ui.SliderBase.AnimationFactory', 'goog.ui.SliderBase.Orientation'], ['goog.Timer', 'goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.array', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.events.KeyHandler', 'goog.events.MouseWheelHandler', 'goog.functions', 'goog.fx.AnimationParallelQueue', 'goog.fx.Dragger', 'goog.fx.Transition', 'goog.fx.dom.ResizeHeight', 'goog.fx.dom.ResizeWidth', 'goog.fx.dom.Slide', 'goog.math', 'goog.math.Coordinate', 'goog.style', 'goog.style.bidi', 'goog.ui.Component', 'goog.ui.RangeModel']);
-goog.addDependency('ui/splitbehavior.js', ['goog.ui.SplitBehavior', 'goog.ui.SplitBehavior.DefaultHandlers'], ['goog.Disposable', 'goog.asserts', 'goog.dispose', 'goog.dom', 'goog.dom.NodeType', 'goog.dom.classlist', 'goog.events.EventHandler', 'goog.ui.ButtonSide', 'goog.ui.Component', 'goog.ui.decorate', 'goog.ui.registry']);
-goog.addDependency('ui/splitpane.js', ['goog.ui.SplitPane', 'goog.ui.SplitPane.Orientation'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventType', 'goog.fx.Dragger', 'goog.math.Rect', 'goog.math.Size', 'goog.style', 'goog.ui.Component', 'goog.userAgent']);
-goog.addDependency('ui/style/app/buttonrenderer.js', ['goog.ui.style.app.ButtonRenderer'], ['goog.dom.classlist', 'goog.ui.Button', 'goog.ui.CustomButtonRenderer', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.registry']);
-goog.addDependency('ui/style/app/menubuttonrenderer.js', ['goog.ui.style.app.MenuButtonRenderer'], ['goog.a11y.aria.Role', 'goog.array', 'goog.dom', 'goog.style', 'goog.ui.Menu', 'goog.ui.MenuRenderer', 'goog.ui.style.app.ButtonRenderer']);
-goog.addDependency('ui/style/app/primaryactionbuttonrenderer.js', ['goog.ui.style.app.PrimaryActionButtonRenderer'], ['goog.ui.Button', 'goog.ui.registry', 'goog.ui.style.app.ButtonRenderer']);
-goog.addDependency('ui/submenu.js', ['goog.ui.SubMenu'], ['goog.Timer', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.KeyCodes', 'goog.positioning.AnchoredViewportPosition', 'goog.positioning.Corner', 'goog.style', 'goog.ui.Component', 'goog.ui.Menu', 'goog.ui.MenuItem', 'goog.ui.SubMenuRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/submenurenderer.js', ['goog.ui.SubMenuRenderer'], ['goog.a11y.aria', 'goog.a11y.aria.State', 'goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.style', 'goog.ui.Menu', 'goog.ui.MenuItemRenderer']);
-goog.addDependency('ui/tab.js', ['goog.ui.Tab'], ['goog.ui.Component', 'goog.ui.Control', 'goog.ui.TabRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/tabbar.js', ['goog.ui.TabBar', 'goog.ui.TabBar.Location'], ['goog.ui.Component.EventType', 'goog.ui.Container', 'goog.ui.Container.Orientation', 'goog.ui.Tab', 'goog.ui.TabBarRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/tabbarrenderer.js', ['goog.ui.TabBarRenderer'], ['goog.a11y.aria.Role', 'goog.object', 'goog.ui.ContainerRenderer']);
-goog.addDependency('ui/tablesorter.js', ['goog.ui.TableSorter', 'goog.ui.TableSorter.EventType'], ['goog.array', 'goog.dom', 'goog.dom.TagName', 'goog.dom.classlist', 'goog.events.EventType', 'goog.functions', 'goog.ui.Component']);
-goog.addDependency('ui/tabpane.js', ['goog.ui.TabPane', 'goog.ui.TabPane.Events', 'goog.ui.TabPane.TabLocation', 'goog.ui.TabPane.TabPage', 'goog.ui.TabPaneEvent'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events', 'goog.events.Event', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.style']);
-goog.addDependency('ui/tabrenderer.js', ['goog.ui.TabRenderer'], ['goog.a11y.aria.Role', 'goog.ui.Component', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/textarea.js', ['goog.ui.Textarea', 'goog.ui.Textarea.EventType'], ['goog.asserts', 'goog.dom', 'goog.dom.classlist', 'goog.events.EventType', 'goog.style', 'goog.ui.Control', 'goog.ui.TextareaRenderer', 'goog.userAgent']);
-goog.addDependency('ui/textarearenderer.js', ['goog.ui.TextareaRenderer'], ['goog.dom.TagName', 'goog.ui.Component', 'goog.ui.ControlRenderer']);
-goog.addDependency('ui/togglebutton.js', ['goog.ui.ToggleButton'], ['goog.ui.Button', 'goog.ui.Component', 'goog.ui.CustomButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbar.js', ['goog.ui.Toolbar'], ['goog.ui.Container', 'goog.ui.ToolbarRenderer']);
-goog.addDependency('ui/toolbarbutton.js', ['goog.ui.ToolbarButton'], ['goog.ui.Button', 'goog.ui.ToolbarButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbarbuttonrenderer.js', ['goog.ui.ToolbarButtonRenderer'], ['goog.ui.CustomButtonRenderer']);
-goog.addDependency('ui/toolbarcolormenubutton.js', ['goog.ui.ToolbarColorMenuButton'], ['goog.ui.ColorMenuButton', 'goog.ui.ToolbarColorMenuButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbarcolormenubuttonrenderer.js', ['goog.ui.ToolbarColorMenuButtonRenderer'], ['goog.asserts', 'goog.dom.classlist', 'goog.ui.ColorMenuButtonRenderer', 'goog.ui.MenuButtonRenderer', 'goog.ui.ToolbarMenuButtonRenderer']);
-goog.addDependency('ui/toolbarmenubutton.js', ['goog.ui.ToolbarMenuButton'], ['goog.ui.MenuButton', 'goog.ui.ToolbarMenuButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbarmenubuttonrenderer.js', ['goog.ui.ToolbarMenuButtonRenderer'], ['goog.ui.MenuButtonRenderer']);
-goog.addDependency('ui/toolbarrenderer.js', ['goog.ui.ToolbarRenderer'], ['goog.a11y.aria.Role', 'goog.ui.Container', 'goog.ui.ContainerRenderer', 'goog.ui.Separator', 'goog.ui.ToolbarSeparatorRenderer']);
-goog.addDependency('ui/toolbarselect.js', ['goog.ui.ToolbarSelect'], ['goog.ui.Select', 'goog.ui.ToolbarMenuButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbarseparator.js', ['goog.ui.ToolbarSeparator'], ['goog.ui.Separator', 'goog.ui.ToolbarSeparatorRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/toolbarseparatorrenderer.js', ['goog.ui.ToolbarSeparatorRenderer'], ['goog.asserts', 'goog.dom.classlist', 'goog.ui.INLINE_BLOCK_CLASSNAME', 'goog.ui.MenuSeparatorRenderer']);
-goog.addDependency('ui/toolbartogglebutton.js', ['goog.ui.ToolbarToggleButton'], ['goog.ui.ToggleButton', 'goog.ui.ToolbarButtonRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/tooltip.js', ['goog.ui.Tooltip', 'goog.ui.Tooltip.CursorTooltipPosition', 'goog.ui.Tooltip.ElementTooltipPosition', 'goog.ui.Tooltip.State'], ['goog.Timer', 'goog.array', 'goog.dom', 'goog.dom.safe', 'goog.events', 'goog.events.EventType', 'goog.html.legacyconversions', 'goog.math.Box', 'goog.math.Coordinate', 'goog.positioning', 'goog.positioning.AnchoredPosition', 'goog.positioning.Corner', 'goog.positioning.Overflow', 'goog.positioning.OverflowStatus', 'goog.positioning.ViewportPosition', 'goog.structs.Set', 'goog.style', 'goog.ui.Popup', 'goog.ui.PopupBase']);
-goog.addDependency('ui/tree/basenode.js', ['goog.ui.tree.BaseNode', 'goog.ui.tree.BaseNode.EventType'], ['goog.Timer', 'goog.a11y.aria', 'goog.asserts', 'goog.dom.safe', 'goog.events.Event', 'goog.events.KeyCodes', 'goog.html.SafeHtml', 'goog.html.SafeStyle', 'goog.html.legacyconversions', 'goog.string', 'goog.string.StringBuffer', 'goog.style', 'goog.ui.Component']);
-goog.addDependency('ui/tree/treecontrol.js', ['goog.ui.tree.TreeControl'], ['goog.a11y.aria', 'goog.asserts', 'goog.dom.classlist', 'goog.events.EventType', 'goog.events.FocusHandler', 'goog.events.KeyHandler', 'goog.html.SafeHtml', 'goog.log', 'goog.ui.tree.BaseNode', 'goog.ui.tree.TreeNode', 'goog.ui.tree.TypeAhead', 'goog.userAgent']);
-goog.addDependency('ui/tree/treenode.js', ['goog.ui.tree.TreeNode'], ['goog.ui.tree.BaseNode']);
-goog.addDependency('ui/tree/typeahead.js', ['goog.ui.tree.TypeAhead', 'goog.ui.tree.TypeAhead.Offset'], ['goog.array', 'goog.events.KeyCodes', 'goog.string', 'goog.structs.Trie']);
-goog.addDependency('ui/tristatemenuitem.js', ['goog.ui.TriStateMenuItem', 'goog.ui.TriStateMenuItem.State'], ['goog.dom.classlist', 'goog.ui.Component', 'goog.ui.MenuItem', 'goog.ui.TriStateMenuItemRenderer', 'goog.ui.registry']);
-goog.addDependency('ui/tristatemenuitemrenderer.js', ['goog.ui.TriStateMenuItemRenderer'], ['goog.asserts', 'goog.dom.classlist', 'goog.ui.MenuItemRenderer']);
-goog.addDependency('ui/twothumbslider.js', ['goog.ui.TwoThumbSlider'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.dom', 'goog.ui.SliderBase']);
-goog.addDependency('ui/zippy.js', ['goog.ui.Zippy', 'goog.ui.Zippy.Events', 'goog.ui.ZippyEvent'], ['goog.a11y.aria', 'goog.a11y.aria.Role', 'goog.a11y.aria.State', 'goog.dom', 'goog.dom.classlist', 'goog.events.Event', 'goog.events.EventHandler', 'goog.events.EventTarget', 'goog.events.EventType', 'goog.events.KeyCodes', 'goog.style']);
-goog.addDependency('uri/uri.js', ['goog.Uri', 'goog.Uri.QueryData'], ['goog.array', 'goog.string', 'goog.structs', 'goog.structs.Map', 'goog.uri.utils', 'goog.uri.utils.ComponentIndex', 'goog.uri.utils.StandardQueryParam']);
-goog.addDependency('uri/uri_test.js', ['goog.UriTest'], ['goog.Uri', 'goog.testing.jsunit']);
-goog.addDependency('uri/utils.js', ['goog.uri.utils', 'goog.uri.utils.ComponentIndex', 'goog.uri.utils.QueryArray', 'goog.uri.utils.QueryValue', 'goog.uri.utils.StandardQueryParam'], ['goog.asserts', 'goog.string', 'goog.userAgent']);
-goog.addDependency('uri/utils_test.js', ['goog.uri.utilsTest'], ['goog.functions', 'goog.string', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.uri.utils']);
-goog.addDependency('useragent/adobereader.js', ['goog.userAgent.adobeReader'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('useragent/adobereader_test.js', ['goog.userAgent.adobeReaderTest'], ['goog.testing.jsunit', 'goog.userAgent.adobeReader']);
-goog.addDependency('useragent/flash.js', ['goog.userAgent.flash'], ['goog.string']);
-goog.addDependency('useragent/flash_test.js', ['goog.userAgent.flashTest'], ['goog.testing.jsunit', 'goog.userAgent.flash']);
-goog.addDependency('useragent/iphoto.js', ['goog.userAgent.iphoto'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('useragent/jscript.js', ['goog.userAgent.jscript'], ['goog.string']);
-goog.addDependency('useragent/jscript_test.js', ['goog.userAgent.jscriptTest'], ['goog.testing.jsunit', 'goog.userAgent.jscript']);
-goog.addDependency('useragent/keyboard.js', ['goog.userAgent.keyboard'], ['goog.userAgent', 'goog.userAgent.product']);
-goog.addDependency('useragent/keyboard_test.js', ['goog.userAgent.keyboardTest'], ['goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.MockUserAgent', 'goog.testing.jsunit', 'goog.userAgent.keyboard', 'goog.userAgentTestUtil']);
-goog.addDependency('useragent/picasa.js', ['goog.userAgent.picasa'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('useragent/platform.js', ['goog.userAgent.platform'], ['goog.userAgent']);
-goog.addDependency('useragent/platform_test.js', ['goog.userAgent.platformTest'], ['goog.testing.MockUserAgent', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.platform']);
-goog.addDependency('useragent/product.js', ['goog.userAgent.product'], ['goog.userAgent']);
-goog.addDependency('useragent/product_isversion.js', ['goog.userAgent.product.isVersion'], ['goog.userAgent.product']);
-goog.addDependency('useragent/product_test.js', ['goog.userAgent.productTest'], ['goog.array', 'goog.labs.userAgent.util', 'goog.testing.MockUserAgent', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgent.product', 'goog.userAgent.product.isVersion', 'goog.userAgentTestUtil']);
-goog.addDependency('useragent/useragent.js', ['goog.userAgent'], ['goog.labs.userAgent.browser', 'goog.labs.userAgent.engine', 'goog.labs.userAgent.util', 'goog.string']);
-goog.addDependency('useragent/useragent_quirks_test.js', ['goog.userAgentQuirksTest'], ['goog.testing.jsunit', 'goog.userAgent']);
-goog.addDependency('useragent/useragent_test.js', ['goog.userAgentTest'], ['goog.array', 'goog.labs.userAgent.testAgents', 'goog.labs.userAgent.util', 'goog.testing.PropertyReplacer', 'goog.testing.jsunit', 'goog.userAgent', 'goog.userAgentTestUtil']);
-goog.addDependency('useragent/useragenttestutil.js', ['goog.userAgentTestUtil', 'goog.userAgentTestUtil.UserAgents'], ['goog.labs.userAgent.browser', 'goog.labs.userAgent.engine', 'goog.userAgent', 'goog.userAgent.keyboard', 'goog.userAgent.platform', 'goog.userAgent.product', 'goog.userAgent.product.isVersion']);
-goog.addDependency('vec/float32array.js', ['goog.vec.Float32Array'], []);
-goog.addDependency('vec/float64array.js', ['goog.vec.Float64Array'], []);
-goog.addDependency('vec/mat3.js', ['goog.vec.Mat3'], ['goog.vec']);
-goog.addDependency('vec/mat3d.js', ['goog.vec.mat3d', 'goog.vec.mat3d.Type'], ['goog.vec']);
-goog.addDependency('vec/mat3f.js', ['goog.vec.mat3f', 'goog.vec.mat3f.Type'], ['goog.vec']);
-goog.addDependency('vec/mat4.js', ['goog.vec.Mat4'], ['goog.vec', 'goog.vec.Vec3', 'goog.vec.Vec4']);
-goog.addDependency('vec/mat4d.js', ['goog.vec.mat4d', 'goog.vec.mat4d.Type'], ['goog.vec', 'goog.vec.vec3d', 'goog.vec.vec4d']);
-goog.addDependency('vec/mat4f.js', ['goog.vec.mat4f', 'goog.vec.mat4f.Type'], ['goog.vec', 'goog.vec.vec3f', 'goog.vec.vec4f']);
-goog.addDependency('vec/matrix3.js', ['goog.vec.Matrix3'], []);
-goog.addDependency('vec/matrix4.js', ['goog.vec.Matrix4'], ['goog.vec', 'goog.vec.Vec3', 'goog.vec.Vec4']);
-goog.addDependency('vec/quaternion.js', ['goog.vec.Quaternion'], ['goog.vec', 'goog.vec.Vec3', 'goog.vec.Vec4']);
-goog.addDependency('vec/ray.js', ['goog.vec.Ray'], ['goog.vec.Vec3']);
-goog.addDependency('vec/vec.js', ['goog.vec', 'goog.vec.AnyType', 'goog.vec.ArrayType', 'goog.vec.Float32', 'goog.vec.Float64', 'goog.vec.Number'], ['goog.vec.Float32Array', 'goog.vec.Float64Array']);
-goog.addDependency('vec/vec2.js', ['goog.vec.Vec2'], ['goog.vec']);
-goog.addDependency('vec/vec2d.js', ['goog.vec.vec2d', 'goog.vec.vec2d.Type'], ['goog.vec']);
-goog.addDependency('vec/vec2f.js', ['goog.vec.vec2f', 'goog.vec.vec2f.Type'], ['goog.vec']);
-goog.addDependency('vec/vec3.js', ['goog.vec.Vec3'], ['goog.vec']);
-goog.addDependency('vec/vec3d.js', ['goog.vec.vec3d', 'goog.vec.vec3d.Type'], ['goog.vec']);
-goog.addDependency('vec/vec3f.js', ['goog.vec.vec3f', 'goog.vec.vec3f.Type'], ['goog.vec']);
-goog.addDependency('vec/vec4.js', ['goog.vec.Vec4'], ['goog.vec']);
-goog.addDependency('vec/vec4d.js', ['goog.vec.vec4d', 'goog.vec.vec4d.Type'], ['goog.vec']);
-goog.addDependency('vec/vec4f.js', ['goog.vec.vec4f', 'goog.vec.vec4f.Type'], ['goog.vec']);
-goog.addDependency('webgl/webgl.js', ['goog.webgl'], []);
-goog.addDependency('window/window.js', ['goog.window'], ['goog.string', 'goog.userAgent']);
-goog.addDependency('window/window_test.js', ['goog.windowTest'], ['goog.dom', 'goog.events', 'goog.string', 'goog.testing.AsyncTestCase', 'goog.testing.jsunit', 'goog.window']);
-
+goog.require('ol.DragBoxEvent');
 goog.require('ol.DrawEvent');
+goog.require('ol.Extent');
 goog.require('ol.Feature');
 goog.require('ol.Map');
 goog.require('ol.MapProperty');
@@ -100979,14 +102224,30 @@ goog.require('ol.ObjectEventType');
 goog.require('ol.Observable');
 goog.require('ol.View');
 goog.require('ol.ViewHint');
+goog.require('ol.events.ConditionType');
+goog.require('ol.events.condition');
+goog.require('ol.extent');
+goog.require('ol.extent.Corner');
+goog.require('ol.extent.Relationship');
 goog.require('ol.feature');
+goog.require('ol.format.GML');
 goog.require('ol.format.GeoJSON');
 goog.require('ol.format.WFS');
 goog.require('ol.format.WKT');
+goog.require('ol.geom.Polygon');
+goog.require('ol.geom.SimpleGeometry');
+goog.require('ol.interaction.DragBox');
 goog.require('ol.interaction.Draw');
+goog.require('ol.interaction.Interaction');
+goog.require('ol.interaction.InteractionProperty');
 goog.require('ol.layer.Tile');
 goog.require('ol.layer.Vector');
-goog.require('ol.source.OSM');
+goog.require('ol.proj');
+goog.require('ol.proj.METERS_PER_UNIT');
+goog.require('ol.proj.Projection');
+goog.require('ol.proj.ProjectionLike');
+goog.require('ol.proj.Units');
+goog.require('ol.source.TileWMS');
 goog.require('ol.source.Vector');
 goog.require('ol.source.VectorEvent');
 goog.require('ol.source.VectorEventType');
@@ -100997,6 +102258,22 @@ goog.require('ol.style.Style');
 
 
 goog.exportSymbol(
+    'ol.proj.Projection',
+    ol.proj.Projection);
+
+goog.exportSymbol(
+    'ol.proj.addProjection',
+    ol.proj.addProjection);
+
+goog.exportSymbol(
+    'ol.proj.getTransform',
+    ol.proj.getTransform);
+
+goog.exportSymbol(
+    'ol.extent.applyTransform',
+    ol.extent.applyTransform);
+
+goog.exportSymbol(
     'ol.View',
     ol.View);
 
@@ -101004,6 +102281,16 @@ goog.exportProperty(
     ol.View.prototype,
     'fitExtent',
     ol.View.prototype.fitExtent);
+
+goog.exportProperty(
+    ol.View.prototype,
+    'setCenter',
+    ol.View.prototype.setCenter);
+
+goog.exportProperty(
+    ol.View.prototype,
+    'setZoom',
+    ol.View.prototype.setZoom);
 
 goog.exportSymbol(
     'ol.Map',
@@ -101026,8 +102313,17 @@ goog.exportProperty(
 
 goog.exportProperty(
     ol.Map.prototype,
+    'removeInteraction',
+    ol.Map.prototype.removeInteraction);
+
+goog.exportProperty(
+    ol.Map.prototype,
     'set',
     ol.Map.prototype.set);
+
+goog.exportSymbol(
+    'ol.events.condition.shiftKeyOnly',
+    ol.events.condition.shiftKeyOnly);
 
 goog.exportSymbol(
     'ol.source.Vector',
@@ -101053,21 +102349,79 @@ goog.exportProperty(
     'getFeatures',
     ol.source.Vector.prototype.getFeatures);
 
+goog.exportProperty(
+    ol.source.Vector.prototype,
+    'forEachFeature',
+    ol.source.Vector.prototype.forEachFeature);
+
+goog.exportProperty(
+    ol.source.Vector.prototype,
+    'removeFeature',
+    ol.source.Vector.prototype.removeFeature);
+
 goog.exportSymbol(
     'ol.layer.Vector',
     ol.layer.Vector);
+
+goog.exportProperty(
+    ol.layer.Vector.prototype,
+    'changed',
+    ol.layer.Vector.prototype.changed);
 
 goog.exportSymbol(
     'ol.layer.Tile',
     ol.layer.Tile);
 
 goog.exportSymbol(
-    'ol.source.OSM',
-    ol.source.OSM);
+    'ol.source.TileWMS',
+    ol.source.TileWMS);
 
 goog.exportSymbol(
     'ol.interaction.Draw',
     ol.interaction.Draw);
+
+goog.exportProperty(
+    ol.interaction.Draw.prototype,
+    'setActive',
+    ol.interaction.Draw.prototype.setActive);
+
+goog.exportProperty(
+    ol.interaction.Draw.prototype,
+    'on',
+    ol.interaction.Draw.prototype.on);
+
+goog.exportSymbol(
+    'ol.interaction.DragBox',
+    ol.interaction.DragBox);
+
+goog.exportProperty(
+    ol.interaction.DragBox.prototype,
+    'setActive',
+    ol.interaction.DragBox.prototype.setActive);
+
+goog.exportProperty(
+    ol.interaction.DragBox.prototype,
+    'on',
+    ol.interaction.DragBox.prototype.on);
+
+goog.exportProperty(
+    ol.interaction.DragBox.prototype,
+    'getGeometry',
+    ol.interaction.DragBox.prototype.getGeometry);
+
+goog.exportProperty(
+    ol.geom.Polygon.prototype,
+    'getExtent',
+    ol.geom.Polygon.prototype.getExtent);
+
+goog.exportSymbol(
+    'ol.format.GML',
+    ol.format.GML);
+
+goog.exportProperty(
+    ol.format.GML.prototype,
+    'readFeatures',
+    ol.format.GML.prototype.readFeatures);
 
 goog.exportSymbol(
     'ol.format.WKT',
@@ -101076,6 +102430,11 @@ goog.exportSymbol(
 goog.exportSymbol(
     'ol.format.GeoJSON',
     ol.format.GeoJSON);
+
+goog.exportProperty(
+    ol.format.GeoJSON.prototype,
+    'writeFeatures',
+    ol.format.GeoJSON.prototype.writeFeatures);
 
 goog.exportProperty(
     ol.format.WKT.prototype,
@@ -101111,6 +102470,29 @@ goog.exportSymbol(
 goog.exportSymbol(
     'ol.style.Circle',
     ol.style.Circle);
+
+goog.exportSymbol(
+    'ol.Feature',
+    ol.Feature);
+
+goog.exportSymbol(
+    'ol.geom.Polygon',
+    ol.geom.Polygon);
+
+goog.exportProperty(
+    ol.Feature.prototype,
+    'setGeometry',
+    ol.Feature.prototype.setGeometry);
+
+goog.exportProperty(
+    ol.Feature.prototype,
+    'set',
+    ol.Feature.prototype.set);
+
+goog.exportProperty(
+    ol.Feature.prototype,
+    'get',
+    ol.Feature.prototype.get);
 
 goog.exportProperty(
     ol.Feature.prototype,

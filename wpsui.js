@@ -7,6 +7,15 @@ wps.editor = function(ui) {
   this.ui_ = ui;
 };
 
+// apparently axis order is not what we expect when using WPS
+var projection = new ol.proj.Projection({
+  code: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
+  extent: [-180, -90, 180, 90],
+  units: 'degrees',
+  axisOrientation: 'enu'
+});
+ol.proj.addProjection(projection);
+
 wps.editor.DRAW = "_DRAW_";
 wps.editor.PREFIX = "node-input-";
 wps.SUBPROCESS = 'process|';

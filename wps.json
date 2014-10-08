@@ -1,5 +1,7 @@
 {
   "exports": [
+    "ol.proj.Projection",
+    "ol.proj.addProjection",
     "ol.proj.getTransform",
     "ol.extent.applyTransform",
     "ol.View",
@@ -32,6 +34,8 @@
     "ol.interaction.DragBox#on",
     "ol.interaction.DragBox#getGeometry",
     "ol.geom.Polygon#getExtent",
+    "ol.format.GML",
+    "ol.format.GML#readFeatures",
     "ol.format.WKT",
     "ol.format.GeoJSON",
     "ol.format.GeoJSON#writeFeatures",
