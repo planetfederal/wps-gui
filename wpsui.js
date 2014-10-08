@@ -25,16 +25,10 @@ wps.editor.prototype.setValue = function(geom, id, val) {
   }
   var value;
   if (geom !== true && formField.length > 0) {
-    if (me.editingNode_._info.literalData &&
-      me.editingNode_._info.literalData.dataType &&
-      me.editingNode_._info.literalData.dataType.value === 'xs:boolean') {
-        value = formField.val() === "true";
-    } else {
-      value = formField.val();
-      if (id.indexOf('-txt') !== -1) {
-        if (value.indexOf('>') !== -1) {
-          value = jQuery.parseXML(value);
-        }
+    value = formField.val();
+    if (id.indexOf('-txt') !== -1) {
+      if (value.indexOf('>') !== -1) {
+        value = jQuery.parseXML(value);
       }
     }
     if (value !== wps.editor.DRAW) {
