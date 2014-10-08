@@ -939,3 +939,6 @@ i.spinner {
 .x-hidden {
     display: none;
 }
+.btn-clear-div {
+    margin-left: 10px;
+}
