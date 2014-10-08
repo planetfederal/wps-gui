@@ -923,18 +923,6 @@ wps.ui.prototype.handleLocal = function(value) {
   }
 };
 
-wps.ui.prototype.handleSubProcess = function(subId) {
-  var subInputs = {};
-  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
-    var node = this.nodes[i];
-    if (node.type === "input" && node._parent === subId) {
-      var name = node._info.identifier.value;
-      subInputs[name] = this.handleLocal(node.value);
-    }
-  }
-  return subInputs;
-};
-
 // brute force
 wps.ui.prototype.processAlgorithm = function(processId) {
   var executed = [];
@@ -952,11 +940,13 @@ wps.ui.prototype.processAlgorithm = function(processId) {
           }
         }
         if (canExecute) {
-          var values = this.handleSubProcess(toExecute[i]);
+          var values = this.getInputs(toExecute[i]);
           for (var key in values) {
             if (typeof values[key] === "string" && values[key].indexOf(wps.SUBPROCESS) !== -1) {
               // replace value with a chainlink
               values[key] = this.processes[values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8)].output();
+            } else {
+              values[key] = this.handleLocal(values[key]);
             }
           }
           this.processes[toExecute[i]].configure({
@@ -1003,7 +993,7 @@ wps.ui.prototype.execute = function(ui) {
             if (typeof values[key] === 'string' && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
               if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
                 var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
-                var subInputs = ui.handleSubProcess(subId);
+                var subInputs = ui.getInputs(subId);
                 inputs[key] = ui.processes[subId].output();
                 // only recurse if subInputs has subprocesses
                 if (hasSubProcess(subInputs)) {
