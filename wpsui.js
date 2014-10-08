@@ -606,9 +606,9 @@ wps.ui.load = function(ui, evt, nodes) {
       }
       var node = ui.nodes[i];
       if (node.type === "process") {
-        var process = ui.client_.getProcess('wpsgui', node._info.identifier.value, {callback: function(info) {
-          ui.processes[node.id] = process;
-        }});
+        var process = ui.client_.getProcess('wpsgui', node._info.identifier.value, {callback: $.proxy(function(id) {
+          ui.processes[id] = this;
+        }, null, node.id)});
       }
     }
     ui.redraw();

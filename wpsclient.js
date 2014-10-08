@@ -69,13 +69,13 @@ wps.process.prototype.describe = function(options) {
         this.parseDescription(description);
       }
       if (options.callback) {
-        options.callback.call(options.scope, this.description);
+        options.callback.call(options.scope || this, this.description);
       }
     }, this);
   } else if (options.callback) {
     var description = this.description;
     window.setTimeout(function() {
-      options.callback.call(options.scope, description);
+      options.callback.call(options.scope || this, description);
     }, 0);
   }
 };
