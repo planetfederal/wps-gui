@@ -459,11 +459,15 @@ wps.editor.prototype.showEditForm = function(node) {
       var selection = d3.selectAll(".node_selected");
       if (selection[0].length > 0) {
         var node = selection.datum();
+        var deletes = [];
         this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
           if (f.get('node') === node.id) {
-            this.ui_.inputMaps[mapId].source.removeFeature(f);
+            deletes.push(f);
           }
         }, this);
+        for (var i=0, ii=deletes.length; i<ii; ++i) {
+          this.ui_.inputMaps[mapId].source.removeFeature(deletes[i]);
+        }
       }
     };
     var addInteraction = function(geomType) {
