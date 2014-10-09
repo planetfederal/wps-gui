@@ -772,7 +772,7 @@ wps.ui.prototype.exportClipboard = function(ui) {
   html += '<label for="node-input-export" style="width:100%"><i class="glyphicon glyphicon-share"> Nodes:</i></label>';
   html += '<textarea readonly class="form-control" id="node-input-export" rows="5"></textarea>';
   html += '</div>';
-  html += '<div class="form-tips"> Select the text above and copy to the clipboard with Ctrl-A Ctrl-C.</div>';
+  html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
   $("#dialog-form").html(html);
   $("#dialog").dialog("option", "title", "Export nodes to clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
