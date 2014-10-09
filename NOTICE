@@ -1,0 +1,12 @@
+WPS GUI is heavily inspired upon Node-RED http://nodered.org 
+Node-RED is Copyright 2013, 2014 IBM Corp. under the Apache 2.0 license.
+
+WPS GUI uses the following libraries:
+
+ * D3 (Data Driven Documents): http://d3js.org
+ * jQuery: http://jquery.org
+ * jQuery UI: http://jqueryui.com
+ * Bootstrap: http://getbootstrap.com
+ * Font Awesome: http://fontawesome.io
+ * OpenLayers 3: http://openlayers.org
+ * JSONIX: http://confluence.highsource.org/display/JSNX/Jsonix
