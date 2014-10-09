@@ -22,6 +22,36 @@ wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
 wps.RASTERLAYER = 'raster|';
 
+wps.editor.prototype.addVectorLayer = function(id, node, value) {
+  var mapId = node._parent;
+  var layer = value.substring(value.indexOf(wps.VECTORLAYER)+7);
+  var extent = new Array(4);
+  for (var i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
+    var ft = this.ui_.featureTypes[i];
+    if (ft.name === layer) {
+      extent[0] = ft.lowerCorner[0];
+      extent[1] = ft.lowerCorner[1];
+      extent[2] = ft.upperCorner[0];
+      extent[3] = ft.upperCorner[1];
+      break;
+    }
+  }
+  var map = this.ui_.inputMaps[mapId].map;
+  if (!this.ui_.inputMaps[mapId].vectorWMS[id]) {
+    this.ui_.inputMaps[mapId].vectorWMS[id] = new ol.layer.Image({
+      source: new ol.source.ImageWMS({
+        url: '/geoserver/wms',
+        params: {'LAYERS': layer},
+        serverType: 'geoserver'
+      })
+    });
+    map.getLayers().push(this.ui_.inputMaps[mapId].vectorWMS[id]);
+  } else {
+    this.ui_.inputMaps[mapId].vectorWMS[id].getSource().updateParams({'LAYERS': layer});
+  }
+  map.getView().fitExtent(extent, map.getSize());
+};
+
 wps.editor.prototype.setValue = function(geom, id, val) {
   var me = this, ui = this.ui_;
   var name = me.editingNode_._info.identifier.value;
@@ -35,6 +65,9 @@ wps.editor.prototype.setValue = function(geom, id, val) {
   var value;
   if (geom !== true && formField.length > 0) {
     value = formField.val();
+    if (value.indexOf(wps.VECTORLAYER) !== -1) {
+      this.addVectorLayer(id, me.editingNode_, value);
+    }
     if (id.indexOf('-txt') !== -1) {
       if (value.indexOf('>') !== -1) {
         value = jQuery.parseXML(value);
@@ -195,7 +228,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
-        var featureType = this.ui_.featureTypes[i];
+        var featureType = this.ui_.featureTypes[i].name;
         selected = (node.value === prefix + featureType) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
       }
@@ -266,6 +299,7 @@ wps.editor.prototype.showEditForm = function(node) {
     var mapId = node._parent;
     if (!this.ui_.inputMaps[mapId]) {
       this.ui_.inputMaps[mapId] = {};
+      this.ui_.inputMaps[mapId].vectorWMS = {};
       this.ui_.inputMaps[mapId].source = new ol.source.Vector();
       this.ui_.inputMaps[mapId].vector = new ol.layer.Vector({source: this.ui_.inputMaps[mapId].source, style: function(feature) {
         var selection = d3.selectAll(".node_selected");

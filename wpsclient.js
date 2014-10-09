@@ -605,7 +605,12 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
     var featureTypes = [];
     var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
     for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
-      featureTypes.push(info.featureTypeList.featureType[i].name);
+      var featureType = {};
+      var ft = info.featureTypeList.featureType[i];
+      featureType.name = ft.name;
+      featureType.lowerCorner = ft.wgs84BoundingBox[0].lowerCorner;
+      featureType.upperCorner = ft.wgs84BoundingBox[0].upperCorner;
+      featureTypes.push(featureType);
     }
     callback.call(me, featureTypes);
   };
