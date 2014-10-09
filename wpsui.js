@@ -22,6 +22,41 @@ wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
 wps.RASTERLAYER = 'raster|';
 
+wps.editor.prototype.addRasterLayer = function(id, node, value) {
+  var mapId = node._parent;
+  var layer = value.substring(value.indexOf(wps.RASTERLAYER)+7);
+  var extent = new Array(4);
+  for (var i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
+    var c = this.ui_.coverages[i];
+    if (c.name === layer) {
+      extent[0] = c.lowerCorner[0];
+      extent[1] = c.lowerCorner[1];
+      extent[2] = c.upperCorner[0];
+      extent[3] = c.upperCorner[1];
+      break;
+    }
+  }
+  var map;
+  if (this.ui_.inputMaps[mapId]) {
+    map = this.ui_.inputMaps[mapId].map;
+  } else {
+    return;
+  }
+  if (!this.ui_.inputMaps[mapId].rasterWMS[id]) {
+    this.ui_.inputMaps[mapId].rasterWMS[id] = new ol.layer.Image({
+      source: new ol.source.ImageWMS({
+        url: '/geoserver/wms',
+        params: {'LAYERS': layer},
+        serverType: 'geoserver'
+      })
+    });
+    map.getLayers().push(this.ui_.inputMaps[mapId].rasterWMS[id]);
+  } else {
+    this.ui_.inputMaps[mapId].rasterWMS[id].getSource().updateParams({'LAYERS': layer});
+  }
+  map.getView().fitExtent(extent, map.getSize());
+};
+
 wps.editor.prototype.addVectorLayer = function(id, node, value) {
   var mapId = node._parent;
   var layer = value.substring(value.indexOf(wps.VECTORLAYER)+7);
@@ -67,6 +102,9 @@ wps.editor.prototype.setValue = function(geom, id, val) {
     value = formField.val();
     if (value.indexOf(wps.VECTORLAYER) !== -1) {
       this.addVectorLayer(id, me.editingNode_, value);
+    }
+    if (value.indexOf(wps.RASTERLAYER) !== -1) {
+      this.addRasterLayer(id, me.editingNode_, value);
     }
     if (id.indexOf('-txt') !== -1) {
       if (value.indexOf('>') !== -1) {
@@ -300,6 +338,7 @@ wps.editor.prototype.showEditForm = function(node) {
     if (!this.ui_.inputMaps[mapId]) {
       this.ui_.inputMaps[mapId] = {};
       this.ui_.inputMaps[mapId].vectorWMS = {};
+      this.ui_.inputMaps[mapId].rasterWMS = {};
       this.ui_.inputMaps[mapId].source = new ol.source.Vector();
       this.ui_.inputMaps[mapId].vector = new ol.layer.Vector({source: this.ui_.inputMaps[mapId].source, style: function(feature) {
         var selection = d3.selectAll(".node_selected");
