@@ -50,7 +50,7 @@ wps.editor.prototype.addRasterLayer = function(id, node, value) {
         serverType: 'geoserver'
       })
     });
-    map.getLayers().push(this.ui_.inputMaps[mapId].rasterWMS[id]);
+    map.getLayers().insertAt(map.getLayers().getLength()-1, this.ui_.inputMaps[mapId].rasterWMS[id]);
   } else {
     this.ui_.inputMaps[mapId].rasterWMS[id].getSource().updateParams({'LAYERS': layer});
   }
@@ -80,7 +80,7 @@ wps.editor.prototype.addVectorLayer = function(id, node, value) {
         serverType: 'geoserver'
       })
     });
-    map.getLayers().push(this.ui_.inputMaps[mapId].vectorWMS[id]);
+    map.getLayers().insertAt(map.getLayers().getLength()-1, this.ui_.inputMaps[mapId].vectorWMS[id]);
   } else {
     this.ui_.inputMaps[mapId].vectorWMS[id].getSource().updateParams({'LAYERS': layer});
   }
