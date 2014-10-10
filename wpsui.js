@@ -284,9 +284,12 @@ wps.editor.prototype.showEditForm = function(node) {
       html += 'Edit <span class="caret"></span>';
       html += '</button>';
       html += '<ul class="dropdown-menu" role="menu">';
-      html += '<li><a id="draw-polygon" href="#">Polygon</a></li>';
-      html += '<li><a id="draw-line" href="#">LineString</a></li>';
-      html += '<li><a id="draw-point" href="#">Point</a></li>';
+      html += '<li role="presentation"><a id="draw-polygon" href="#">Draw Polygon</a></li>';
+      html += '<li role="presentation"><a id="draw-line" href="#">Draw LineString</a></li>';
+      html += '<li role="presentation"><a id="draw-point" href="#">Draw Point</a></li>';
+      html += '<li role="presentation" class="divider"></li>';
+      html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
+      html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
       html += '</ul>';
       html += '</div>';
     }
@@ -474,15 +477,39 @@ wps.editor.prototype.showEditForm = function(node) {
       if (me.ui_.inputMaps[mapId].draw) {
         me.ui_.inputMaps[mapId].map.removeInteraction(me.ui_.inputMaps[mapId].draw);
       }
-      me.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
-        source: me.ui_.inputMaps[mapId].source,
-        type: geomType
-      });
-      me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
-      if (geomType !== 'Point') {
-        me.ui_.inputMaps[mapId].draw.on('drawstart', drawStart, me);
+      if (geomType !== 'BBOX') {
+        me.ui_.inputMaps[mapId].draw = new ol.interaction.Draw({
+          source: me.ui_.inputMaps[mapId].source,
+          type: geomType
+        });
+      } else {
+        me.ui_.inputMaps[mapId].draw = new ol.interaction.DragBox({
+          condition: ol.events.condition.shiftKeyOnly,
+          style: new ol.style.Style({
+            stroke: new ol.style.Stroke({
+              color: [0, 0, 255, 1]
+            })
+          })
+        });
       }
-      me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
+      me.ui_.inputMaps[mapId].map.addInteraction(me.ui_.inputMaps[mapId].draw);
+      if (geomType !== 'BBOX') {
+        if (geomType !== 'Point') {
+          me.ui_.inputMaps[mapId].draw.on('drawstart', drawStart, me);
+        }
+        me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
+      } else {
+        me.ui_.inputMaps[mapId].draw.on('boxend', function(e) {
+          me.ui_.inputMaps[mapId].source.clear();
+          var f = new ol.Feature();
+          f.set('node', node.id);
+          var geom = me.ui_.inputMaps[mapId].draw.getGeometry();
+          f.setGeometry(geom);
+          me.ui_.inputMaps[mapId].source.addFeatures([f]);
+          var values = node.value.split('|');
+          node.value = values[0] + '|' + values[1] + '|' + geom.getExtent().toString(',');
+        });
+      }
     };
     $('#draw-polygon').click(function() {
       addInteraction('Polygon');
@@ -492,6 +519,18 @@ wps.editor.prototype.showEditForm = function(node) {
     });
     $('#draw-point').click(function() {
       addInteraction('Point');
+    });
+    $('#bbox-filter').click(function() {
+      addInteraction('BBOX');
+    });
+    $('#bbox-filter-clear').click(function() {
+     var selection = d3.selectAll(".node_selected");
+      if (selection[0].length > 0) {
+        var node = selection.datum();
+        me.ui_.inputMaps[mapId].source.clear();
+        var values = node.value.split('|');
+        node.value = values[0] + '|' + values[1];
+      }
     });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
     if (this.ui_.inputMaps[mapId].draw) {
@@ -988,9 +1027,13 @@ wps.ui.prototype.getDependsOnAlgorithms = function(processId, deps) {
 
 wps.ui.prototype.handleLocal = function(value) {
   if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
+    var values = value.split('|');
+    var typeName = values[1];
+    var bbox = values.length === 3 ? values[2] : undefined;
     return new wps.process.localWFS({
       srsName: 'EPSG:4326',
-      typeName: value.substring(value.indexOf(wps.VECTORLAYER)+7)
+      typeName: typeName,
+      bbox: bbox
     });
   } else if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
     var coverage = value.substring(value.indexOf(wps.RASTERLAYER)+7);

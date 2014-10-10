@@ -361,6 +361,31 @@ wps.process.prototype.setInputData = function(input, data) {
           version: "1.1.0",
           query: [{
             srsName: data.srsName,
+            filter: data.bbox ? {
+              spatialOps: {
+                name: {
+                  namespaceURI: "http://www.opengis.net/ogc",
+                  localPart: "BBOX"
+                },
+                value: {
+                  envelope: {
+                    name: {
+                      namespaceURI: "http://www.opengis.net/gml",
+                      localPart: "Envelope"
+                    },
+                    value: {
+                      lowerCorner: {
+                        value: [data.bbox.split(',')[0], data.bbox.split(',')[1]]
+                      },
+                      upperCorner: {
+                        value: [data.bbox.split(',')[2], data.bbox.split(',')[3]]
+                      },
+                      srsName: data.srsName
+                    }
+                  }
+                }
+              }
+            }: undefined,
             typeName: [data.typeName]
           }]
         }
@@ -541,6 +566,7 @@ wps.process.localWCS = function(options) {
 wps.process.localWFS = function(options) {
   this.srsName = null;
   this.typeName = null;
+  this.bbox = null;
   for (var prop in options)   {
     if (this.hasOwnProperty(prop)) {
       this[prop] = options[prop];
