@@ -265,9 +265,10 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
+      var values = node.value.split('|');
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
         var featureType = this.ui_.featureTypes[i].name;
-        selected = (node.value === prefix + featureType) ? 'selected' : '';
+        selected = (values[1] === featureType) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
       }
       html += "</select>";
