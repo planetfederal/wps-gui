@@ -265,10 +265,10 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
-      var values = node.value.split('|');
+      var values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
         var featureType = this.ui_.featureTypes[i].name;
-        selected = (values[1] === featureType) ? 'selected' : '';
+        selected = (values.length > 1 && values[1] === featureType) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + featureType + '">' + featureType + "</option>";
       }
       html += "</select>";
@@ -405,6 +405,17 @@ wps.editor.prototype.showEditForm = function(node) {
       });
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
+      }
+      if (node.value && node.value.indexOf(wps.VECTORLAYER) !== -1) {
+        var values = node.value.split('|');
+        if (values.length === 3) {
+          var bbox = values[2].split(',').map(parseFloat);
+          var f = new ol.Feature();
+          f.set('node', node.id);
+          var geom = new ol.geom.Polygon([[[bbox[0], bbox[1]], [bbox[0], bbox[3]], [bbox[2], bbox[3]], [bbox[2], bbox[1]], [bbox[0], bbox[1]]]]);
+          f.setGeometry(geom);
+          me.ui_.inputMaps[mapId].source.addFeatures([f]);
+        }
       }
       this.ui_.inputMaps[mapId].dragBox = new ol.interaction.DragBox({
         condition: ol.events.condition.shiftKeyOnly,
