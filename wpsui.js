@@ -24,7 +24,8 @@ wps.RASTERLAYER = 'raster|';
 
 wps.editor.prototype.addRasterLayer = function(id, node, value) {
   var mapId = node._parent;
-  var layer = value.substring(value.indexOf(wps.RASTERLAYER)+7);
+  var values = value.split('|');
+  var layer = values[1];
   var extent = new Array(4);
   for (var i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
     var c = this.ui_.coverages[i];
@@ -254,14 +255,15 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '</div>';
     }
-    var prefix;
+    var prefix, values;
     if (rasterLayer === true) {
       html += '<p class="form-row"><p><small>Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
       prefix = wps.RASTERLAYER;
+      values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
         var coverage = this.ui_.coverages[i].name;
-        selected = (node.value === prefix + coverage) ? 'selected' : '';
+        selected = (values.length > 1 && values[1] === coverage) ? 'selected' : '';
         html += '<option ' + selected + ' value="' + prefix + coverage + '">' + coverage + "</option>";
       }
       html += "</select>";
@@ -275,7 +277,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
       html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
-      var values = node.value ? node.value.split('|') : [];
+      values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
         var featureType = this.ui_.featureTypes[i].name;
         selected = (values.length > 1 && values[1] === featureType) ? 'selected' : '';
@@ -416,9 +418,14 @@ wps.editor.prototype.showEditForm = function(node) {
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
-      if (node.value && node.value.indexOf(wps.VECTORLAYER) !== -1) {
+      if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
         values = node.value.split('|');
-        me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
+        if (node.value.indexOf(wps.VECTORLAYER) !== -1) {
+          me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
+        }
+        if (node.value.indexOf(wps.RASTERLAYER) !== -1) {
+          me.addRasterLayer('node-input-' + node._parent + '-features-map', node, node.value);
+        }
         if (values.length === 3) {
           var bbox = values[2].split(',').map(parseFloat);
           var f = new ol.Feature();
