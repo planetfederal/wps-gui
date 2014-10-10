@@ -59,7 +59,8 @@ wps.editor.prototype.addRasterLayer = function(id, node, value) {
 
 wps.editor.prototype.addVectorLayer = function(id, node, value) {
   var mapId = node._parent;
-  var layer = value.substring(value.indexOf(wps.VECTORLAYER)+7);
+  var values = value.split('|');
+  var layer = values[1];
   var extent = new Array(4);
   for (var i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
     var ft = this.ui_.featureTypes[i];
@@ -407,7 +408,8 @@ wps.editor.prototype.showEditForm = function(node) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
       }
       if (node.value && node.value.indexOf(wps.VECTORLAYER) !== -1) {
-        var values = node.value.split('|');
+        values = node.value.split('|');
+        me.addVectorLayer('node-input-' + node.id + '-features-map', node, node.value);
         if (values.length === 3) {
           var bbox = values[2].split(',').map(parseFloat);
           var f = new ol.Feature();
