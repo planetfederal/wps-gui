@@ -286,24 +286,24 @@ wps.editor.prototype.showEditForm = function(node) {
       saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-map' + '\')">Save</button></div>';
       html += saveButton;
     }
+    hasMap = true;
+    id = "input-map-" + node._parent;
+    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
+    html += '<div class="btn-group">';
+    html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
+    html += 'Edit <span class="caret"></span>';
+    html += '</button>';
+    html += '<ul class="dropdown-menu" role="menu">';
     if (rasterLayer !== true) {
-      hasMap = true;
-      id = "input-map-" + node._parent;
-      html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
-      html += '<div class="btn-group">';
-      html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
-      html += 'Edit <span class="caret"></span>';
-      html += '</button>';
-      html += '<ul class="dropdown-menu" role="menu">';
       html += '<li role="presentation"><a id="draw-polygon" href="#">Draw Polygon</a></li>';
       html += '<li role="presentation"><a id="draw-line" href="#">Draw LineString</a></li>';
       html += '<li role="presentation"><a id="draw-point" href="#">Draw Point</a></li>';
       html += '<li role="presentation" class="divider"></li>';
-      html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
-      html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
-      html += '</ul>';
-      html += '</div>';
     }
+    html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
+    html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
+    html += '</ul>';
+    html += '</div>';
     html += '</div></div>'; // end map-pane, tab-content
   } else if (node._info.boundingBoxData) {
 
@@ -1049,17 +1049,19 @@ wps.ui.prototype.getDependsOnAlgorithms = function(processId, deps) {
 };
 
 wps.ui.prototype.handleLocal = function(value) {
+  var values, bbox;
   if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
-    var values = value.split('|');
+    values = value.split('|');
     var typeName = values[1];
-    var bbox = values.length === 3 ? values[2] : undefined;
+    bbox = values.length === 3 ? values[2] : undefined;
     return new wps.process.localWFS({
       srsName: 'EPSG:4326',
       typeName: typeName,
       bbox: bbox
     });
   } else if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
-    var coverage = value.substring(value.indexOf(wps.RASTERLAYER)+7);
+    values = value.split('|');
+    var coverage = values[1];
     for (var i=0, ii=this.coverages.length; i<ii; ++i) {
       if (this.coverages[i].name === coverage) {
         lowerCorner = this.coverages[i].lowerCorner;
@@ -1067,9 +1069,10 @@ wps.ui.prototype.handleLocal = function(value) {
         break;
       }
     }
+    bbox = values.length === 3 ? values[2].split(',').map(parseFloat) : undefined;
     return new wps.process.localWCS({
-      lowerCorner: lowerCorner,
-      upperCorner: upperCorner,
+      lowerCorner: bbox ? [bbox[0], bbox[1]] : lowerCorner,
+      upperCorner: bbox ? [bbox[2], bbox[3]] : upperCorner,
       identifier: coverage
     });
   } else {
