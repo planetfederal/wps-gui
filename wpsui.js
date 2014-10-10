@@ -236,7 +236,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     html += '</div>';
 
-    value = (node.value === undefined) ? '' : node.value;
+    value = (node.value === undefined || node.value.indexOf(wps.VECTORLAYER) !== -1) ? '' : node.value;
     if (rasterLayer === false) {
       html += '<div class="form-row" id="' + name + '-field">';
       if ($.isXMLDoc(value)) {
