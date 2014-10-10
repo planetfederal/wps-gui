@@ -113,7 +113,16 @@ wps.editor.prototype.setValue = function(geom, id, val) {
       }
     }
     if (value !== wps.editor.DRAW) {
-      me.editingNode_.value = value;
+      if (value.indexOf(wps.VECTORLAYER) !== -1) {
+        // check if node has a BBOX filter on it
+        if (me.editingNode_.value && me.editingNode_.value.split('|').length === 3) {
+          me.editingNode_.value = value + '|' + me.editingNode_.value.split('|')[2];
+        }  else {
+          me.editingNode_.value = value;
+        }
+      } else {
+        me.editingNode_.value = value;
+      }
     }
   } else if (me.editingNode_._info.boundingBoxData) {
     me.editingNode_.value = val;
@@ -409,7 +418,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       if (node.value && node.value.indexOf(wps.VECTORLAYER) !== -1) {
         values = node.value.split('|');
-        me.addVectorLayer('node-input-' + node.id + '-features-map', node, node.value);
+        me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
         if (values.length === 3) {
           var bbox = values[2].split(',').map(parseFloat);
           var f = new ol.Feature();
