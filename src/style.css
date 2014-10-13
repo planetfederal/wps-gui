@@ -955,3 +955,7 @@ i.spinner {
     height: 95%;
     clear: both;
 }
+#tab-inputs {
+    height: 100%;
+    overflow-y:hidden;
+}
