@@ -278,7 +278,7 @@ a.brand span {
 }
 #chart-zoom-controls {
     position: absolute;
-    bottom:30px; right: 350px;
+    bottom:5px; right: 5px;
 }
 #sidebar {
     width: 305px;
@@ -954,4 +954,10 @@ i.spinner {
 }
 #tab-inputs, #tab-results {
     height: 100%;
+}
+#workspace-content, #tab-xml {
+    height: 100%;
+}
+#tab-xml {
+    background-color: black;
 }

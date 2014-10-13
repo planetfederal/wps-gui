@@ -1007,8 +1007,7 @@ wps.ui.prototype.initializeSplitter = function() {
   });
 };
 
-wps.ui.prototype.activateTab = function(link) {
-  var ul = $('#sidebar-tabs');
+wps.ui.prototype.activateTab = function(link, ul, contentDiv) {
   if (typeof link === "string") {
     link = ul.find("a[href='#"+link+"']");
   }
@@ -1016,7 +1015,7 @@ wps.ui.prototype.activateTab = function(link) {
     ul.children().removeClass("active");
     link.parent().addClass("active");
   }
-  $('#sidebar-content').children().hide();
+  contentDiv.children().hide();
   var tab = link.attr('href');
   $(tab).show();
 };
@@ -1024,11 +1023,13 @@ wps.ui.prototype.activateTab = function(link) {
 wps.ui.prototype.initializeTabs = function() {
   var ul = $('#sidebar-tabs');
   var me = this;
-  var onTabClick = function() {
-    me.activateTab($(this));
+  var onTabClick = function(ul, contentDiv) {
+    me.activateTab($(this), ul, contentDiv);
     return false;
   };
-  ul.find("li.red-ui-tab a").on("click", onTabClick);
+  ul.find("li.red-ui-tab a").on("click", $.proxy(onTabClick, null, ul, $('#sidebar-content')));
+  ul = $('#workspace-tabs');
+  ul.find("li.red-ui-tab a").on("click", $.proxy(onTabClick, null, ul, $('#workspace-content')));
 };
 
 // get the input values for a process
