@@ -72,7 +72,7 @@ a.brand span {
    background: #e3e3e3;
    position: absolute;
    bottom:0px;
-   top: 0px;
+   top: 30px;
    left:0px;
    right:0px;
 }
@@ -770,7 +770,7 @@ div.node-info {
     position: absolute;
     top: 0;
     right: 0;
-    height: 29px;
+    height: 28px;
     width: 28px;
     border-bottom: 1px solid #999;
 }
@@ -781,9 +781,6 @@ div.node-info {
     height: 100%;
     line-height: 28px;
     text-align: center;
-}
-#btn-workspace-add-tab:hover {
-    background: #efefef;
 }
 
 ul.red-ui-tabs {
