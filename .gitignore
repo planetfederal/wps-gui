@@ -1,2 +1,4 @@
 build
 components
+dist
+node_modules

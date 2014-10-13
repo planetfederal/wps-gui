@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="stylesheet" type="text/css" href="style.css">
-    <link rel="stylesheet" href="ol.css" type="text/css">
+    <link rel="stylesheet" href="vendor/ol.css" type="text/css">
     <link rel="stylesheet" href="components/bootstrap/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="components/jquery-ui/themes/flick/jquery-ui.css">
     <link rel="stylesheet" href="components/font-awesome/css/font-awesome.min.css">
@@ -74,28 +74,8 @@
 
     <div id="dialog" class="hide"><form id="dialog-form" class="form-horizontal"></form></div>
 
-    <script src="ol.js"></script>
-    <script src="components/jquery/dist/jquery.min.js"></script>
-    <script src="components/bootstrap/dist/js/bootstrap.min.js"></script>
-    <script src="components/jquery-ui/jquery-ui.js"></script>
-    <script src="components/d3/d3.min.js" charset="utf-8"></script>
-    <script src="components/jsonix/dist/Jsonix-all.js"></script>
-    <script src="mappings/XLink_1_0.js"></script>
-    <script src="mappings/OWS_1_1_0.js"></script>
-    <script src="mappings/WPS_1_0_0.js"></script>
-    <script src="mappings/Filter_2_0.js"></script>
-
-    <script src="mappings/Filter_1_1_0.js"></script>
-    <script src="mappings/GML_2_1_2.js"></script>
-    <script src="mappings/OWS_1_0_0.js"></script>
-    <script src="mappings/WFS_1_1_0.js"></script>
-
-    <script src="mappings/GML_3_1_1.js"></script>
-    <script src="mappings/SMIL_2_0_Language.js"></script>
-    <script src="mappings/SMIL_2_0.js"></script>
-    <script src="mappings/WCS_1_1.js"></script>
-    <script src="wpsclient.js"></script>
-    <script src="wpsui.js"></script>
+    <script src="vendor/ol.js"></script>
+    <script src="dist/wps-gui.js"></script>
     <script>
         var url = '/geoserver/wps';
         var wpsclient = new wps.client({

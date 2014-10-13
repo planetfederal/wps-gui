@@ -6,6 +6,7 @@
 run
 
     bower install
+    gulp
 
 ## License
 
