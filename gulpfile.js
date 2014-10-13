@@ -7,9 +7,9 @@ var gulp = require('gulp'),
     gp_uglify = require('gulp-uglify');
 
 gulp.task('cssbuild', function() {
-    gulp.src(['*.png'])
+    gulp.src(['src/*.png'])
       .pipe(gulp.dest('dist'));
-    gulp.src(['vendor/ol.css', 'style.css'])
+    gulp.src(['vendor/ol.css', 'src/style.css'])
       .pipe(gp_filter('**/*.css'))
       .pipe(gp_concat('wps-gui.css'))
       .pipe(gulp.dest('dist'))
@@ -19,7 +19,7 @@ gulp.task('cssbuild', function() {
 });
 
 gulp.task('jsbuild', function(){
-    gulp.src(gp_bower_files().concat(['mappings/*.js', 'wpsclient.js', 'wpsui.js']))
+    gulp.src(gp_bower_files().concat(['src/mappings/*.js', 'src/wpsclient.js', 'src/wpsui.js']))
         .pipe(gp_filter('**/*.js'))
         .pipe(gp_concat('wps-gui.js'))
         .pipe(gulp.dest('dist'))
