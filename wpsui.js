@@ -1713,6 +1713,9 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
         }
         return match;
       };
+      if (src._parent === dst._parent) {
+        return;
+      }
       if (src.type === 'input') {
         if (!checkMatch(src, dst)) {
           return;
