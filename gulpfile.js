@@ -29,6 +29,6 @@ gulp.task('jsbuild', function(){
 });
 
 gulp.watch('src/*.js', ['jsbuild']);
-gulp.watch('src/*.css', ['cssbuild']);
+gulp.watch(['src/*.css', 'vendor/*.css'], ['cssbuild']);
 
 gulp.task('default', ['jsbuild', 'cssbuild'], function(){});
