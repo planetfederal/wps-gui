@@ -973,6 +973,9 @@ wps.ui.prototype.resizeMaps = function() {
   for (var key in me.inputMaps) {
     me.inputMaps[key].map.updateSize();
   }
+  if (me.outputMap) {
+    me.outputMap.updateSize();
+  }
 };
 
 wps.ui.prototype.initializeSplitter = function() {
@@ -1223,11 +1226,11 @@ wps.ui.prototype.execute = function(ui) {
           },
           success: function(output) {
             if ($.isArray(output.result)) {
-              $('#tab-results').html('<div id="map" style="width: 300px; height: 300px"></div>');
+              $('#tab-results').html('<div id="map" class="output-map"></div>');
               ui.activateTab('tab-results');
               var source = new ol.source.Vector();
               var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
-              var map = new ol.Map({
+              ui.outputMap = new ol.Map({
                 target: 'map',
                 layers: [
                   new ol.layer.Tile({
@@ -1250,14 +1253,14 @@ wps.ui.prototype.execute = function(ui) {
                 })
               });
               source.addFeatures(output.result);
-              var view = map.getView();
+              var view = ui.outputMap.getView();
               var extent = source.getExtent();
               if (extent[0] === extent[2]) {
                 view.setCenter([extent[0], extent[1]]);
                 view.setZoom(8);
               } else {
                 view.fitExtent(
-                  source.getExtent(), map.getSize());
+                  source.getExtent(), ui.outputMap.getSize());
               }
             } else {
               if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {

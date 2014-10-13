@@ -944,8 +944,14 @@ i.spinner {
 }
 .input-map {
     margin-left: 2%;
-    width:95%;
-    height:200px;
-    border:1px black solid;
+    width: 95%;
+    height: 200px;
+    clear: both;
+}
+.output-map {
+    margin-top: 2%;
+    margin-left: 2%;
+    width: 95%;
+    height: 95%;
     clear: both;
 }
