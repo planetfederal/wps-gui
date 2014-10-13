@@ -126,7 +126,7 @@ wps.process.prototype.configure = function(options) {
       for (i=0, ii=description.dataInputs.input.length; i<ii; ++i) {
         input = description.dataInputs.input[i];
         if (inputs[input.identifier.value] !== undefined) {
-          if (!input.boundingBoxData && toString.call(inputs[input.identifier.value]) === "[object Array]") {
+          if (!input.boundingBoxData && $.isArray(inputs[input.identifier.value])) {
             for (var j=0, jj=inputs[input.identifier.value].length; j<jj; ++j) {
               this.setInputData(input, inputs[input.identifier.value][j]);
             }
@@ -522,8 +522,7 @@ wps.process.prototype.chainProcess = function(input, inputValue, chainLink) {
 };
 
 wps.process.prototype.toFeatures = function(source) {
-  var isArray = toString.call(source) === "[object Array]";
-  if (!isArray) {
+  if (!$.isArray(source)) {
     source = [source];
   }
   return source;

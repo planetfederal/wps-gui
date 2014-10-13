@@ -955,6 +955,6 @@ i.spinner {
     height: 95%;
     clear: both;
 }
-#tab-inputs {
+#tab-inputs, #tab-results {
     height: 100%;
 }

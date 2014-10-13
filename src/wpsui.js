@@ -1199,7 +1199,7 @@ wps.ui.prototype.execute = function(ui) {
                 inputs[key] = ui.handleLocal(values[key]);
               }
             } else {
-              if (toString.call(values[key]) === "[object Array]") { 
+              if ($.isArray(values[key])) {
                 for (i=0, ii=values[key].length; i<ii; ++i) { 
                   values[key][i] = ui.handleLocal(values[key][i]);
                 } 
