@@ -290,7 +290,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     hasMap = true;
     id = "input-map-" + node._parent;
-    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
+    html += '<div id="' + id + '" class="input-map"></div>';
     html += '<div class="btn-group">';
     html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
     html += 'Edit <span class="caret"></span>';
@@ -968,6 +968,13 @@ wps.ui.prototype.resizeTabs = function() {
   tabs.css({width:pct+"%"});
 };
 
+wps.ui.prototype.resizeMaps = function() {
+  var me = this;
+  for (var key in me.inputMaps) {
+    me.inputMaps[key].map.updateSize();
+  }
+};
+
 wps.ui.prototype.initializeSplitter = function() {
   var sidebarSeparator =  {};
   var me = this;
@@ -987,6 +994,7 @@ wps.ui.prototype.initializeSplitter = function() {
       $("#workspace").css("right",newChartRight);
       $("#chart-zoom-controls").css("right",newChartRight+20);
       $("#sidebar").width(newSidebarWidth);
+      me.resizeMaps();
       me.resizeTabs();
     },
     stop:function(event,ui) {

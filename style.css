@@ -942,3 +942,10 @@ i.spinner {
 .btn-clear-div {
     margin-left: 10px;
 }
+.input-map {
+    margin-left: 2%;
+    width:95%;
+    height:200px;
+    border:1px black solid;
+    clear: both;
+}
