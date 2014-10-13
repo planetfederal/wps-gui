@@ -6,7 +6,12 @@
 run
 
     bower install
+    node install
     gulp
+
+WAR file
+
+    ant clean war
 
 ## License
 
