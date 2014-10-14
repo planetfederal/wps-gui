@@ -6,13 +6,23 @@
             <fileset dir="."/>
         </copy>
     </target>
-    <target name="war" depends="copy">
+    <target name="docs">
+      <exec executable="make">
+        <arg line="-C docs -f Makefile html"/>
+      </exec>
+    </target>
+    <target name="cleandocs">
+      <exec executable="make">
+        <arg line="-C docs -f Makefile clean"/>
+      </exec>
+    </target>
+    <target name="war" depends="docs,copy">
         <property name="warfile" value="wps-gui"/> 
         <war needxmlfile="false" destfile="${build}/${ant.project.name}.war">
             <fileset dir="${build}/${ant.project.name}"/>
         </war>
     </target>
-    <target name="clean">
+    <target name="clean" depends="cleandocs">
         <delete dir="${build}"/>
     </target>
 </project>
