@@ -19,7 +19,7 @@ gulp.task('cssbuild', function() {
 });
 
 gulp.task('jsbuild', function(){
-    gulp.src(gp_bower_files().concat(['vendor/vkbeautify.js', 'src/mappings/*.js', 'src/wpsclient.js', 'src/wpsui.js']))
+    gulp.src(gp_bower_files().concat(['vendor/highlight/highlight.pack.js', 'vendor/vkbeautify.js', 'src/mappings/*.js', 'src/wpsclient.js', 'src/wpsui.js']))
         .pipe(gp_filter('**/*.js'))
         .pipe(gp_concat('wps-gui.js'))
         .pipe(gulp.dest('dist'))

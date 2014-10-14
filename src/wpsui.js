@@ -1224,17 +1224,22 @@ wps.ui.prototype.execute = function(ui) {
 
         recurse(inputs, ui, values);
 
+        var prettyXML = function(body) {
+          var code = $('#tab-xml pre code').get(0);
+          $(code).html(document.createTextNode(vkbeautify.xml(body, 4)));
+          hljs.highlightBlock(code);
+        };
+
         process.execute({
           inputs: inputs,
-          failure: function(exception) {
+          failure: function(exception, body) {
+            prettyXML(body);
             // TODO show this in the debug tab instead
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
           success: function(output, body) {
-            var code = $('#tab-xml pre code').get(0);
-            $(code).html(document.createTextNode(vkbeautify.xml(body, 4)));
-            hljs.highlightBlock(code);
+            prettyXML(body);
             if ($.isArray(output.result)) {
               $('#tab-results').html('<div id="map" class="output-map"></div>');
               ui.activateTab('tab-results');

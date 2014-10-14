@@ -8,6 +8,8 @@ wps.htmlEncode = function(value) {
 };
 
 wps.hiddenForm = function(unmarshaller, options, url, fields) {
+  // TODO success or failure handler will not be triggered on TIFF download
+  // so XML view will not be updated
   if ($('#hiddenform-iframe').length) {
     $('#hiddenform-iframe').remove();
   }
@@ -18,10 +20,10 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
     if (options.success) {
       var outputs = {};
       outputs[options.output || 'result'] = '';
-      options.success.call(options.scope, outputs);
+      options.success.call(options.scope, outputs, fields.body);
     }
     if (options.failure) {
-      options.failure.call(options.scope, exception);
+      options.failure.call(options.scope, exception, fields.body);
     }
   });
   if ($('#hiddenform-form').length) {
@@ -197,7 +199,7 @@ wps.process.prototype.execute = function(options) {
               var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
               var exception = wps.client.getExceptionText(info);
               if (options.failure) {
-                options.failure.call(options.scope, exception);
+                options.failure.call(options.scope, exception, body);
                 return;
               }
             }
