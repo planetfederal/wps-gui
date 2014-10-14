@@ -624,6 +624,7 @@ wps.ui = function(options) {
       width: 1
     })
   });
+  $('#btn-help').click(this.showHelp);
   $('#btn-clear').click($.proxy(this.clear, null, this));
   $('#btn-run-process').click($.proxy(this.execute, null, this));
   d3.select(window).on("keydown",function() {
@@ -1139,6 +1140,10 @@ wps.ui.prototype.processAlgorithm = function(processId) {
       }
     }
   }
+};
+
+wps.ui.prototype.showHelp = function() {
+  window.open('docs/build/html/usage.html', 'help');
 };
 
 wps.ui.prototype.clear = function(ui) {
