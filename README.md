@@ -5,8 +5,8 @@
 
 run
 
+    npm install
     bower install
-    node install
     gulp
 
 WAR file
