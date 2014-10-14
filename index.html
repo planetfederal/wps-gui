@@ -62,7 +62,7 @@
               </div>
             </div>
           </div>
-          <div id="tab-xml" style="display:none"></div>
+          <div id="tab-xml" style="display:none"><pre><code class="xml"></code></pre></div>
         </div>
     </div>
 
@@ -82,7 +82,8 @@
     <div id="dialog" class="hide"><form id="dialog-form" class="form-horizontal"></form></div>
 
     <script src="vendor/ol.js"></script>
-    <script src="dist/wps-gui.min.js"></script>
+    <script src="vendor/highlight/highlight.pack.js"></script>
+    <script src="dist/wps-gui.js"></script>
     <script>
         var url = '/geoserver/wps';
         var wpsclient = new wps.client({

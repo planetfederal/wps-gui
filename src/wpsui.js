@@ -1008,6 +1008,12 @@ wps.ui.prototype.initializeSplitter = function() {
 };
 
 wps.ui.prototype.activateTab = function(link, ul, contentDiv) {
+  if (ul === undefined) {
+    ul = $('#sidebar-tabs');
+  }
+  if (contentDiv === undefined) {
+    contentDiv = $('#sidebar-content');
+  }
   if (typeof link === "string") {
     link = ul.find("a[href='#"+link+"']");
   }
@@ -1225,7 +1231,10 @@ wps.ui.prototype.execute = function(ui) {
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
-          success: function(output) {
+          success: function(output, body) {
+            var code = $('#tab-xml pre code').get(0);
+            $(code).html(document.createTextNode(vkbeautify.xml(body, 4)));
+            hljs.highlightBlock(code);
             if ($.isArray(output.result)) {
               $('#tab-results').html('<div id="map" class="output-map"></div>');
               ui.activateTab('tab-results');

@@ -959,5 +959,5 @@ i.spinner {
     height: 100%;
 }
 #tab-xml {
-    background-color: black;
+    overflow-y: auto;
 }

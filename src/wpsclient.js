@@ -249,7 +249,7 @@ wps.process.prototype.execute = function(options) {
             if (options.success) {
               var outputs = {};
               outputs[options.output || 'result'] = result;
-              options.success.call(options.scope, outputs);
+              options.success.call(options.scope, outputs, body);
             }
           };
           xmlhttp.send(body);
