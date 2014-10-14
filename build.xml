@@ -2,8 +2,18 @@
 <project name="wps-gui">
     <property name="build" location="build"/>
     <target name="copy">
-        <copy todir="${build}/${ant.project.name}">
-            <fileset dir="."/>
+        <copy file="index.html" todir="${build}/${ant.project.name}"/>
+        <copy todir="${build}/${ant.project.name}/dist">
+            <fileset dir="dist"/>
+        </copy>
+        <copy todir="${build}/${ant.project.name}/components">
+            <fileset dir="components"/>
+        </copy>
+        <copy todir="${build}/${ant.project.name}/vendor">
+            <fileset dir="vendor"/>
+        </copy>
+        <copy todir="${build}/${ant.project.name}/docs/build/html">
+          <fileset dir="docs/build/html"/>
         </copy>
     </target>
     <target name="docs">
