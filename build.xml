@@ -11,16 +11,29 @@
         <arg line="-C docs -f Makefile html"/>
       </exec>
     </target>
-    <target name="cleandocs">
-      <exec executable="make">
-        <arg line="-C docs -f Makefile clean"/>
+    <target name="npm">
+      <exec executable="npm">
+        <arg line="install"/>
+      </exec>
+      <exec executable="bower">
+        <arg line="install"/>
       </exec>
     </target>
-    <target name="war" depends="docs,copy">
+    <target name="bower">
+      <exec executable="bower">
+        <arg line="install"/>
+      </exec>
+    </target>
+    <target name="war" depends="npm,bower,docs,copy">
         <property name="warfile" value="wps-gui"/> 
         <war needxmlfile="false" destfile="${build}/${ant.project.name}.war">
             <fileset dir="${build}/${ant.project.name}"/>
         </war>
+    </target>
+    <target name="cleandocs">
+      <exec executable="make">
+        <arg line="-C docs -f Makefile clean"/>
+      </exec>
     </target>
     <target name="clean" depends="cleandocs">
         <delete dir="${build}"/>
