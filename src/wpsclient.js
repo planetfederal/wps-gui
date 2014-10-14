@@ -7,9 +7,7 @@ wps.htmlEncode = function(value) {
   return !value ? value : String(value).replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 };
 
-wps.hiddenForm = function(unmarshaller, options, url, fields) {
-  // TODO success or failure handler will not be triggered on TIFF download
-  // so XML view will not be updated
+wps.hiddenForm = function(unmarshaller, options, url, fields, body) {
   if ($('#hiddenform-iframe').length) {
     $('#hiddenform-iframe').remove();
   }
@@ -17,13 +15,8 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
   $('#hiddenform-iframe').on('load', function(evt) {
     var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
     var exception = wps.client.getExceptionText(info);
-    if (options.success) {
-      var outputs = {};
-      outputs[options.output || 'result'] = '';
-      options.success.call(options.scope, outputs, fields.body);
-    }
     if (options.failure) {
-      options.failure.call(options.scope, exception, fields.body);
+      options.failure.call(options.scope, exception, body);
     }
   });
   if ($('#hiddenform-form').length) {
@@ -34,6 +27,11 @@ wps.hiddenForm = function(unmarshaller, options, url, fields) {
     $('#hiddenform-form').append('<input type="text" class="x-hidden" id="' + 'hiddenform-' + values[0] + '" name="'+values[0]+'" value="'+wps.htmlEncode(values[1])+'" />');
   });
   $('form#hiddenform-form').submit();
+  if (options.success) {
+    var outputs = {};
+    outputs[options.output || 'result'] = '';
+    options.success.call(options.scope, outputs, body);
+  }
 };
 
 wps.process = function(options) {
@@ -187,7 +185,7 @@ wps.process.prototype.execute = function(options) {
         var body = me.client.marshaller.marshalString(me.info);
         if (hasTiffOutput) {
           new wps.hiddenForm(me.client.unmarshaller, options, me.client.servers[me.server].url,
-              [['body', body]]);
+              [['body', body]], body);
         } else {
           var xmlhttp = new XMLHttpRequest();
           xmlhttp.open('POST', me.client.servers[me.server].url, true);
