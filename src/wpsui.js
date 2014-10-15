@@ -1164,6 +1164,7 @@ wps.ui.prototype.clear = function(ui) {
   ui.nodes = [];
   $('#tab-inputs').html('');
   $('#tab-results').html('');
+  $('#tab-xml pre code').html('');
   ui.redraw();
 };
 

@@ -958,6 +958,8 @@ i.spinner {
 #workspace-content, #tab-xml {
     height: 100%;
 }
-#tab-xml {
+#tab-xml pre {
+    height: 90%;
     overflow-y: auto;
+    background-color: #f0f0f0;
 }
