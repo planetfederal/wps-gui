@@ -1,12 +1,13 @@
 {
   "name": "wps-gui",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "dependencies": {
     "bootstrap": "3.2.0",
     "jquery": "1.11.1",
     "jquery-ui": "1.11.0",
     "d3": "3.4.11",
     "font-awesome": "4.2.0",
-    "jsonix": "highsource/jsonix#55c0667f6f6ce19d45e548c39f9923e14015f310"
+    "jsonix": "highsource/jsonix#55c0667f6f6ce19d45e548c39f9923e14015f310",
+    "vkBeautify": "vkiryukhin/vkBeautify#ecfc3b9e2b911ad8ebd49600c4089aca30619f29"
   }
 }
