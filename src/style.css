@@ -53,6 +53,9 @@ a.brand span {
     font-size: 24px !important;
     color: white;
 }
+.navbar {
+    max-height: 50px;
+}
 .navbar-fixed-top {
     position: absolute !important;
     z-index: 100 !important;
