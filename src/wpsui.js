@@ -735,7 +735,7 @@ wps.ui.node = function(options) {
   // is the input required or not
   this.required = options.required;
   // is the node complete or not
-  this.complete = options.complete;
+  this.complete = options.complete === undefined ? false : options.complete;
   this.value = options.value;
 };
 
