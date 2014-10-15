@@ -293,19 +293,27 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<div id="' + id + '" class="input-map"></div>';
     html += '<div class="btn-group">';
     html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
-    html += 'Edit <span class="caret"></span>';
+    html += 'Draw <span class="caret"></span>';
     html += '</button>';
     html += '<ul class="dropdown-menu" role="menu">';
     if (rasterLayer !== true) {
       html += '<li role="presentation"><a id="draw-polygon" href="#">Draw Polygon</a></li>';
       html += '<li role="presentation"><a id="draw-line" href="#">Draw LineString</a></li>';
       html += '<li role="presentation"><a id="draw-point" href="#">Draw Point</a></li>';
-      html += '<li role="presentation" class="divider"></li>';
     }
-    html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
-    html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
     html += '</ul>';
     html += '</div>';
+    if (rasterLayer || vectorLayer) {
+      html += '<div class="btn-group">';
+      html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
+      html += 'Filter <span class="caret"></span>';
+      html += '</button>';
+      html += '<ul class="dropdown-menu" role="menu">';    
+      html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
+      html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
+      html += '</ul>';
+      html += '</div>';
+    }
     html += '</div></div>'; // end map-pane, tab-content
   } else if (node._info.boundingBoxData) {
 
