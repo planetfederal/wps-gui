@@ -1906,6 +1906,9 @@ wps.ui.nodeMouseDown = function(ui, d) {
   if (!d.selected) {
     me.clearSelection();
   }
+  if (me.mousedownNode.type !== 'input') {
+    $('#tab-inputs').html('');
+  }
   me.mousedownNode.selected = true;
   me.movingSet.push({n:me.mousedownNode});
   me.selectedLink = null;
