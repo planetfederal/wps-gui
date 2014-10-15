@@ -10,3 +10,5 @@ WPS GUI uses the following libraries:
  * Font Awesome: http://fontawesome.io
  * OpenLayers 3: http://openlayers.org
  * JSONIX: http://confluence.highsource.org/display/JSNX/Jsonix
+ * vkBeautify: https://github.com/vkiryukhin/vkBeautify
+ * highlight.js: https://highlightjs.org
