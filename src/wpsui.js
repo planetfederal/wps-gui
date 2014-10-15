@@ -103,6 +103,13 @@ wps.editor.prototype.setValue = function(geom, id, val) {
   node._geom = geom;
   if (geom !== true && formField.length > 0) {
     value = formField.val();
+    if (value.indexOf(wps.VECTORLAYER) !== -1 || value.indexOf(wps.RASTERLAYER) !== -1) {
+      $('#bbox-filter-clear').parent().removeClass('disabled');
+      $('#bbox-filter').parent().removeClass('disabled');
+    } else {
+      $('#bbox-filter-clear').parent().addClass('disabled');
+      $('#bbox-filter').parent().addClass('disabled');
+    }
     if (value.indexOf(wps.VECTORLAYER) !== -1) {
       this.addVectorLayer(id, node, value);
     }
@@ -127,6 +134,8 @@ wps.editor.prototype.setValue = function(geom, id, val) {
       }
     }
   } else if (node._info.boundingBoxData) {
+    node.value = val;
+  } else if (id === false) {
     node.value = val;
   }
   ui.afterSetValue(node);
@@ -309,9 +318,13 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
       html += 'Filter <span class="caret"></span>';
       html += '</button>';
-      html += '<ul class="dropdown-menu" role="menu">';    
-      html += '<li role="presentation"><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
-      html += '<li role="presentation"><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
+      html += '<ul class="dropdown-menu" role="menu">';
+      var disabled = '';
+      if (!(typeof node.value === 'string' && node.value.split('|').length >= 2)) {
+        disabled = 'class="disabled"';
+      }
+      html += '<li role="presentation" ' + disabled + '><a id="bbox-filter" href="#">Filter by BBOX</a></li>';
+      html += '<li role="presentation" ' + disabled + '><a id="bbox-filter-clear" href="#">Clear BBOX filter</a></li>';
       html += '</ul>';
       html += '</div>';
     }
@@ -568,7 +581,7 @@ wps.editor.prototype.showEditForm = function(node) {
         var node = selection.datum();
         me.ui_.inputMaps[mapId].source.clear();
         var values = node.value.split('|');
-        node.value = values[0] + '|' + values[1];
+        me.setValue(false, false, values[0] + '|' + values[1]);
       }
     });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
