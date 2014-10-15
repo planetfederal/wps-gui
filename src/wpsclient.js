@@ -628,14 +628,20 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
     var featureTypes = [];
-    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
-    for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
-      var featureType = {};
-      var ft = info.featureTypeList.featureType[i];
-      featureType.name = ft.name;
-      featureType.lowerCorner = ft.wgs84BoundingBox[0].lowerCorner;
-      featureType.upperCorner = ft.wgs84BoundingBox[0].upperCorner;
-      featureTypes.push(featureType);
+    if (this.responseXML !== null) {
+      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
+        var featureType = {};
+        var ft = info.featureTypeList.featureType[i];
+        featureType.name = ft.name;
+        featureType.lowerCorner = ft.wgs84BoundingBox[0].lowerCorner;
+        featureType.upperCorner = ft.wgs84BoundingBox[0].upperCorner;
+        featureTypes.push(featureType);
+      }
+    } else {
+      if (window.console) {
+        window.console.debug('There was an error loading WFS 1.1.0 GetCapabilities from: ' + server.url);
+      }
     }
     callback.call(me, featureTypes);
   };
@@ -650,23 +656,29 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
     var coverages = [];
-    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
-    for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
-      // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
-      // TODO see if we can clear this up later
-      var coverage = {};
-      for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
-        var content = info.contents.coverageSummary[i].content[j];
-        if (content.name.localPart === "Identifier") {
-          coverage.name = content.value;
+    if (this.responseXML !== null) {
+      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
+        // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
+        // TODO see if we can clear this up later
+        var coverage = {};
+        for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
+          var content = info.contents.coverageSummary[i].content[j];
+          if (content.name.localPart === "Identifier") {
+            coverage.name = content.value;
+          }
+          if (content.name.localPart === "WGS84BoundingBox") {
+            coverage.lowerCorner = content.value.lowerCorner;
+            coverage.upperCorner = content.value.upperCorner;
+          }
+          if (coverage.name && coverage.lowerCorner && coverage.upperCorner) {
+            coverages.push(coverage);
+          }
         }
-        if (content.name.localPart === "WGS84BoundingBox") {
-          coverage.lowerCorner = content.value.lowerCorner;
-          coverage.upperCorner = content.value.upperCorner;
-        }
-        if (coverage.name && coverage.lowerCorner && coverage.upperCorner) {
-          coverages.push(coverage);
-        }
+      }
+    } else {
+      if (window.console) {
+        window.console.debug('There was an error loading WCS 1.1.0 GetCapabilities from: ' + server.url);
       }
     }
     callback.call(me, coverages);
@@ -681,18 +693,22 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
   var me = this;
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
-    var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
-    var groups = {};
-    for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
-      var key = info.processOfferings.process[i].identifier.value;
-      var names = key.split(':');
-      var group = names[0];
-      if (!groups[group]) {
-        groups[group] = [];
+    if (this.responseXML !== null) {
+      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      var groups = {};
+      for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
+        var key = info.processOfferings.process[i].identifier.value;
+        var names = key.split(':');
+        var group = names[0];
+        if (!groups[group]) {
+          groups[group] = [];
+        }
+        groups[group].push({name: names[1], value: info.processOfferings.process[i]});
       }
-      groups[group].push({name: names[1], value: info.processOfferings.process[i]});
+      callback.call(me, groups);
+    } else {
+      alert('There was an error loading the WPS GetCapabilities document from: ' + server.url);
     }
-    callback.call(me, groups);
   };
   xmlhttp.send();
 };
