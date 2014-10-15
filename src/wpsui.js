@@ -90,9 +90,9 @@ wps.editor.prototype.addVectorLayer = function(id, node, value) {
 };
 
 wps.editor.prototype.setValue = function(geom, id, val) {
-  var me = this, ui = this.ui_;
-  var name = me.editingNode_._info.identifier.value;
-  var processId = me.editingNode_._parent;
+  var me = this, ui = this.ui_, node = me.editingNode_;
+  var name = node._info.identifier.value;
+  var processId = node._parent;
   var formField;
   if (id) {
     formField = $('#' + id);
@@ -100,13 +100,14 @@ wps.editor.prototype.setValue = function(geom, id, val) {
     formField = $('#' + wps.editor.PREFIX + processId + '-' + name);
   }
   var value;
+  node._geom = geom;
   if (geom !== true && formField.length > 0) {
     value = formField.val();
     if (value.indexOf(wps.VECTORLAYER) !== -1) {
-      this.addVectorLayer(id, me.editingNode_, value);
+      this.addVectorLayer(id, node, value);
     }
     if (value.indexOf(wps.RASTERLAYER) !== -1) {
-      this.addRasterLayer(id, me.editingNode_, value);
+      this.addRasterLayer(id, node, value);
     }
     if (id.indexOf('-txt') !== -1) {
       if (value.indexOf('>') !== -1) {
@@ -116,19 +117,19 @@ wps.editor.prototype.setValue = function(geom, id, val) {
     if (value !== wps.editor.DRAW) {
       if (value.indexOf(wps.VECTORLAYER) !== -1) {
         // check if node has a BBOX filter on it
-        if (me.editingNode_.value && me.editingNode_.value.split('|').length === 3) {
-          me.editingNode_.value = value + '|' + me.editingNode_.value.split('|')[2];
+        if (node.value && node.value.split('|').length === 3) {
+          node.value = value + '|' + node.value.split('|')[2];
         }  else {
-          me.editingNode_.value = value;
+          node.value = value;
         }
       } else {
-        me.editingNode_.value = value;
+        node.value = value;
       }
     }
-  } else if (me.editingNode_._info.boundingBoxData) {
-    me.editingNode_.value = val;
+  } else if (node._info.boundingBoxData) {
+    node.value = val;
   }
-  ui.afterSetValue(me.editingNode_);
+  ui.afterSetValue(node);
 };
 
 wps.editor.prototype.validateNodeProperty = function(info, value) {
@@ -237,7 +238,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     html += '</div>';
 
-    value = (node.value === undefined || node.value.indexOf(wps.VECTORLAYER) !== -1) ? '' : node.value;
+    value = (node._geom === true || node.value === undefined || node.value.indexOf(wps.VECTORLAYER) !== -1) ? '' : node.value;
     if (rasterLayer === false) {
       html += '<div class="form-row" id="' + name + '-field">';
       if ($.isXMLDoc(value)) {
