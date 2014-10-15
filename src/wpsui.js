@@ -16,7 +16,6 @@ var projection = new ol.proj.Projection({
 });
 ol.proj.addProjection(projection);
 
-wps.editor.DRAW = "_DRAW_";
 wps.editor.PREFIX = "node-input-";
 wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
@@ -121,17 +120,15 @@ wps.editor.prototype.setValue = function(geom, id, val) {
         value = jQuery.parseXML(value);
       }
     }
-    if (value !== wps.editor.DRAW) {
-      if (value.indexOf(wps.VECTORLAYER) !== -1) {
-        // check if node has a BBOX filter on it
-        if (node.value && node.value.split('|').length === 3) {
-          node.value = value + '|' + node.value.split('|')[2];
-        }  else {
-          node.value = value;
-        }
-      } else {
+    if (value.indexOf(wps.VECTORLAYER) !== -1) {
+      // check if node has a BBOX filter on it
+      if (node.value && node.value.split('|').length === 3) {
+        node.value = value + '|' + node.value.split('|')[2];
+      }  else {
         node.value = value;
       }
+    } else {
+      node.value = value;
     }
   } else if (node._info.boundingBoxData) {
     node.value = val;
@@ -283,9 +280,8 @@ wps.editor.prototype.showEditForm = function(node) {
       }
     }
     else if (vectorLayer === true && this.ui_.featureTypes) {
-      html += '<p class="form-row"><small>Draw or Select from existing:</small></p>';
+      html += '<p class="form-row"><small>Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
-      html += '<option value="' + wps.editor.DRAW + '">Draw</option>';
       prefix = wps.VECTORLAYER;
       values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
@@ -301,19 +297,20 @@ wps.editor.prototype.showEditForm = function(node) {
     hasMap = true;
     id = "input-map-" + node._parent;
     html += '<div id="' + id + '" class="input-map"></div>';
-    html += '<div class="btn-group">';
-    html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
-    html += 'Draw <span class="caret"></span>';
-    html += '</button>';
-    html += '<ul class="dropdown-menu" role="menu">';
-    if (rasterLayer !== true) {
-      html += '<li role="presentation"><a id="draw-polygon" href="#">Draw Polygon</a></li>';
-      html += '<li role="presentation"><a id="draw-line" href="#">Draw LineString</a></li>';
-      html += '<li role="presentation"><a id="draw-point" href="#">Draw Point</a></li>';
-    }
-    html += '</ul>';
-    html += '</div>';
-    if (rasterLayer || vectorLayer) {
+    if (!rasterLayer && !vectorLayer) {
+      html += '<div class="btn-group">';
+      html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
+      html += 'Draw <span class="caret"></span>';
+      html += '</button>';
+      html += '<ul class="dropdown-menu" role="menu">';
+      if (rasterLayer !== true) {
+        html += '<li role="presentation"><a id="draw-polygon" href="#">Draw Polygon</a></li>';
+        html += '<li role="presentation"><a id="draw-line" href="#">Draw LineString</a></li>';
+        html += '<li role="presentation"><a id="draw-point" href="#">Draw Point</a></li>';
+      }
+      html += '</ul>';
+      html += '</div>';
+    } else {
       html += '<div class="btn-group">';
       html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
       html += 'Filter <span class="caret"></span>';
