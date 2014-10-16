@@ -1097,6 +1097,17 @@ wps.ui.prototype.getInputNodes = function(processId) {
   return result;
 };
 
+wps.ui.prototype.getAllNodes = function(processId) {
+  var result = [];
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if ((n.type === 'output' || n.type === 'input') && n._parent === processId) {
+      result.push(n);
+    }
+  }
+  return result;
+};
+
 // get a list of processes that this process depends on
 wps.ui.prototype.getDependsOnAlgorithms = function(processId, deps) {
   if (!deps) {
@@ -1341,6 +1352,18 @@ wps.ui.prototype.execute = function(ui) {
   }
 };
 
+wps.ui.prototype.checkSubLinkForDelete = function(link, process) { 
+  var nodes = this.getAllNodes(process);
+  var result = false;
+  for (var i=0, ii=nodes.length; i<ii; ++i) { 
+    if (nodes[i].id === link.source || nodes[i].id === link.target) { 
+      result = true;
+      break;
+    }
+  }
+  return result;
+};
+
 wps.ui.prototype.deleteSelection = function() {
   var redraw = false;
   if (this.selectedLink !== null) {
@@ -1368,7 +1391,9 @@ wps.ui.prototype.deleteSelection = function() {
       $('#tab-results').html('');
       this.nodes.splice(this.nodes.indexOf(node), 1);
       for (var i=this.nodes.length-1; i>=0; --i) {
-        if (this.nodes[i]._parent === node.id) {
+        if (this.nodes[i] instanceof wps.ui.link && this.checkSubLinkForDelete(this.nodes[i], node.id)) {
+          this.nodes.splice(i, 1);
+        } else if (this.nodes[i]._parent === node.id) {
           this.nodes.splice(i, 1);
         }
       }
