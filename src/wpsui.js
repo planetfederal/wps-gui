@@ -88,8 +88,11 @@ wps.editor.prototype.addVectorLayer = function(id, node, value) {
   map.getView().fitExtent(extent, map.getSize());
 };
 
-wps.editor.prototype.setValue = function(geom, id, val) {
-  var me = this, ui = this.ui_, node = me.editingNode_;
+wps.editor.prototype.setValue = function(geom, id, val, node) {
+  var me = this, ui = this.ui_;
+  if (node === undefined) {
+    node = me.editingNode_;
+  }
   var name = node._info.identifier.value;
   var processId = node._parent;
   var formField;
@@ -696,14 +699,15 @@ wps.ui.link = function(options) {
   this.source = options.source;
   this.target = options.target;
   this._parent = options._parent;
+  this.subprocess = (options.subprocess !== undefined) ? options.subprocess : false;
 };
 
 wps.ui.link.prototype.getState = function() {
-  // TODO see if there is need to serialize the links or they can be recreated
   return {
     source: this.source,
     target: this.target,
-    _parent: this._parent
+    _parent: this._parent,
+    subprocess: this.subprocess
   };
 };
 
@@ -844,14 +848,12 @@ wps.ui.prototype.afterSetValue = function(node) {
       }
     }
   } else {
-    node.complete = true;
+    node.complete = (node.value !== undefined);
   }
   // check if the process is complete as well
-  if (node.complete) {
-    var parentNode = this.parentComplete(node);
-    if (parentNode.dirty) {
-      this.recurse(parentNode);
-    }
+  var parentNode = this.parentComplete(node);
+  if (parentNode.dirty) {
+    this.recurse(parentNode);
   }
   this.redraw();
 };
@@ -1333,6 +1335,16 @@ wps.ui.prototype.execute = function(ui) {
 };
 
 wps.ui.prototype.deleteSelection = function() {
+  var redraw = false;
+  if (this.selectedLink !== null) {
+    var src = this.findNodeById(this.selectedLink.source);
+    var dst = this.findNodeById(this.selectedLink.target);
+    var input = src.type === 'input' ? src : dst;
+    this.editor_.setValue(false, false, undefined, input);
+    this.nodes.splice(this.nodes.indexOf(this.selectedLink), 1);
+    this.selectedLink = null;
+    redraw = true;
+  }
   var selection = d3.selectAll(".node_selected");
   if (selection[0].length > 0) {
     var node = selection.datum();
@@ -1354,6 +1366,9 @@ wps.ui.prototype.deleteSelection = function() {
         }
       }
     }
+    redraw = true;
+  }
+  if (redraw) {
     this.redraw();
   }
 };
@@ -1604,7 +1619,18 @@ wps.ui.prototype.createLinkPaths = function() {
   var linkEnter = link.enter().insert("g",".node").attr("class","link");
   linkEnter.each(function(d,i) {
     var l = d3.select(this);
-    l.append("svg:path").attr("class","link_background link_path");
+    l.append("svg:path").attr("class","link_background link_path").
+    on("mousedown",function(d) {
+      if (!d.subprocess) {
+        return;
+      }
+      me.mousedownLink = d;
+      me.clearSelection();
+      me.selectedLink = me.mousedownLink;
+      me.updateSelection();
+      me.redraw();
+      d3.event.stopPropagation();
+    });
     l.append("svg:path").attr("class","link_outline link_path");
     l.append("svg:path").attr("class","link_line link_path");
   });
@@ -1649,6 +1675,7 @@ wps.ui.prototype.createLinkPaths = function() {
       (target.x-target.w/2-scale*me.nodeWidth)+" "+(target.y-scaleY*me.nodeHeight)+" "+
       (target.x-target.w/2)+" "+target.y;
   });
+  link.classed("link_selected", function(d) { return d === me.selectedLink || d.selected; });
 };
 
 wps.ui.prototype.createExtraInputNode = function() {
@@ -1803,6 +1830,7 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
       var link = new wps.ui.link({
         source: src.id,
         target: dst.id,
+        subprocess: true,
         _parent: dst.id
       });
       ui.nodes.push(link);
