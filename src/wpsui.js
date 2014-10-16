@@ -1036,6 +1036,13 @@ wps.ui.prototype.activateTab = function(link, ul, contentDiv) {
   if (contentDiv === undefined) {
     contentDiv = $('#sidebar-content');
   }
+  if (contentDiv.get(0).id === 'workspace-content') {
+    if (link.html() === 'XML') {
+      $('#chart-zoom-controls').hide();
+    } else {
+      $('#chart-zoom-controls').show();
+    }
+  }
   if (typeof link === "string") {
     link = ul.find("a[href='#"+link+"']");
   }
