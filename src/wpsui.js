@@ -1077,6 +1077,17 @@ wps.ui.prototype.getInputs = function(processId) {
   return values;
 };
 
+wps.ui.prototype.getInputNodes = function(processId) {
+  var result = [];
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if (n.type === 'input' && n._parent === processId) {
+      result.push(n);
+    }
+  }
+  return result;
+};
+
 // get a list of processes that this process depends on
 wps.ui.prototype.getDependsOnAlgorithms = function(processId, deps) {
   if (!deps) {
@@ -1756,17 +1767,34 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
         }
         return match;
       };
+      var isCircular = function(output, input) {
+        var result = false;
+        var processId = output._parent;
+        var list = ui.getDependsOnAlgorithms(processId);
+        for (var i=0, ii=list.length; i<ii; ++i) {
+          var pid = list[i];
+          var nodes = ui.getInputNodes(pid);
+          for (var j=0, jj=nodes.length; j<jj; ++j) {
+            var node = nodes[j];
+            if (node === input) {
+              result = true;
+              break;
+            }
+          }
+        }
+        return result;
+      };
       if (src._parent === dst._parent) {
         return;
       }
       if (src.type === 'input') {
-        if (!checkMatch(src, dst)) {
+        if (isCircular(dst, src) || !checkMatch(src, dst)) {
           return;
         }
         src.value = wps.SUBPROCESS + dst._parent;
         ui.afterSetValue(src);
       } else if (dst.type === 'input') {
-        if (!checkMatch(dst, src)) {
+        if (isCircular(src, dst) || !checkMatch(dst, src)) {
           return;
         }
         dst.value = wps.SUBPROCESS + src._parent;
