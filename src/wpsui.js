@@ -512,7 +512,6 @@ wps.editor.prototype.showEditForm = function(node) {
           this.ui_.inputMaps[mapId].source.removeFeature(remove);
         }
         evt.feature.set('node', node.id);
-        // TODO should we consider adding to any existing features here?
         node.value = new ol.format.WKT().writeFeatures([evt.feature]);
         node.valid = evt.feature;
         if (node.valid) {
@@ -606,12 +605,12 @@ wps.ui = function(options) {
   this.parentContainer_ = options.parentContainer;
   this.dropZone_ = options.dropZone;
   this.client_ = options.client;
+  this.defaultServer_ = options.defaultServer;
   if (options.getVectorLayers === true) {
-    // TODO do not hardcode serverID
-    this.client_.getFeatureTypes('wpsgui', function(featureTypes) {
+    this.client_.getFeatureTypes(this.defaultServer_, function(featureTypes) {
       me.featureTypes = featureTypes;
     });
-    this.client_.getCoverages('wpsgui', function(coverages) {
+    this.client_.getCoverages(this.defaultServer_, function(coverages) {
       me.coverages = coverages;
     });
   }
@@ -786,7 +785,7 @@ wps.ui.load = function(ui, evt, nodes) {
       }
       var node = ui.nodes[i];
       if (node.type === "process") {
-        var process = ui.client_.getProcess('wpsgui', node._info.identifier.value, {callback: $.proxy(function(id) {
+        var process = ui.client_.getProcess(ui.defaultServer_, node._info.identifier.value, {callback: $.proxy(function(id) {
           ui.processes[id] = this;
         }, null, node.id)});
       }
@@ -1575,7 +1574,7 @@ wps.ui.prototype.createDropTarget = function() {
     drop: function( event, ui ) {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
-      var process = me.client_.getProcess('wpsgui', selected_tool, {callback: function(info) {
+      var process = me.client_.getProcess(me.defaultServer_, selected_tool, {callback: function(info) {
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;

@@ -112,6 +112,7 @@
         wpsclient.getGroupedProcesses('wpsgui', function(groups) {
           wpsui = new wps.ui({
             client: wpsclient,
+            defaultServer: 'wpsgui',
             getVectorLayers: true,
             parentContainer: $('.palette-scroll'),
             dropZone: $("#chart")
