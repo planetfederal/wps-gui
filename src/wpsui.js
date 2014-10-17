@@ -7,6 +7,17 @@ wps.editor = function(ui) {
   this.ui_ = ui;
 };
 
+wps.backgroundLayer = new ol.layer.Tile({
+  source: new ol.source.TileWMS({
+    url: "http://maps.opengeo.org/geowebcache/service/wms",
+    params: {
+      'VERSION': '1.1.1',
+      'LAYERS': 'openstreetmap',
+      'FORMAT': 'image/png'
+    }
+  })
+});
+
 // apparently axis order is not what we expect when using WPS
 var projection = new ol.proj.Projection({
   code: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
@@ -424,16 +435,7 @@ wps.editor.prototype.showEditForm = function(node) {
       this.ui_.inputMaps[mapId].map = new ol.Map({
         target: 'input-map-' + mapId,
         layers: [
-          new ol.layer.Tile({
-            source: new ol.source.TileWMS({
-              url: "http://maps.opengeo.org/geowebcache/service/wms",
-              params: {
-                'VERSION': '1.1.1',
-                'LAYERS': 'openstreetmap',
-                'FORMAT': 'image/png'
-              }
-            })
-          }),
+          wps.backgroundLayer,
           this.ui_.inputMaps[mapId].vector
         ],
         view: new ol.View({
@@ -1326,16 +1328,7 @@ wps.ui.prototype.execute = function(ui) {
               ui.outputMap = new ol.Map({
                 target: 'map',
                 layers: [
-                  new ol.layer.Tile({
-                    source: new ol.source.TileWMS({
-                      url: "http://maps.opengeo.org/geowebcache/service/wms",
-                      params: {
-                        'VERSION': '1.1.1',
-                        'LAYERS': 'openstreetmap',
-                        'FORMAT': 'image/png'
-                      }
-                    })
-                  }),
+                  wps.backgroundLayer,
                   vector
                 ],
                 view: new ol.View({
