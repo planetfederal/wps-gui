@@ -720,7 +720,6 @@ wps.ui.link.prototype.getState = function() {
   };
 };
 
-// TODO maybe have separate node classes per type?
 wps.ui.node = function(options) {
   // generate an identifier
   this.id = options.id || (1+Math.random()*4294967295).toString(16).replace('.', '_');
@@ -898,8 +897,6 @@ wps.ui.prototype.importClipboard = function(ui) {
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
-  // TODO: add validation for geom nodes - WKT or GML or geometry on the map?
-
   var node, i, ii;
   for (i=0, ii=this.nodes.length; i<ii; ++i) {
     node = this.nodes[i];
@@ -910,7 +907,6 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   var valid = node.valid;
   var value;
   var nodeEl = $('#' + id);
-  // TODO not sure if this is the best place to do this
   if (node._info.boundingBoxData) {
     value = [
       $('#' + name + '-field-minx').val(),
@@ -940,8 +936,6 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
         break;
       }
     }
-    // TODO do we set the value to the invalid value or not?
-    //this.editor_.setValue();
   } else {
     $('.form-row.input-validate').children('span').remove();
     $(".input-validate").prepend('<span><span class="glyphicon glyphicon-ok"></span> Valid input</span>');
@@ -1299,7 +1293,6 @@ wps.ui.prototype.execute = function(ui) {
           inputs: inputs,
           failure: function(exception, body) {
             prettyXML(body);
-            // TODO show this in the debug tab instead
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
@@ -1361,7 +1354,6 @@ wps.ui.prototype.execute = function(ui) {
     }
   }
   if (!hasSelected) {
-    // TODO replace with proper dialog
     alert('Please select a process node you want to execute');
   }
 };
@@ -1580,7 +1572,6 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] += this.scrollLeft;
         mousePos[1] /= me.scaleFactor;
         mousePos[0] /= me.scaleFactor;
-        /* TODO no workspaces as yet, so z is 0 */
         var config = {
           x: mousePos[0],
           y:mousePos[1],
@@ -1593,7 +1584,6 @@ wps.ui.prototype.createDropTarget = function() {
           label: selected_tool
         };
         var nn = new wps.ui.node(config);
-        // TODO maybe cache per process type?
         me.processes[nn.id] = process;
         var link, i, ii, delta = 50, span = delta * nn.inputs, deltaY = (span-delta)/2;
         var startY = mousePos[1];
@@ -1913,7 +1903,6 @@ wps.ui.prototype.calculateTextWidth = function(str) {
 
 wps.ui.prototype.updateNode = function(d, ui) {
   var me = ui;
-  // TODO check in what cases d.w or d.h are undefined
   if (d.dirty && d.w && d.h) {
     var thisNode = d3.select(this);
     thisNode.attr("transform", function(d) { return "translate(" + (d.x-d.w/2) + "," + (d.y-d.h/2) + ")"; });
@@ -1993,7 +1982,6 @@ wps.ui.prototype.updateSelection = function() {
       }
     }
   }
-  // TODO?
 };
 
 wps.ui.nodeMouseDown = function(ui, d) {

@@ -42,6 +42,7 @@ wps.process = function(options) {
   this.localWPS = 'http://geoserver/wps';
   this.localWFS = 'http://geoserver/wfs';
   this.localWCS = 'http://geoserver/wcs';
+  this.WKT = new ol.format.WKT();
   this.chained = 0;
   for (var prop in options)   {
     if (this.hasOwnProperty(prop)) {
@@ -54,7 +55,7 @@ wps.process = function(options) {
     format: new ol.format.WFS()
   }, {
     mimeType: 'application/wkt',
-    format: new ol.format.WKT()
+    format: this.WKT
   }, {
     mimeType: 'application/json',
     format: new ol.format.GeoJSON()
@@ -87,7 +88,6 @@ wps.process.prototype.isComplete = function(values) {
     var inputs = this.description.dataInputs.input;
     for (var i=0, ii=inputs.length; i<ii; ++i) {
       var input = inputs[i];
-      // TODO do we have processes where the same input needs more than 1?
       if (input.minOccurs > 0) {
         if (values[input.identifier.value] === undefined) {
           hasUndefined = true;
@@ -149,7 +149,6 @@ wps.process.prototype.execute = function(options) {
     inputs: options.inputs,
     callback: function() {
       var me = this;
-      //TODO For now we only deal with a single output
       var outputIndex = this.getOutputIndex(
         me.description.processOutputs.output, options.output);
       me.setResponseForm({outputIndex: outputIndex});
@@ -230,7 +229,6 @@ wps.process.prototype.execute = function(options) {
                 result = this.responseText;
               } else {
                 var mimeType = me.findMimeType(output.complexOutput.supported.format);
-                //TODO For now we assume a spatial output if complexOutput
                 for (var i=0, ii=me.formats.length; i<ii; ++i) {
                   if (me.formats[i].mimeType === mimeType) {
                     try {
@@ -415,8 +413,7 @@ wps.process.prototype.setInputData = function(input, data) {
               if (format === "application/wkt") {
                 content = data;
               } else {
-                // TODO reuse format
-                content = this.formats[i].format.writeFeatures(new ol.format.WKT().readFeatures(data));
+                content = this.formats[i].format.writeFeatures(this.WKT.readFeatures(data));
                 if (format === 'application/json') {
                   content = JSON.stringify(content);
                 }
@@ -660,7 +657,6 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
       var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
       for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
         // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
-        // TODO see if we can clear this up later
         var coverage = {};
         for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
           var content = info.contents.coverageSummary[i].content[j];
@@ -725,23 +721,9 @@ wps.client.prototype.describeProcess = function(serverID, processID, callback, s
       var me = this;
       xmlhttp.onload = function() {
         server.processDescription[processID] = this.responseText;
-        var evt = document.createEvent("Event");
-        evt.initEvent("describeprocess", true, false);
-        evt.identifier = processID;
-        evt.raw = this.responseText;
-        // TODO is there a better target than document?
-        document.dispatchEvent(evt);
         callback.call(scope, this.responseText);
       };
       xmlhttp.send();
-    } else {
-      // pending request
-      document.addEventListener("describeprocess", function describe(evt) {
-        if (evt.identifier === processID) {
-          this.events.unregister('describeprocess', this, describe);
-          callback.call(scope, evt.raw);
-        }
-      }, true);
     }
   } else {
     window.setTimeout(function() {
