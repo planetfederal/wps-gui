@@ -1475,7 +1475,7 @@ wps.ui.canvasMouseMove = function(ui) {
   // MOVING
   else if (me.mouseMode == 1) {
     var d = (me.mouseOffset[0]-mousePos[0])*(me.mouseOffset[0]-mousePos[0]) + (me.mouseOffset[1]-mousePos[1])*(me.mouseOffset[1]-mousePos[1]);
-    if (d > 2) {
+    if (d > 5) {
       // MOVING_ACTIVE
       me.mouseMode = 3;
       me.clickElapsed = 0;
