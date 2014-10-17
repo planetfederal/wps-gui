@@ -1296,10 +1296,26 @@ wps.ui.prototype.execute = function(ui) {
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
-          success: function(output, body) {
+          success: function(output, body, responseText) {
             prettyXML(body);
             if ($.isArray(output.result)) {
-              $('#tab-results').html('<div id="map" class="output-map"></div>');
+              var html = '<button id="btn-download" type="button" class="btn btn-default">';
+              html += '<i class="fa fa-download fa-fw"></i>Download</button>';
+              html += '<div id="map" class="output-map"></div>';
+              $('#tab-results').html(html);
+              $('#btn-download').click(function() {
+                var html = '<div class="form-row">';
+                html += '<label for="features-download" style="width:100%"><i class="glyphicon glyphicon-share"> Features:</i></label>';
+                html += '<textarea readonly class="form-control" id="features-download" rows="5"></textarea>';
+                html += '</div>';
+                html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
+                $("#dialog-form").html(html);
+                $("#dialog").dialog("option", "title", "Download Features").dialog( "open" );
+                // bootstrap's hide class has important, so we need to remove it
+                $("#dialog").removeClass('hide');
+                $("#features-download").val(responseText);
+                $("#features-download").focus();
+              });
               ui.activateTab('tab-results');
               var source = new ol.source.Vector();
               var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
