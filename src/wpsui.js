@@ -314,6 +314,8 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '</ul>';
       html += '</div>';
     } else {
+      html += '<p class="form-row"><p><small>For Filter by BBOX, use the SHIFT key to draw a box.</small></p>';
+      html += '<p class="form-row"><p><small>You first need to pick a layer and press Save.</small></p>';
       html += '<div class="btn-group">';
       html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
       html += 'Filter <span class="caret"></span>';
