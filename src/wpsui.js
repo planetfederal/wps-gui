@@ -18,6 +18,13 @@ wps.backgroundLayer = new ol.layer.Tile({
   })
 });
 
+wps.mapSettings = {
+  projection: 'EPSG:4326',
+  center: [0, 0],
+  zoom: 1,
+  minZoom: 1
+};
+
 // apparently axis order is not what we expect when using WPS
 var projection = new ol.proj.Projection({
   code: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
@@ -438,12 +445,7 @@ wps.editor.prototype.showEditForm = function(node) {
           wps.backgroundLayer,
           this.ui_.inputMaps[mapId].vector
         ],
-        view: new ol.View({
-          projection: 'EPSG:4326',
-          center: [0, 0],
-          zoom: 1,
-          minZoom: 1
-        })
+        view: new ol.View(wps.mapSettings)
       });
       if (node.value && node.value.indexOf('|') === -1) {
         this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
@@ -1331,12 +1333,7 @@ wps.ui.prototype.execute = function(ui) {
                   wps.backgroundLayer,
                   vector
                 ],
-                view: new ol.View({
-                  projection: 'EPSG:4326',
-                  center: [0, 0],
-                  zoom: 1,
-                  minZoom: 1
-                })
+                view: new ol.View(wps.mapSettings)
               });
               source.addFeatures(output.result);
               var view = ui.outputMap.getView();
