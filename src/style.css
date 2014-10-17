@@ -598,7 +598,7 @@ div.form-row-abstract {
 }
 .form-row label {
     display: inline-block;
-    width: 100px;
+    width: 200px;
     margin-top: 10px;
 }
 .form-row input, .form-control {

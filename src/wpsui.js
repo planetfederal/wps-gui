@@ -181,6 +181,10 @@ wps.editor.prototype.showEditForm = function(node) {
   var hasMap = false, bboxTool = false, i, ii;
   // simple input
   var name = node._info.identifier.value;
+  var nameText = name;
+  if (node.required !== true) {
+    nameText += ' (optional)';
+  }
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
   var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
   var selected;
@@ -188,7 +192,7 @@ wps.editor.prototype.showEditForm = function(node) {
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
   if (node._info.literalData) {
     html += '<div class="form-row">';
-    html += '<label for="' + id + '">' + name + '</label></div>';
+    html += '<label for="' + id + '">' + nameText + '</label></div>';
 
     if (node._info.literalData.allowedValues) {
       html += '<select class="form-control input-sm" style="width: 70%;" id="' + id + '">';
@@ -238,7 +242,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
       html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
     }
-    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+    html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label>';
     if (rasterLayer === false) {
       // Optional: add more inputs if process allows
       if (node._info.maxOccurs > 1 && node._info.maxOccurs > node._info.minOccurs) {
@@ -259,7 +263,7 @@ wps.editor.prototype.showEditForm = function(node) {
       html += saveButton;
       // end tab-pane, begin map-pane
       html += '</div><div class="tab-pane active" id="map-input">';
-      html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+      html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label>';
       if (node._info.maxOccurs > 1  && node._info.maxOccurs > node._info.minOccurs) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 geom</button>';
       }
@@ -339,7 +343,7 @@ wps.editor.prototype.showEditForm = function(node) {
 
     html += '<ul class="nav nav-pills nav-justified text-or-map" role="tablist"><li class="active"><a href="#map-input" role="tab" data-toggle="tab">via Map</a></li><li><a href="#text-input" role="tab" data-toggle="tab">via Text</a></li></ul>';
     html += '<div class="tab-content"><div class="tab-pane fade in" id="text-input">';
-    html += '<div class="form-row"><label for="' + id + '">' + name + '</label>';
+    html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label>';
     html += '</div>';
     html += '<p class="form-row"><small>Provide bounding box in <b>EPSG:4326</b></small></p>';
     html += '<div class="form-row" id="' + name + '-field">';
@@ -362,7 +366,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += saveButton;
 
     html += '</div><div class="tab-pane active" id="map-input">';
-    html += '<div class="form-row"><label for="' + id + '">' + name + '</label></div>';
+    html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label></div>';
     html += '<p class="form-row"><p><small>Use the SHIFT key to draw a box.</small></p>';
     html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
     html += '</div></div>';
