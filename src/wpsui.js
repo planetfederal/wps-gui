@@ -629,6 +629,7 @@ wps.ui = function(options) {
   this.mousePosition = null;
   this.selectedLink = null;
   this.mousedownNode = null;
+  this.mousedownLink = null;
   this.createSearch();
   this.createCanvas();
   this.createDropTarget();
@@ -1508,7 +1509,8 @@ wps.ui.canvasMouseUp = function(ui) {
   if (me.mousedownNode && me.mouseMode === 2) {
     me.dragLine.attr("class", "drag_line_hidden");
   }
-  if (me.mouseMode === 0 && me.mousedownLink === null) {
+  if ((me.mouseMode === 0 || me.mouseMode === 5) && me.mousedownLink === null) {
+    $('#tab-inputs').html('');
     me.clearSelection();
     me.updateSelection();
   }
