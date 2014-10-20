@@ -189,7 +189,8 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 };
 
 wps.editor.prototype.showEditForm = function(node) {
-  if (node['type'] !== 'input') {
+  if (node['type'] !== 'input' || (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1)) {
+    $('#tab-inputs').html('');
     return;
   }
   this.editingNode_ = node;
