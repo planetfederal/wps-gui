@@ -480,11 +480,19 @@ wps.editor.prototype.showEditForm = function(node) {
       }, 0);
     }
     if (node.value && node.value.indexOf('|') === -1) {
-      var features = this.WKT_.readFeatures(node.value);
-      for (var j=0, jj=features.length; j<jj; ++j) {
-        features[j].set('node', node.id);
+      var hasFeature = false;
+      this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
+        if (f.get('node') === node.id) {
+          hasFeature = true;
+        }
+      });
+      if (hasFeature === false) {
+        var features = this.WKT_.readFeatures(node.value);
+        for (var j=0, jj=features.length; j<jj; ++j) {
+          features[j].set('node', node.id);
+        }
+        this.ui_.inputMaps[mapId].source.addFeatures(features);
       }
-      this.ui_.inputMaps[mapId].source.addFeatures(features);
     }
     if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
       values = node.value.split('|');
