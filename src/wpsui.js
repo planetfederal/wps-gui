@@ -5,6 +5,7 @@ var wps = window.wps;
 
 wps.editor = function(ui) {
   this.ui_ = ui;
+  this.WKT_ = new ol.format.WKT();
 };
 
 wps.backgroundLayer = new ol.layer.Tile({
@@ -449,7 +450,7 @@ wps.editor.prototype.showEditForm = function(node) {
         view: new ol.View(wps.mapSettings)
       });
       if (node.value && node.value.indexOf('|') === -1) {
-        var features = new ol.format.WKT().readFeatures(node.value);
+        var features = this.WKT_.readFeatures(node.value);
         for (var j=0, jj=features.length; j<jj; ++j) {
           features[j].set('node', node.id);
         }
@@ -517,7 +518,7 @@ wps.editor.prototype.showEditForm = function(node) {
           this.ui_.inputMaps[mapId].source.removeFeature(remove);
         }
         evt.feature.set('node', node.id);
-        node.value = new ol.format.WKT().writeFeatures([evt.feature]);
+        node.value = this.WKT_.writeFeatures([evt.feature]);
         node.valid = evt.feature;
         if (node.valid) {
           this.setValue(true);
