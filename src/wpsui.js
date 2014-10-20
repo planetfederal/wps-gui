@@ -449,7 +449,11 @@ wps.editor.prototype.showEditForm = function(node) {
         view: new ol.View(wps.mapSettings)
       });
       if (node.value && node.value.indexOf('|') === -1) {
-        this.ui_.inputMaps[mapId].source.addFeatures(new ol.format.WKT().readFeatures(node.value));
+        var features = new ol.format.WKT().readFeatures(node.value);
+        for (var j=0, jj=features.length; j<jj; ++j) {
+          features[j].set('node', node.id);
+        }
+        this.ui_.inputMaps[mapId].source.addFeatures(features);
       }
       if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
         values = node.value.split('|');
