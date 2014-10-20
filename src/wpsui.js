@@ -615,6 +615,10 @@ wps.editor.prototype.showEditForm = function(node) {
 };
 
 wps.ui = function(options) {
+  $(document).ready(function() {
+    $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left);
+    $('#btn-run-process').css('display', 'block');
+  });
   var me = this;
   this.parentContainer_ = options.parentContainer;
   this.dropZone_ = options.dropZone;
@@ -1039,6 +1043,7 @@ wps.ui.prototype.initializeSplitter = function() {
       $("#sidebar").width(newSidebarWidth);
       me.resizeMaps();
       me.resizeTabs();
+      $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left);
     },
     stop:function(event,ui) {
       $("#sidebar-separator").css("left","auto");

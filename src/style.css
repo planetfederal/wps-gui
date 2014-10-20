@@ -334,9 +334,8 @@ a.brand span {
    user-select: none;
 }
 
-.pull-right {
-    margin-right: 315px;
-    margin-left: 20px;
+#btn-run-process {
+  display: none;
 }
 
 #workspace, #palette, #sidebar {
