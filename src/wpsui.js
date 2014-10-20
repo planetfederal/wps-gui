@@ -1213,6 +1213,8 @@ wps.ui.prototype.clear = function(ui) {
         delete ui.inputMaps[node.id].dragBox;
         delete ui.inputMaps[node.id].draw;
         delete ui.inputMaps[node.id].map;
+        delete ui.inputMaps[node.id].vectorWMS;
+        delete ui.inputMaps[node.id].rasterWMS;
       }
     }
   }
@@ -1394,6 +1396,8 @@ wps.ui.prototype.deleteSelection = function() {
         delete this.inputMaps[node.id].dragBox;
         delete this.inputMaps[node.id].draw;
         delete this.inputMaps[node.id].map;
+        delete this.inputMaps[node.id].rasterWMS;
+        delete this.inputMaps[node.id].vectorWMS;
       }
       $('#tab-inputs').html('');
       $('#tab-results').html('');
