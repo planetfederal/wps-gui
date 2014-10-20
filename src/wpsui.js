@@ -449,30 +449,6 @@ wps.editor.prototype.showEditForm = function(node) {
         ],
         view: new ol.View(wps.mapSettings)
       });
-      if (node.value && node.value.indexOf('|') === -1) {
-        var features = this.WKT_.readFeatures(node.value);
-        for (var j=0, jj=features.length; j<jj; ++j) {
-          features[j].set('node', node.id);
-        }
-        this.ui_.inputMaps[mapId].source.addFeatures(features);
-      }
-      if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
-        values = node.value.split('|');
-        if (node.value.indexOf(wps.VECTORLAYER) !== -1) {
-          me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
-        }
-        if (node.value.indexOf(wps.RASTERLAYER) !== -1) {
-          me.addRasterLayer('node-input-' + node._parent + '-features-map', node, node.value);
-        }
-        if (values.length === 3) {
-          var bbox = values[2].split(',').map(parseFloat);
-          var f = new ol.Feature();
-          f.set('node', node.id);
-          var geom = new ol.geom.Polygon([[[bbox[0], bbox[1]], [bbox[0], bbox[3]], [bbox[2], bbox[3]], [bbox[2], bbox[1]], [bbox[0], bbox[1]]]]);
-          f.setGeometry(geom);
-          me.ui_.inputMaps[mapId].source.addFeatures([f]);
-        }
-      }
       this.ui_.inputMaps[mapId].dragBox = new ol.interaction.DragBox({
         condition: ol.events.condition.shiftKeyOnly,
         style: new ol.style.Style({
@@ -502,6 +478,30 @@ wps.editor.prototype.showEditForm = function(node) {
       window.setTimeout(function() {
         map.updateSize();
       }, 0);
+    }
+    if (node.value && node.value.indexOf('|') === -1) {
+      var features = this.WKT_.readFeatures(node.value);
+      for (var j=0, jj=features.length; j<jj; ++j) {
+        features[j].set('node', node.id);
+      }
+      this.ui_.inputMaps[mapId].source.addFeatures(features);
+    }
+    if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
+      values = node.value.split('|');
+      if (node.value.indexOf(wps.VECTORLAYER) !== -1) {
+        me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
+      }
+      if (node.value.indexOf(wps.RASTERLAYER) !== -1) {
+        me.addRasterLayer('node-input-' + node._parent + '-features-map', node, node.value);
+      }
+      if (values.length === 3) {
+        var bbox = values[2].split(',').map(parseFloat);
+        var f = new ol.Feature();
+        f.set('node', node.id);
+        var geom = new ol.geom.Polygon([[[bbox[0], bbox[1]], [bbox[0], bbox[3]], [bbox[2], bbox[3]], [bbox[2], bbox[1]], [bbox[0], bbox[1]]]]);
+        f.setGeometry(geom);
+        me.ui_.inputMaps[mapId].source.addFeatures([f]);
+      }
     }
     var drawEnd = function(evt) {
       var selection = d3.selectAll(".node_selected");
