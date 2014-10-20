@@ -1201,21 +1201,28 @@ wps.ui.prototype.showHelp = function() {
   window.open('docs/build/html/usage.html', 'help');
 };
 
+wps.ui.prototype.deleteInputMap = function(mapId) {
+  if (this.inputMaps && this.inputMaps[mapId]) {
+    if (this.inputMaps[mapId].map) {
+      this.inputMaps[mapId].map.setTarget(null);
+    }
+    delete this.inputMaps[mapId].vector;
+    delete this.inputMaps[mapId].source;
+    delete this.inputMaps[mapId].dragBox;
+    delete this.inputMaps[mapId].draw;
+    delete this.inputMaps[mapId].map;
+    delete this.inputMaps[mapId].vectorWMS;
+    delete this.inputMaps[mapId].rasterWMS;
+    delete this.inputMaps[mapId];
+  }
+};
+
 wps.ui.prototype.clear = function(ui) {
   var i, ii, node;
   for (i=0, ii=ui.nodes.length; i<ii; ++i) {
     node = ui.nodes[i];
     if (node.type === 'process') {
-      if (ui.inputMaps && ui.inputMaps[node.id] && ui.inputMaps[node.id].map) {
-        ui.inputMaps[node.id].map.setTarget(null);
-        delete ui.inputMaps[node.id].vector;
-        delete ui.inputMaps[node.id].source;
-        delete ui.inputMaps[node.id].dragBox;
-        delete ui.inputMaps[node.id].draw;
-        delete ui.inputMaps[node.id].map;
-        delete ui.inputMaps[node.id].vectorWMS;
-        delete ui.inputMaps[node.id].rasterWMS;
-      }
+      ui.deleteInputMap(node.id);
     }
   }
   ui.nodes = [];
@@ -1389,16 +1396,7 @@ wps.ui.prototype.deleteSelection = function() {
   if (selection[0].length > 0) {
     var node = selection.datum();
     if (node.type === 'process') {
-      if (this.inputMaps && this.inputMaps[node.id] && this.inputMaps[node.id].map) {
-        this.inputMaps[node.id].map.setTarget(null);
-        delete this.inputMaps[node.id].vector;
-        delete this.inputMaps[node.id].source;
-        delete this.inputMaps[node.id].dragBox;
-        delete this.inputMaps[node.id].draw;
-        delete this.inputMaps[node.id].map;
-        delete this.inputMaps[node.id].rasterWMS;
-        delete this.inputMaps[node.id].vectorWMS;
-      }
+      this.deleteInputMap(node.id);
       $('#tab-inputs').html('');
       $('#tab-results').html('');
       this.nodes.splice(this.nodes.indexOf(node), 1);
