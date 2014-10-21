@@ -8,7 +8,10 @@ wps.editor = function(ui) {
   this.WKT_ = new ol.format.WKT();
 };
 
+var extent = [-180, -90, 180, 90];
+
 wps.backgroundLayer = new ol.layer.Tile({
+  extent: extent,
   source: new ol.source.TileWMS({
     url: "http://maps.opengeo.org/geowebcache/service/wms",
     params: {
@@ -19,21 +22,22 @@ wps.backgroundLayer = new ol.layer.Tile({
   })
 });
 
-wps.mapSettings = {
-  projection: 'EPSG:4326',
-  center: [0, 0],
-  zoom: 1,
-  minZoom: 1
-};
-
 // apparently axis order is not what we expect when using WPS
 var projection = new ol.proj.Projection({
   code: 'http://www.opengis.net/gml/srs/epsg.xml#4326',
-  extent: [-180, -90, 180, 90],
+  extent: extent,
   units: 'degrees',
   axisOrientation: 'enu'
 });
 ol.proj.addProjection(projection);
+
+wps.mapSettings = {
+  projection: 'EPSG:4326',
+  center: [0, 0],
+  extent: extent,
+  zoom: 1,
+  minZoom: 1
+};
 
 wps.editor.PREFIX = "node-input-";
 wps.SUBPROCESS = 'process|';
