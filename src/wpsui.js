@@ -210,7 +210,7 @@ wps.editor.prototype.showEditForm = function(node) {
     nameText += ' (optional)';
   }
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
-  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button></div>';
+  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button>';
   var selected;
 
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
@@ -246,6 +246,7 @@ wps.editor.prototype.showEditForm = function(node) {
     if (node._info.maxOccurs > 1 && node._info.maxOccurs > node._info.minOccurs) {
       html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
     }
+    html += '</div>'; // saveButton's div
   } else if (node._info.complexData) {
     // create input fields for geoms
 
@@ -309,6 +310,7 @@ wps.editor.prototype.showEditForm = function(node) {
       if (node._info.maxOccurs > 1  && node._info.maxOccurs > node._info.minOccurs) {
         html += '<button type="button" class="btn btn-default btn-sm" id="add-geoms" onclick="window.wpsui.createExtraInputNode()">+ 1 ' + name +'</button>';
       }
+      html += '</div>'; // saveButton's div
     }
     else if (vectorLayer === true && this.ui_.featureTypes) {
       html += '<p class="form-row"><small>Select from existing:</small></p>';
@@ -388,6 +390,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<input type="text" value="' + maxy + '" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
     html += '</div>';
     html += saveButton;
+    html += '</div>'; // saveButton's div
 
     html += '</div><div class="tab-pane active" id="map-input">';
     html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label></div>';
