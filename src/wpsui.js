@@ -143,7 +143,7 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
     }
     if (id.indexOf('-txt') !== -1) {
       if (typeof value === "string" && value.indexOf('>') !== -1) {
-        value = jQuery.parseXML(value);
+        value = $.parseXML(value);
       }
     }
     if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
@@ -771,10 +771,22 @@ wps.ui.node = function(options) {
   this.required = options.required;
   // is the node complete or not
   this.complete = options.complete === undefined ? false : options.complete;
-  this.value = options.value;
+  var value;
+  if (typeof options.value === "string" && options.value.indexOf('<') !== -1) {
+    value = $.parseXML(options.value);
+  } else {
+    value = options.value;
+  }
+  this.value = value;
 };
 
 wps.ui.node.prototype.getState = function() {
+  var value;
+  if ($.isXMLDoc(this.value)) {
+    value = new XMLSerializer().serializeToString(this.value);
+  } else {
+    value = this.value;
+  }
   return {
     id: this.id,
     w: this.w,
@@ -790,7 +802,7 @@ wps.ui.node.prototype.getState = function() {
     required: this.required,
     complete: this.complete,
     dirty: true,
-    value: this.value
+    value: value
   };
 };
 
