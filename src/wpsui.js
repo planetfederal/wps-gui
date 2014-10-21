@@ -1653,7 +1653,7 @@ wps.ui.prototype.createDropTarget = function() {
               complete: false,
               label: info.dataInputs.input[i].title.value
             };
-            if (inputConfig.y < 0) {
+            if (inputConfig.y < 15) {
               startY = 100 + deltaY;
               inputConfig.y = startY-deltaY;
             }
