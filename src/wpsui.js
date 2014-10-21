@@ -486,7 +486,7 @@ wps.editor.prototype.showEditForm = function(node) {
         map.updateSize();
       }, 0);
     }
-    if (typeof node.value === "string" && node.value.indexOf('|') === -1) {
+    if (typeof node.value === "string" && node.value.indexOf('|') === -1 && node._geom !== false) {
       var hasFeature = false;
       this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
         if (f.get('node') === node.id) {
@@ -778,6 +778,8 @@ wps.ui.node = function(options) {
     value = options.value;
   }
   this.value = value;
+  // was this node created by drawing or by text?
+  this._geom = options._geom;
 };
 
 wps.ui.node.prototype.getState = function() {
@@ -799,6 +801,7 @@ wps.ui.node.prototype.getState = function() {
     outputs: this.outputs,
     label: this.label,
     _parent: this._parent,
+    _geom: this._geom,
     required: this.required,
     complete: this.complete,
     dirty: true,
