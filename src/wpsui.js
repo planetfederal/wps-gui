@@ -1372,7 +1372,7 @@ wps.ui.prototype.execute = function(ui) {
               }
             } else {
               if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
-                $('#tab-results').append('<pre><code class="xml"></code></pre>');
+                $('#tab-results').html('<pre><code class="xml"></code></pre>');
                 var code = $('#tab-results pre code').get(0);
                 $(code).html(document.createTextNode(vkbeautify.xml(output.result, 4)));
                 hljs.highlightBlock(code);
