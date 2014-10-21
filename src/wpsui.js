@@ -1332,7 +1332,7 @@ wps.ui.prototype.execute = function(ui) {
 
         var prettyXML = function(body) {
           var code = $('#tab-xml pre code').get(0);
-          $(code).html(document.createTextNode(vkbeautify.xml(body, 4)));
+          $(code).html(document.createTextNode(vkbeautify.xml(body, 2)));
           hljs.highlightBlock(code);
         };
 
