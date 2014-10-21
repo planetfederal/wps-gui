@@ -522,7 +522,10 @@ wps.editor.prototype.showEditForm = function(node) {
       var selection = d3.selectAll(".node_selected");
       if (selection[0].length > 0) {
         var node = selection.datum();
-
+        // check if there is a WKT/GML input
+        var name = node._info.identifier.value;
+        var id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
+        $('#' + id + '-txt').val('');
         var remove;
         this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
           if (f.get('node') === node.id) {
