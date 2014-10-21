@@ -128,25 +128,25 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
   node._geom = geom;
   if (geom !== true && formField.length > 0) {
     value = formField.val();
-    if (value.indexOf(wps.VECTORLAYER) !== -1 || value.indexOf(wps.RASTERLAYER) !== -1) {
+    if (typeof value === "string" && (value.indexOf(wps.VECTORLAYER) !== -1 || value.indexOf(wps.RASTERLAYER) !== -1)) {
       $('#bbox-filter-clear').parent().removeClass('disabled');
       $('#bbox-filter').parent().removeClass('disabled');
     } else {
       $('#bbox-filter-clear').parent().addClass('disabled');
       $('#bbox-filter').parent().addClass('disabled');
     }
-    if (value.indexOf(wps.VECTORLAYER) !== -1) {
+    if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
       this.addVectorLayer(id, node, value);
     }
-    if (value.indexOf(wps.RASTERLAYER) !== -1) {
+    if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
       this.addRasterLayer(id, node, value);
     }
     if (id.indexOf('-txt') !== -1) {
-      if (value.indexOf('>') !== -1) {
+      if (typeof value === "string" && value.indexOf('>') !== -1) {
         value = jQuery.parseXML(value);
       }
     }
-    if (value.indexOf(wps.VECTORLAYER) !== -1) {
+    if (typeof value === "string" && value.indexOf(wps.VECTORLAYER) !== -1) {
       // check if node has a BBOX filter on it
       if (node.value && node.value.split('|').length === 3) {
         node.value = value + '|' + node.value.split('|')[2];
@@ -276,7 +276,7 @@ wps.editor.prototype.showEditForm = function(node) {
     }
     html += '</div>';
 
-    value = (node._geom === true || node.value === undefined || node.value.indexOf(wps.VECTORLAYER) !== -1) ? '' : node.value;
+    value = (node._geom === true || node.value === undefined || (typeof node.value === "string" && node.value.indexOf(wps.VECTORLAYER) !== -1)) ? '' : node.value;
     if (rasterLayer === false) {
       html += '<div class="form-row" id="' + name + '-field">';
       if ($.isXMLDoc(value)) {
@@ -486,7 +486,7 @@ wps.editor.prototype.showEditForm = function(node) {
         map.updateSize();
       }, 0);
     }
-    if (node.value && node.value.indexOf('|') === -1) {
+    if (typeof node.value === "string" && node.value.indexOf('|') === -1) {
       var hasFeature = false;
       this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
         if (f.get('node') === node.id) {
@@ -501,7 +501,7 @@ wps.editor.prototype.showEditForm = function(node) {
         this.ui_.inputMaps[mapId].source.addFeatures(features);
       }
     }
-    if (node.value && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
+    if (typeof node.value === "string" && (node.value.indexOf(wps.VECTORLAYER) !== -1 || node.value.indexOf(wps.RASTERLAYER) !== -1)) {
       values = node.value.split('|');
       if (node.value.indexOf(wps.VECTORLAYER) !== -1) {
         me.addVectorLayer('node-input-' + node._parent + '-features-map', node, node.value);
