@@ -1124,6 +1124,17 @@ wps.ui.prototype.getInputNodes = function(processId) {
   return result;
 };
 
+wps.ui.prototype.getOutputNodes = function(processId) {
+  var result = [];
+  for (var i=0, ii=this.nodes.length; i<ii; ++i) {
+    var n = this.nodes[i];
+    if (n.type === 'output' && n._parent === processId) {
+      result.push(n);
+    }
+  }
+  return result;
+};
+
 wps.ui.prototype.getAllNodes = function(processId) {
   var result = [];
   for (var i=0, ii=this.nodes.length; i<ii; ++i) {
@@ -1322,14 +1333,26 @@ wps.ui.prototype.execute = function(ui) {
           hljs.highlightBlock(code);
         };
 
+        var markOutputComplete = function(ui, complete) {
+            var outputs = ui.getOutputNodes(node.id);
+            for (var i=0, ii=outputs.length; i<ii; ++i) {
+              var oldComplete = outputs[i].complete;
+              outputs[i].complete = complete;
+              outputs[i].dirty = (oldComplete !== complete);
+            }
+            ui.redraw();
+        };
+
         process.execute({
           inputs: inputs,
           failure: function(exception, body) {
+            markOutputComplete(ui, false);
             prettyXML(body);
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
           success: function(output, body, responseText) {
+            markOutputComplete(ui, true);
             prettyXML(body);
             if ($.isArray(output.result)) {
               var html = '<button id="btn-download" type="button" class="btn btn-default">';
