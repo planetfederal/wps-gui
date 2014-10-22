@@ -402,6 +402,8 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<label for="' + name + '-field-maxy' + '">max y</label>';
     html += '<input type="text" value="' + maxy + '" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
     html += '</div>';
+    // update the id with '-txt'
+    saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-txt' + '\')">Save</button>';
     html += saveButton;
     html += '</div>'; // saveButton's div
 
