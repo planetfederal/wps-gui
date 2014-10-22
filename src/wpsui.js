@@ -484,6 +484,12 @@ wps.editor.prototype.showEditForm = function(node) {
         me.ui_.inputMaps[mapId].source.clear();
         var f = new ol.Feature();
         f.set('node', node.id);
+        var name = node._info.identifier.value;
+        $('.form-row.input-validate').children('span').remove();
+        $('#' + name + '-field-minx').val('');
+        $('#' + name + '-field-miny').val('');
+        $('#' + name + '-field-maxx').val('');
+        $('#' + name + '-field-maxy').val('');
         var geom = me.ui_.inputMaps[mapId].dragBox.getGeometry();
         f.setGeometry(geom);
         me.ui_.inputMaps[mapId].source.addFeatures([f]);
