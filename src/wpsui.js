@@ -386,7 +386,8 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '</div>';
     html += '<p class="form-row"><small>Provide bounding box in <b>EPSG:4326</b></small></p>';
     html += '<div class="form-row" id="' + name + '-field">';
-    html += '<label for="' + name + '-field-minx' + '">min x</label>';
+    var pref = wps.editor.PREFIX + node.id + '-' + name;
+    html += '<label for="' + pref + '-minx' + '">min x</label>';
     var minx = '', miny = '', maxx = '', maxy = '';
     if (node._geom !== true && node.value) {
       minx = node.value[0];
@@ -394,13 +395,13 @@ wps.editor.prototype.showEditForm = function(node) {
       maxx = node.value[2];
       maxy = node.value[3];
     }
-    html += '<input type="text" value="' + minx + '" id="' + name + '-field-minx' +'" class="form-control input-sm">';
-    html += '<label for="' + name + '-field-miny' + '">min y</label>';
-    html += '<input type="text" value="' + miny + '" id="' + name + '-field-miny' +'" class="form-control input-sm">';
-    html += '<label for="' + name + '-field-maxx' + '">max x</label>';
-    html += '<input type="text" value="' + maxx +  '" id="' + name + '-field-maxx' +'" class="form-control input-sm">';
-    html += '<label for="' + name + '-field-maxy' + '">max y</label>';
-    html += '<input type="text" value="' + maxy + '" id="' + name + '-field-maxy' +'" class="form-control input-sm">';
+    html += '<input type="text" value="' + minx + '" id="' + pref + '-minx' +'" class="form-control input-sm">';
+    html += '<label for="' + pref + '-miny' + '">min y</label>';
+    html += '<input type="text" value="' + miny + '" id="' + pref + '-miny' +'" class="form-control input-sm">';
+    html += '<label for="' + pref + '-maxx' + '">max x</label>';
+    html += '<input type="text" value="' + maxx +  '" id="' + pref + '-maxx' +'" class="form-control input-sm">';
+    html += '<label for="' + pref + '-maxy' + '">max y</label>';
+    html += '<input type="text" value="' + maxy + '" id="' + pref + '-maxy' +'" class="form-control input-sm">';
     html += '</div>';
     // update the id with '-txt'
     saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-txt' + '\')">Save</button>';
@@ -486,10 +487,10 @@ wps.editor.prototype.showEditForm = function(node) {
         f.set('node', node.id);
         var name = node._info.identifier.value;
         $('.form-row.input-validate').children('span').remove();
-        $('#' + name + '-field-minx').val('');
-        $('#' + name + '-field-miny').val('');
-        $('#' + name + '-field-maxx').val('');
-        $('#' + name + '-field-maxy').val('');
+        $('#' + wps.editor.PREFIX + node.id + '-' + name + '-minx').val('');
+        $('#' + wps.editor.PREFIX + node.id + '-' + name + '-miny').val('');
+        $('#' + wps.editor.PREFIX + node.id + '-' + name + '-maxx').val('');
+        $('#' + wps.editor.PREFIX + node.id + '-' + name + '-maxy').val('');
         var geom = me.ui_.inputMaps[mapId].dragBox.getGeometry();
         f.setGeometry(geom);
         me.ui_.inputMaps[mapId].source.addFeatures([f]);
@@ -975,10 +976,10 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   var nodeEl = $('#' + id);
   if (node._info.boundingBoxData) {
     value = [
-      $('#' + name + '-field-minx').val(),
-      $('#' + name + '-field-miny').val(),
-      $('#' + name + '-field-maxx').val(),
-      $('#' + name + '-field-maxy').val()
+      $('#' + wps.editor.PREFIX + node.id + '-' + name + '-minx').val(),
+      $('#' + wps.editor.PREFIX + node.id + '-' + name + '-miny').val(),
+      $('#' + wps.editor.PREFIX + node.id + '-' + name + '-maxx').val(),
+      $('#' + wps.editor.PREFIX + node.id + '-' + name + '-maxy').val()
     ];    
   } else {
     value = nodeEl.val();
