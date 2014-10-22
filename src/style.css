@@ -968,3 +968,8 @@ i.spinner {
 #btn-download {
     margin: 5px;
 }
+#progress-indicator {
+    position:absolute;
+    right: 25px;
+    top: 35px;
+}

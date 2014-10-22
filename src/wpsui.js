@@ -1387,21 +1387,26 @@ wps.ui.prototype.execute = function(ui) {
             ui.redraw();
         };
 
+        $('#workspace').append('<i id="progress-indicator" class="fa fa-spinner fa-spin fa-5x"></i>');
+
         process.execute({
           inputs: inputs,
           startdownload: function() {
+            $('#progress-indicator').remove();
             $("#dialog-form").html('<p>The TIFF download will now be requested on the server, the browser will notify you when it is done</p>');
             $("#dialog").dialog("option", "title", "Download TIFF").dialog( "open" );
             // bootstrap's hide class has important, so we need to remove it
             $("#dialog").removeClass('hide');
           },
           failure: function(exception, body) {
+            $('#progress-indicator').remove();
             markOutputComplete(ui, false);
             prettyXML(body);
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
           success: function(output, body, responseText) {
+            $('#progress-indicator').remove();
             markOutputComplete(ui, true);
             prettyXML(body);
             if ($.isArray(output.result)) {
