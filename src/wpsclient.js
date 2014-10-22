@@ -185,6 +185,9 @@ wps.process.prototype.execute = function(options) {
         if (hasTiffOutput) {
           new wps.hiddenForm(me.client.unmarshaller, options, me.client.servers[me.server].url,
               [['body', body]], body);
+          if (options.startdownload) {
+            options.startdownload.call(options.scope);
+          }
         } else {
           var xmlhttp = new XMLHttpRequest();
           xmlhttp.open('POST', me.client.servers[me.server].url, true);

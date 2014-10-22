@@ -1389,6 +1389,12 @@ wps.ui.prototype.execute = function(ui) {
 
         process.execute({
           inputs: inputs,
+          startdownload: function() {
+            $("#dialog-form").html('<p>The TIFF download will now be requested on the server, the browser will notify you when it is done</p>');
+            $("#dialog").dialog("option", "title", "Download TIFF").dialog( "open" );
+            // bootstrap's hide class has important, so we need to remove it
+            $("#dialog").removeClass('hide');
+          },
           failure: function(exception, body) {
             markOutputComplete(ui, false);
             prettyXML(body);
