@@ -116,8 +116,21 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
   if (node === undefined) {
     node = me.editingNode_;
   }
-  var name = node._info.identifier.value;
   var processId = node._parent;
+  if (typeof id === "string" && id.indexOf('-txt') !== -1) {
+    if (ui.inputMaps && ui.inputMaps[processId] && ui.inputMaps[processId].source) {
+      var remove;
+      ui.inputMaps[processId].source.forEachFeature(function(f) {
+        if (f.get('node') === node.id) {
+          remove = f;
+        }
+      });
+      if (remove !== undefined) {
+        ui.inputMaps[processId].source.removeFeature(remove);
+      }
+    }
+  }
+  var name = node._info.identifier.value;
   var formField;
   if (id) {
     formField = $('#' + id);
