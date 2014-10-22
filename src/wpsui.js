@@ -375,7 +375,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<div class="form-row" id="' + name + '-field">';
     html += '<label for="' + name + '-field-minx' + '">min x</label>';
     var minx = '', miny = '', maxx = '', maxy = '';
-    if (node.value) {
+    if (node._geom !== true && node.value) {
       minx = node.value[0];
       miny = node.value[1];
       maxx = node.value[2];
@@ -474,6 +474,7 @@ wps.editor.prototype.showEditForm = function(node) {
         me.ui_.inputMaps[mapId].source.addFeatures([f]);
         me.editingNode_.value = geom.getExtent();
         me.ui_.afterSetValue(me.editingNode_);
+        node._geom = true;
       });
       map = this.ui_.inputMaps[mapId].map;
       window.setTimeout(function() {
