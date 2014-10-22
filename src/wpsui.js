@@ -592,7 +592,7 @@ wps.editor.prototype.showEditForm = function(node) {
           f.setGeometry(geom);
           me.ui_.inputMaps[mapId].source.addFeatures([f]);
           var values = node.value.split('|');
-          node.value = values[0] + '|' + values[1] + '|' + geom.getExtent().toString(',');
+          me.setValue(false, false, values[0] + '|' + values[1] + '|' + geom.getExtent().toString(','));
         });
       }
     };
