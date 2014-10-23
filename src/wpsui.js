@@ -416,6 +416,8 @@ wps.editor.prototype.showEditForm = function(node) {
 
   }
   html += '</form>';
+  // we need to remove any input map div if we had one before, otherwise the map won't render again
+  $('#input-map-' + node._parent).remove();
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
   var me = this;
@@ -499,15 +501,9 @@ wps.editor.prototype.showEditForm = function(node) {
         node._geom = true;
       });
       map = this.ui_.inputMaps[mapId].map;
-      window.setTimeout(function() {
-        map.updateSize();
-      }, 0);
     } else {
       map = this.ui_.inputMaps[mapId].map;
       map.set('target', 'input-map-' + mapId);
-      window.setTimeout(function() {
-        map.updateSize();
-      }, 0);
     }
     if (typeof node.value === "string" && node.value.indexOf('|') === -1 && node._geom !== false) {
       var hasFeature = false;
