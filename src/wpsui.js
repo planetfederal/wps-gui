@@ -711,7 +711,7 @@ wps.ui = function(options) {
   $('#btn-clear').click($.proxy(this.clear, null, this));
   $('#btn-run-process').click($.proxy(this.execute, null, this));
   d3.select(window).on("keydown",function() {
-    if (d3.event.target == document.body) {
+    if (d3.event.target == document.body || d3.event.target instanceof SVGElement) {
       if (d3.event.keyCode === 46 || d3.event.keyCode === 8) {
         try {
           me.deleteSelection();
