@@ -975,3 +975,6 @@ i.spinner {
     right: 25px;
     top: 35px;
 }
+.ol-attribution img {
+    max-width: 2em;
+}
