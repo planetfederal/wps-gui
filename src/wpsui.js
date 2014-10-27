@@ -620,7 +620,7 @@ wps.editor.prototype.showEditForm = function(node) {
           f.setGeometry(geom);
           me.ui_.inputMaps[mapId].source.addFeatures([f]);
           var values = node.value.split('|');
-          me.setValue(false, false, values[0] + '|' + values[1] + '|' + geom.getExtent().toString(','));
+          node.value = values[0] + '|' + values[1] + '|' + geom.getExtent().toString(',');
         });
       }
     };
@@ -642,7 +642,7 @@ wps.editor.prototype.showEditForm = function(node) {
         var node = selection.datum();
         me.ui_.inputMaps[mapId].source.clear();
         var values = node.value.split('|');
-        me.setValue(false, false, values[0] + '|' + values[1]);
+        node.value = values[0] + '|' + values[1] + '|' + geom.getExtent().toString(',');
       }
     });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
