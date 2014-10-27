@@ -605,7 +605,15 @@ wps.editor.prototype.showEditForm = function(node) {
         me.ui_.inputMaps[mapId].draw.on('drawend', drawEnd, me);
       } else {
         me.ui_.inputMaps[mapId].draw.on('boxend', function(e) {
-          me.ui_.inputMaps[mapId].source.clear();
+          var deletes = [];
+          me.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
+            if (f.get('node') === node.id) {
+              deletes.push(f);
+            }
+          }, this);
+          for (var i=0, ii=deletes.length; i<ii; ++i) {
+            me.ui_.inputMaps[mapId].source.removeFeature(deletes[i]);
+          }
           var f = new ol.Feature();
           f.set('node', node.id);
           var geom = me.ui_.inputMaps[mapId].draw.getGeometry();
