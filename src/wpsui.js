@@ -2171,11 +2171,6 @@ wps.ui.prototype.createSearch = function() {
   $("#palette-search-input").on("keyup",function() {
     filterChange();
   });
-  $("#palette-search-input").on("focus",function() {
-    $("body").one("mousedown",function() {
-      $("#palette-search-input").blur();
-    });
-  });
 };
 
 wps.ui.prototype.createProcessCategory = function(group) {
