@@ -154,7 +154,7 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
     if (typeof value === "string" && value.indexOf(wps.RASTERLAYER) !== -1) {
       this.addRasterLayer(id, node, value);
     }
-    if (id.indexOf('-txt') !== -1) {
+    if (typeof id === "string" && id.indexOf('-txt') !== -1) {
       if (typeof value === "string" && value.indexOf('>') !== -1) {
         value = $.parseXML(value);
       }
@@ -639,7 +639,7 @@ wps.editor.prototype.showEditForm = function(node) {
     });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
     if (this.ui_.inputMaps[mapId].draw) {
-      this.ui_.inputMaps[mapId].draw.setActive(!bboxTool);
+      this.ui_.inputMaps[mapId].draw.setActive(!bboxTool && !rasterLayer && !vectorLayer);
     }
   }
 };
