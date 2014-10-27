@@ -208,6 +208,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 
 wps.editor.prototype.showEditForm = function(node) {
   if (node['type'] !== 'input' || (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1)) {
+    $('.input-map').detach();
     $('#tab-inputs').html('');
     return;
   }
@@ -417,7 +418,7 @@ wps.editor.prototype.showEditForm = function(node) {
   }
   html += '</form>';
   // we need to remove any input map div if we had one before, otherwise the map won't render again
-  $('#input-map-' + node._parent).remove();
+  $('.input-map').detach();
   $('#tab-inputs').html(html);
   this.ui_.activateTab('tab-inputs');
   var me = this;
@@ -1299,6 +1300,7 @@ wps.ui.prototype.clear = function(ui) {
     }
   }
   ui.nodes = [];
+  $('.input-map').detach();
   $('#tab-inputs').html('');
   $('#tab-results').html('');
   $('#tab-xml pre code').html('');
@@ -1493,6 +1495,7 @@ wps.ui.prototype.deleteSelection = function() {
     var node = selection.datum();
     if (node.type === 'process') {
       this.deleteInputMap(node.id);
+      $('.input-map').detach();
       $('#tab-inputs').html('');
       $('#tab-results').html('');
       this.nodes.splice(this.nodes.indexOf(node), 1);
@@ -1609,6 +1612,7 @@ wps.ui.canvasMouseUp = function(ui) {
     me.dragLine.attr("class", "drag_line_hidden");
   }
   if ((me.mouseMode === 0 || me.mouseMode === 5) && me.mousedownLink === null) {
+    $('.input-map').detach();
     $('#tab-inputs').html('');
     me.clearSelection();
     me.updateSelection();
@@ -2095,6 +2099,7 @@ wps.ui.nodeMouseDown = function(ui, d) {
     me.clearSelection();
   }
   if (me.mousedownNode.type !== 'input') {
+    $('.input-map').detach();
     $('#tab-inputs').html('');
   }
   me.mousedownNode.selected = true;
