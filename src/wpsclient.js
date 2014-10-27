@@ -238,7 +238,7 @@ wps.process.prototype.execute = function(options) {
                       result = me.formats[i].format.readFeatures(this.responseText);
                     } catch(e) {
                       if (window.console) {
-                        window.console.debug(e);
+                        window.console.error(e);
                       }
                       result = this.responseText;
                     }
@@ -640,7 +640,7 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
       }
     } else {
       if (window.console) {
-        window.console.debug('There was an error loading WFS 1.1.0 GetCapabilities from: ' + server.url);
+        window.console.error('There was an error loading WFS 1.1.0 GetCapabilities from: ' + server.url);
       }
     }
     callback.call(me, featureTypes);
@@ -677,7 +677,7 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
       }
     } else {
       if (window.console) {
-        window.console.debug('There was an error loading WCS 1.1.0 GetCapabilities from: ' + server.url);
+        window.console.error('There was an error loading WCS 1.1.0 GetCapabilities from: ' + server.url);
       }
     }
     callback.call(me, coverages);
