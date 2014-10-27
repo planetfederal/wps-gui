@@ -245,10 +245,10 @@ wps.editor.prototype.showEditForm = function(node) {
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
       html += '<select  class="form-control input-sm" style="width: 70% !important;" id="' + id + '">';
       html += '<option value="" selected disabled>Select a value...</option>';
-      selected = (node.value === "true") ? 'selected' : '';
-      html += '<option ' + selected + ' value="'+true+'">True</option>';
       selected = (node.value === "false") ? 'selected' : '';
       html += '<option ' + selected + ' value="'+false+'">False</option>';
+      selected = (node.value === "true") ? 'selected' : '';
+      html += '<option ' + selected + ' value="'+true+'">True</option>';
       html += '</select>';
     } else {
       var value = node.value;
