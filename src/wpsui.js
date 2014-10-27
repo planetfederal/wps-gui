@@ -640,9 +640,17 @@ wps.editor.prototype.showEditForm = function(node) {
      var selection = d3.selectAll(".node_selected");
       if (selection[0].length > 0) {
         var node = selection.datum();
-        me.ui_.inputMaps[mapId].source.clear();
+        var deletes = [];
+        me.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
+          if (f.get('node') === node.id) {
+            deletes.push(f);
+          }
+        }, this);
+        for (var i=0, ii=deletes.length; i<ii; ++i) {
+          me.ui_.inputMaps[mapId].source.removeFeature(deletes[i]);
+        }
         var values = node.value.split('|');
-        node.value = values[0] + '|' + values[1] + '|' + geom.getExtent().toString(',');
+        node.value = values[0] + '|' + values[1];
       }
     });
     this.ui_.inputMaps[mapId].dragBox.setActive(bboxTool);
