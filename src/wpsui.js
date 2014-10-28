@@ -348,7 +348,7 @@ wps.editor.prototype.showEditForm = function(node) {
     id = "input-map-" + node._parent;
     html += '<div id="' + id + '" class="input-map"></div>';
     if (!rasterLayer && !vectorLayer) {
-      html += '<div class="btn-group">';
+      html += '<div class="btn-group btn-group-map">';
       html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
       html += 'Draw <span class="caret"></span>';
       html += '</button>';
@@ -363,7 +363,7 @@ wps.editor.prototype.showEditForm = function(node) {
     } else {
       html += '<p class="form-row"><p><small>For Filter by BBOX, use the SHIFT key to draw a box.</small></p>';
       html += '<p class="form-row"><p><small>You first need to pick a layer and press Save.</small></p>';
-      html += '<div class="btn-group">';
+      html += '<div class="btn-group btn-group-map">';
       html += '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">';
       html += 'Filter <span class="caret"></span>';
       html += '</button>';
@@ -415,7 +415,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '</div><div class="tab-pane active" id="map-input">';
     html += '<div class="form-row"><label for="' + id + '">' + nameText + '</label></div>';
     html += '<p class="form-row"><p><small>Use the SHIFT key to draw a box.</small></p>';
-    html += '<div id="' + id + '" style="width:400px;height:200px;border:1px black solid;clear: both;"></div>';
+    html += '<div class="input-map" id="' + id + '"></div>';
     html += '</div></div>';
 
   }
