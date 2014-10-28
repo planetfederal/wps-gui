@@ -312,6 +312,7 @@ wps.editor.prototype.showEditForm = function(node) {
     if (rasterLayer === true) {
       html += '<p class="form-row"><p><small>Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
+      html += '<option value="" selected disabled>Select a value...</option>';
       prefix = wps.RASTERLAYER;
       values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
@@ -329,6 +330,7 @@ wps.editor.prototype.showEditForm = function(node) {
     else if (vectorLayer === true && this.ui_.featureTypes) {
       html += '<p class="form-row"><small>Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '-map">';
+      html += '<option value="" selected disabled>Select a value...</option>';
       prefix = wps.VECTORLAYER;
       values = node.value ? node.value.split('|') : [];
       for (i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
@@ -977,13 +979,8 @@ wps.ui.prototype.importClipboard = function(ui) {
 };
 
 wps.ui.prototype.checkInput = function(nodeId, name, id) {
-  var node, i, ii;
-  for (i=0, ii=this.nodes.length; i<ii; ++i) {
-    node = this.nodes[i];
-    if (node.id === nodeId) {
-      break;
-    }
-  }
+  var i, ii;
+  var node = this.findNodeById(nodeId);
   var valid = node.valid;
   var value;
   var nodeEl = $('#' + id);
@@ -997,7 +994,11 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   } else {
     value = nodeEl.val();
   }
-  node.valid = node._info.complexData !== undefined || this.editor_.validateNodeProperty(node._info, value);
+  if (node._info.complexData !== undefined) {
+    node.valid = (value !== null);
+  } else {
+    node.valid = this.editor_.validateNodeProperty(node._info, value);
+  }
   if (valid !== node.valid) {
     node.dirty = true;
     this.redraw();
