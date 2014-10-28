@@ -1080,8 +1080,8 @@ wps.ui.prototype.resizeMaps = function() {
   for (var key in me.inputMaps) {
     me.inputMaps[key].map.updateSize();
   }
-  if (me.outputMap) {
-    me.outputMap.updateSize();
+  if (me.outputMap && me.outputMap.map) {
+    me.outputMap.map.updateSize();
   }
 };
 
@@ -1319,6 +1319,7 @@ wps.ui.prototype.clear = function(ui) {
   }
   ui.nodes = [];
   $('.input-map').detach();
+  $('.output-map').detach();
   $('#tab-inputs').html('');
   $('#tab-results').html('');
   $('#tab-xml pre code').html('');
@@ -1420,6 +1421,7 @@ wps.ui.prototype.execute = function(ui) {
             $('#progress-indicator').remove();
             markOutputComplete(ui, false);
             prettyXML(body);
+            $('.output-map').detach();
             $('#tab-results').html(exception);
             ui.activateTab('tab-results');
           },
@@ -1431,6 +1433,7 @@ wps.ui.prototype.execute = function(ui) {
               var html = '<button id="btn-download" type="button" class="btn btn-default">';
               html += '<i class="fa fa-download fa-fw"></i>Download</button>';
               html += '<div id="map" class="output-map"></div>';
+              $('.output-map').detach();
               $('#tab-results').html(html);
               $('#btn-download').click(function() {
                 var html = '<div class="form-row">';
@@ -1446,33 +1449,41 @@ wps.ui.prototype.execute = function(ui) {
                 $("#features-download").focus();
               });
               ui.activateTab('tab-results');
-              var source = new ol.source.Vector();
-              var vector = new ol.layer.Vector({source: source, style: ui.outputStyle});
-              ui.outputMap = new ol.Map({
-                target: 'map',
-                layers: [
-                  wps.backgroundLayer,
-                  vector
-                ],
-                view: new ol.View(wps.mapSettings)
-              });
-              source.addFeatures(output.result);
-              var view = ui.outputMap.getView();
-              var extent = source.getExtent();
+              if (!ui.outputMap) {
+                ui.outputMap = {};
+                ui.outputMap.source = new ol.source.Vector();
+                ui.outputMap.vector = new ol.layer.Vector({source: ui.outputMap.source, style: ui.outputStyle});
+                ui.outputMap.map = new ol.Map({
+                  target: 'map',
+                  layers: [
+                    wps.backgroundLayer,
+                    ui.outputMap.vector
+                  ],
+                  view: new ol.View(wps.mapSettings)
+                });
+              } else {
+                ui.outputMap.map.setTarget('map');
+              }
+              ui.outputMap.source.clear();
+              ui.outputMap.source.addFeatures(output.result);
+              var view = ui.outputMap.map.getView();
+              var extent = ui.outputMap.source.getExtent();
               if (extent[0] === extent[2]) {
                 view.setCenter([extent[0], extent[1]]);
                 view.setZoom(8);
               } else {
                 view.fitExtent(
-                  source.getExtent(), ui.outputMap.getSize());
+                  ui.outputMap.source.getExtent(), ui.outputMap.map.getSize());
               }
             } else {
               if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
+                $('.output-map').detach();
                 $('#tab-results').html('<pre><code class="xml"></code></pre>');
                 var code = $('#tab-results pre code').get(0);
                 $(code).html(document.createTextNode(vkbeautify.xml(output.result, 4)));
                 hljs.highlightBlock(code);
               } else {
+                $('.output-map').detach();
                 $('#tab-results').html(String(output.result));
               }
               ui.activateTab('tab-results');
@@ -1516,6 +1527,7 @@ wps.ui.prototype.deleteSelection = function() {
     if (node.type === 'process') {
       this.deleteInputMap(node.id);
       $('.input-map').detach();
+      $('.output-map').detach();
       $('#tab-inputs').html('');
       $('#tab-results').html('');
       this.nodes.splice(this.nodes.indexOf(node), 1);
