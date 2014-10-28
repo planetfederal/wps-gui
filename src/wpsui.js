@@ -914,7 +914,11 @@ wps.ui.prototype.parentComplete = function(node) {
   for (var i=0, ii=this.nodes.length; i<ii; ++i) {
     var n = this.nodes[i];
     if (n.type === "input" && n.value !== undefined && n._parent === processId) {
-      values[n._info.identifier.value] = n.value;
+      if (typeof n.value === "string" && n.value.indexOf(wps.SUBPROCESS) !== -1) {
+        values[n._info.identifier.value] = n.complete ? n.value : undefined;
+      } else {
+        values[n._info.identifier.value] = n.value;
+      }
     }
     if (n.id === processId) {
       parentNode = n;
