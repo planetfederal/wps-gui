@@ -136,6 +136,9 @@ a.brand span {
     box-sizing:border-box;
     -moz-box-sizing: border-box;
 }
+#palette-search-input::-ms-clear {
+    display: none;
+}
 /* bartvde change to glyphicon */
 #palette-search i.glyphicon-search {
     position: absolute;
