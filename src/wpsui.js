@@ -13,10 +13,11 @@ var extent = [-180, -90, 180, 90];
 wps.backgroundLayer = new ol.layer.Tile({
   extent: extent,
   source: new ol.source.TileWMS({
-    url: "http://maps.opengeo.org/geowebcache/service/wms",
+    url: "/geoserver/wms",
     params: {
+      'TILED': 'true',
       'VERSION': '1.1.1',
-      'LAYERS': 'openstreetmap',
+      'LAYERS': 'sf:NE2_HR_LC_SR_W',
       'FORMAT': 'image/png'
     }
   })
