@@ -209,8 +209,6 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 
 wps.editor.prototype.showEditForm = function(node) {
   if (node['type'] !== 'input' || (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1)) {
-    $('.input-map').detach();
-    $('#tab-inputs').html('');
     return;
   }
   this.editingNode_ = node;
@@ -2105,6 +2103,8 @@ wps.ui.prototype.clearSelection = function() {
 
 wps.ui.nodeMouseUp = function(ui, d) {
   var me = ui;
+  $('.input-map').detach();
+  $('#tab-inputs').html('');
   if (me.mouseMode !== 3 && me.mousedownNode == d) {
     me.editor_.showEditForm(d);
     me.mouseMode = 5; // EDITING
