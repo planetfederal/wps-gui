@@ -590,10 +590,14 @@ wps.client = function(options) {
 };
 
 wps.client.getExceptionText = function(info) {
-  var exception = '';
+  var exception = '', i, ii;
   if (info['status'] && info['status'].processFailed && info['status'].processFailed.exceptionReport && info['status'].processFailed.exceptionReport.exception) {
-    for (var i=0, ii=info['status'].processFailed.exceptionReport.exception.length; i<ii; ++i) {
+    for (i=0, ii=info['status'].processFailed.exceptionReport.exception.length; i<ii; ++i) {
       exception += info['status'].processFailed.exceptionReport.exception[i].exceptionText.join('<br/>');
+    }
+  } else if (info.exception) {
+    for (i=0, ii=info.exception.length; i<ii; ++i) {
+      exception += info.exception[i].exceptionText.join('<br/>');
     }
   }
   return exception;
@@ -696,23 +700,28 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=GetCapabilities';
   var me = this;
+  var errorText  = 'There was an error loading the WPS GetCapabilities document from: ' + server.url;
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
     if (this.responseXML !== null) {
       var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
-      var groups = {};
-      for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
-        var key = info.processOfferings.process[i].identifier.value;
-        var names = key.split(':');
-        var group = names[0];
-        if (!groups[group]) {
-          groups[group] = [];
+      if (info && info.exception) {
+        alert(errorText + ' (' + wps.client.getExceptionText(info) + ')');
+      } else if (info && info.processOfferings && info.processOfferings.process) {
+        var groups = {};
+        for (var i=0, ii=info.processOfferings.process.length; i<ii; ++i) {
+          var key = info.processOfferings.process[i].identifier.value;
+          var names = key.split(':');
+          var group = names[0];
+          if (!groups[group]) {
+            groups[group] = [];
+          }
+          groups[group].push({name: names[1], value: info.processOfferings.process[i]});
         }
-        groups[group].push({name: names[1], value: info.processOfferings.process[i]});
+        callback.call(me, groups);
       }
-      callback.call(me, groups);
     } else {
-      alert('There was an error loading the WPS GetCapabilities document from: ' + server.url);
+      alert(errorText);
     }
   };
   xmlhttp.send();
