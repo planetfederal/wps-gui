@@ -666,7 +666,6 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
       var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.contents && info.contents.coverageSummary) {
         for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
-          // apparantly JSONIX expects Identifier to be in OWS and not WCS namespace
           var coverage = {};
           if (info.contents.coverageSummary[i].content) {
             for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
