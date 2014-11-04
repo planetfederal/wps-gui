@@ -506,8 +506,12 @@ wps.editor.prototype.showEditForm = function(node) {
       map = this.ui_.inputMaps[mapId].map;
     } else {
       map = this.ui_.inputMaps[mapId].map;
-      map.set('target', 'input-map-' + mapId);
+      map.setTarget('input-map-' + mapId);
     }
+    // workaround for changing target of logo anchor
+    window.setTimeout(function() {
+      $('.ol-attribution ul li a').attr('target', '_blank');
+    }, 1000);
     if (typeof node.value === "string" && node.value.indexOf('|') === -1 && node._geom !== false) {
       var hasFeature = false;
       this.ui_.inputMaps[mapId].source.forEachFeature(function(f) {
@@ -1467,6 +1471,10 @@ wps.ui.prototype.execute = function(ui) {
               } else {
                 ui.outputMap.map.setTarget('map');
               }
+              // workaround for changing target of logo anchor
+              window.setTimeout(function() {
+                $('.ol-attribution ul li a').attr('target', '_blank');
+              }, 1000);
               ui.outputMap.source.clear();
               ui.outputMap.source.addFeatures(output.result);
               var view = ui.outputMap.map.getView();
