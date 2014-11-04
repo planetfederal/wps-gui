@@ -984,3 +984,6 @@ i.spinner {
 .btn-group-map {
     margin: 5px;
 }
+.wpsgui.form-control[readonly] {
+  cursor: inherit;
+}

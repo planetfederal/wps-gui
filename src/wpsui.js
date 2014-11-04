@@ -963,7 +963,7 @@ wps.ui.prototype.exportClipboard = function(ui) {
   }
   var html = '<div class="form-row">';
   html += '<label for="node-input-export" style="width:100%"><i class="glyphicon glyphicon-share"> Nodes:</i></label>';
-  html += '<textarea readonly class="form-control" id="node-input-export" rows="5"></textarea>';
+  html += '<textarea readonly class="wpsgui form-control" id="node-input-export" rows="5"></textarea>';
   html += '</div>';
   html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
   $("#dialog-form").html(html);
@@ -1445,7 +1445,7 @@ wps.ui.prototype.execute = function(ui) {
             $('#btn-download').click(function() {
               var html = '<div class="form-row">';
               html += '<label for="features-download" style="width:100%"><i class="glyphicon glyphicon-share"> Features:</i></label>';
-              html += '<textarea readonly class="form-control" id="features-download" rows="5"></textarea>';
+              html += '<textarea readonly class="wpsgui form-control" id="features-download" rows="5"></textarea>';
               html += '</div>';
               html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
               $("#dialog-form").html(html);
