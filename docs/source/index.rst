@@ -122,6 +122,8 @@ To link the input to the output of another process, make sure two processes are 
 
    Chaining two processes
 
+To remove a connection, click the wire so that it is highlighted, and then press the :kbd:`Backspace` or :kbd:`Delete` key.
+
 Running a workflow
 ------------------
 
