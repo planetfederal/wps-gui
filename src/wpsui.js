@@ -1712,9 +1712,10 @@ wps.ui.prototype.createDropTarget = function() {
         mousePos[0] += this.scrollLeft;
         mousePos[1] /= me.scaleFactor;
         mousePos[0] /= me.scaleFactor;
+        mousePos[0] = Math.max(mousePos[0], 300);
         var config = {
           x: mousePos[0],
-          y:mousePos[1],
+          y: mousePos[1],
           w: this.nodeWidth,
           type: 'process',
           dirty: true,
