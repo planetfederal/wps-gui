@@ -1340,168 +1340,167 @@ wps.ui.prototype.execute = function(ui) {
   var selection = d3.selectAll(".node_selected");
   if (selection[0].length > 0) {
     var node = selection.datum();
-    if (node.complete !== true) {
+    hasSelected = true;
+    var processId = node.type === 'process' ? node.id : node._parent;
+    if (ui.findNodeById(processId).complete !== true) {
       return;
     }
-    if (node.type === 'process') {
-      hasSelected = true;
-      var processId = node.id, process = ui.processes[processId];
-      var values = ui.getInputs(processId);
-      if (values && process.isComplete(values)) {
-        var inputs = {};
+    var process = ui.processes[processId];
+    var values = ui.getInputs(processId);
+    if (values && process.isComplete(values)) {
+      var inputs = {};
 
-        var hasSubProcess = function(values) {
-          var result = false;
-          for (var key in values) {
-            if (typeof values[key] === 'string' && values[key].indexOf(wps.SUBPROCESS) !== -1) {
-              result = true;
-              break;
-            }
+      var hasSubProcess = function(values) {
+        var result = false;
+        for (var key in values) {
+          if (typeof values[key] === 'string' && values[key].indexOf(wps.SUBPROCESS) !== -1) {
+            result = true;
+            break;
           }
-          return result;
-        };
+        }
+        return result;
+      };
 
-        // make sure we configure all subprocesses
-        ui.processAlgorithm(processId);
+      // make sure we configure all subprocesses
+      ui.processAlgorithm(processId);
 
-        var recurse = function(inputs, ui, values) {
-          for (var key in values) {
-            if (typeof values[key] === 'string' && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
-              if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
-                var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
-                var subInputs = ui.getInputs(subId);
-                inputs[key] = ui.processes[subId].output();
-                // only recurse if subInputs has subprocesses
-                if (hasSubProcess(subInputs)) {
-                  recurse(inputs[key], ui, subInputs);
-                }
-              } else {
-                inputs[key] = ui.handleLocal(values[key]);
+      var recurse = function(inputs, ui, values) {
+        for (var key in values) {
+          if (typeof values[key] === 'string' && (values[key].indexOf(wps.RASTERLAYER) !== -1 || values[key].indexOf(wps.VECTORLAYER) !== -1 || values[key].indexOf(wps.SUBPROCESS) !== -1)) {
+            if (values[key].indexOf(wps.SUBPROCESS) !== -1) {
+              var subId = values[key].substring(values[key].indexOf(wps.SUBPROCESS) + 8);
+              var subInputs = ui.getInputs(subId);
+              inputs[key] = ui.processes[subId].output();
+              // only recurse if subInputs has subprocesses
+              if (hasSubProcess(subInputs)) {
+                recurse(inputs[key], ui, subInputs);
               }
             } else {
-              if ($.isArray(values[key])) {
-                for (i=0, ii=values[key].length; i<ii; ++i) { 
-                  values[key][i] = ui.handleLocal(values[key][i]);
-                } 
-                inputs[key] = values[key];
-              } else if ($.isXMLDoc(values[key])) { 
-                inputs[key] = values[key];
-              } else { 
-                if (values[key] !== undefined) {
-                  inputs[key] = '' + values[key];
-                }
+              inputs[key] = ui.handleLocal(values[key]);
+            }
+          } else {
+            if ($.isArray(values[key])) {
+              for (i=0, ii=values[key].length; i<ii; ++i) { 
+                values[key][i] = ui.handleLocal(values[key][i]);
+              } 
+              inputs[key] = values[key];
+            } else if ($.isXMLDoc(values[key])) { 
+              inputs[key] = values[key];
+            } else { 
+              if (values[key] !== undefined) {
+                inputs[key] = '' + values[key];
               }
             }
           }
-        };
+        }
+      };
 
-        recurse(inputs, ui, values);
+      recurse(inputs, ui, values);
 
-        var prettyXML = function(body) {
-          var code = $('#tab-xml pre code').get(0);
-          $(code).html(document.createTextNode(vkbeautify.xml(body, 2)));
-          hljs.highlightBlock(code);
-        };
+      var prettyXML = function(body) {
+        var code = $('#tab-xml pre code').get(0);
+        $(code).html(document.createTextNode(vkbeautify.xml(body, 2)));
+        hljs.highlightBlock(code);
+      };
 
-        var markOutputComplete = function(ui, complete) {
-            var outputs = ui.getOutputNodes(node.id);
-            for (var i=0, ii=outputs.length; i<ii; ++i) {
-              var oldComplete = outputs[i].complete;
-              outputs[i].complete = complete;
-              outputs[i].dirty = (oldComplete !== complete);
-            }
-            ui.redraw();
-        };
+      var markOutputComplete = function(ui, complete) {
+        var outputs = ui.getOutputNodes(processId);
+        for (var i=0, ii=outputs.length; i<ii; ++i) {
+          var oldComplete = outputs[i].complete;
+          outputs[i].complete = complete;
+          outputs[i].dirty = (oldComplete !== complete);
+        }
+        ui.redraw();
+      };
 
-        $('#workspace').append('<i id="progress-indicator" class="fa fa-spinner fa-spin fa-5x"></i>');
+      $('#workspace').append('<i id="progress-indicator" class="fa fa-spinner fa-spin fa-5x"></i>');
 
-        process.execute({
-          inputs: inputs,
-          startdownload: function() {
-            $('#progress-indicator').remove();
-            $("#dialog-form").html('<p>The TIFF download will now be requested on the server, the browser will notify you when it is done</p>');
-            $("#dialog").dialog("option", "title", "Download TIFF").dialog( "open" );
-            // bootstrap's hide class has important, so we need to remove it
-            $("#dialog").removeClass('hide');
-          },
-          failure: function(exception, body) {
-            $('#progress-indicator').remove();
-            markOutputComplete(ui, false);
-            prettyXML(body);
+      process.execute({
+        inputs: inputs,
+        startdownload: function() {
+          $('#progress-indicator').remove();
+          $("#dialog-form").html('<p>The TIFF download will now be requested on the server, the browser will notify you when it is done</p>');
+          $("#dialog").dialog("option", "title", "Download TIFF").dialog( "open" );
+          // bootstrap's hide class has important, so we need to remove it
+          $("#dialog").removeClass('hide');
+        },
+        failure: function(exception, body) {
+          $('#progress-indicator').remove();
+          markOutputComplete(ui, false);
+          prettyXML(body);
+          $('.output-map').detach();
+          $('#tab-results').html(exception);
+          ui.activateTab('tab-results');
+        },
+        success: function(output, body, responseText) {
+          $('#progress-indicator').remove();
+          markOutputComplete(ui, true);
+          prettyXML(body);
+          if ($.isArray(output.result)) {
+            var html = '<button id="btn-download" type="button" class="btn btn-default">';
+            html += '<i class="fa fa-download fa-fw"></i>Download</button>';
+            html += '<div id="map" class="output-map"></div>';
             $('.output-map').detach();
-            $('#tab-results').html(exception);
+            $('#tab-results').html(html);
+            $('#btn-download').click(function() {
+              var html = '<div class="form-row">';
+              html += '<label for="features-download" style="width:100%"><i class="glyphicon glyphicon-share"> Features:</i></label>';
+              html += '<textarea readonly class="form-control" id="features-download" rows="5"></textarea>';
+              html += '</div>';
+              html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
+              $("#dialog-form").html(html);
+              $("#dialog").dialog("option", "title", "Download Features").dialog( "open" );
+              // bootstrap's hide class has important, so we need to remove it
+              $("#dialog").removeClass('hide');
+              $("#features-download").val(responseText);
+              $("#features-download").focus();
+            });
             ui.activateTab('tab-results');
-          },
-          success: function(output, body, responseText) {
-            $('#progress-indicator').remove();
-            markOutputComplete(ui, true);
-            prettyXML(body);
-            if ($.isArray(output.result)) {
-              var html = '<button id="btn-download" type="button" class="btn btn-default">';
-              html += '<i class="fa fa-download fa-fw"></i>Download</button>';
-              html += '<div id="map" class="output-map"></div>';
-              $('.output-map').detach();
-              $('#tab-results').html(html);
-              $('#btn-download').click(function() {
-                var html = '<div class="form-row">';
-                html += '<label for="features-download" style="width:100%"><i class="glyphicon glyphicon-share"> Features:</i></label>';
-                html += '<textarea readonly class="form-control" id="features-download" rows="5"></textarea>';
-                html += '</div>';
-                html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
-                $("#dialog-form").html(html);
-                $("#dialog").dialog("option", "title", "Download Features").dialog( "open" );
-                // bootstrap's hide class has important, so we need to remove it
-                $("#dialog").removeClass('hide');
-                $("#features-download").val(responseText);
-                $("#features-download").focus();
+            if (!ui.outputMap) {
+              ui.outputMap = {};
+              ui.outputMap.source = new ol.source.Vector();
+              ui.outputMap.vector = new ol.layer.Vector({source: ui.outputMap.source, style: ui.outputStyle});
+              ui.outputMap.map = new ol.Map({
+                target: 'map',
+                layers: [
+                  wps.backgroundLayer,
+                  ui.outputMap.vector
+                ],
+                view: new ol.View(wps.mapSettings)
               });
-              ui.activateTab('tab-results');
-              if (!ui.outputMap) {
-                ui.outputMap = {};
-                ui.outputMap.source = new ol.source.Vector();
-                ui.outputMap.vector = new ol.layer.Vector({source: ui.outputMap.source, style: ui.outputStyle});
-                ui.outputMap.map = new ol.Map({
-                  target: 'map',
-                  layers: [
-                    wps.backgroundLayer,
-                    ui.outputMap.vector
-                  ],
-                  view: new ol.View(wps.mapSettings)
-                });
-              } else {
-                ui.outputMap.map.setTarget('map');
-              }
-              // workaround for changing target of logo anchor
-              window.setTimeout(function() {
-                $('.ol-attribution ul li a').attr('target', '_blank');
-              }, 1000);
-              ui.outputMap.source.clear();
-              ui.outputMap.source.addFeatures(output.result);
-              var view = ui.outputMap.map.getView();
-              var extent = ui.outputMap.source.getExtent();
-              if (extent[0] === extent[2]) {
-                view.setCenter([extent[0], extent[1]]);
-                view.setZoom(8);
-              } else {
-                view.fitExtent(
-                  ui.outputMap.source.getExtent(), ui.outputMap.map.getSize());
-              }
             } else {
-              if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
-                $('.output-map').detach();
-                $('#tab-results').html('<pre><code class="xml"></code></pre>');
-                var code = $('#tab-results pre code').get(0);
-                $(code).html(document.createTextNode(vkbeautify.xml(output.result, 4)));
-                hljs.highlightBlock(code);
-              } else {
-                $('.output-map').detach();
-                $('#tab-results').html(String(output.result));
-              }
-              ui.activateTab('tab-results');
+              ui.outputMap.map.setTarget('map');
             }
+            // workaround for changing target of logo anchor
+            window.setTimeout(function() {
+              $('.ol-attribution ul li a').attr('target', '_blank');
+            }, 1000);
+            ui.outputMap.source.clear();
+            ui.outputMap.source.addFeatures(output.result);
+            var view = ui.outputMap.map.getView();
+            var extent = ui.outputMap.source.getExtent();
+            if (extent[0] === extent[2]) {
+              view.setCenter([extent[0], extent[1]]);
+              view.setZoom(8);
+            } else {
+              view.fitExtent(
+                ui.outputMap.source.getExtent(), ui.outputMap.map.getSize());
+            }
+          } else {
+            if ((typeof output.result === 'string') && output.result.indexOf('<?xml') !== -1) {
+              $('.output-map').detach();
+              $('#tab-results').html('<pre><code class="xml"></code></pre>');
+              var code = $('#tab-results pre code').get(0);
+              $(code).html(document.createTextNode(vkbeautify.xml(output.result, 4)));
+              hljs.highlightBlock(code);
+            } else {
+              $('.output-map').detach();
+              $('#tab-results').html(String(output.result));
+            }
+            ui.activateTab('tab-results');
           }
-        });
-      }
+        }
+      });
     }
   }
   if (!hasSelected) {
