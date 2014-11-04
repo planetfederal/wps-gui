@@ -664,7 +664,7 @@ wps.editor.prototype.showEditForm = function(node) {
 
 wps.ui = function(options) {
   $(document).ready(function() {
-    $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left);
+    $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left-$('#btn-run-process').outerWidth());
     $('#btn-run-process').css('display', 'block');
   });
   var me = this;
@@ -1109,7 +1109,7 @@ wps.ui.prototype.initializeSplitter = function() {
       $("#sidebar").width(newSidebarWidth);
       me.resizeMaps();
       me.resizeTabs();
-      $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left);
+      $('#btn-run-process').css('right', $(document).width()-$('#sidebar').position().left-$('#btn-run-process').outerWidth());
     },
     stop:function(event,ui) {
       $("#sidebar-separator").css("left","auto");
