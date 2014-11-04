@@ -859,8 +859,10 @@ wps.ui.node.prototype.getState = function() {
 };
 
 wps.ui.load = function(ui, evt, nodes) {
+  var local = false;
   if (!nodes) {
     nodes = localStorage.getItem(ui.localStorageKey);
+    local = true;
   }
   if (nodes !== null) {
     ui.nodes = JSON.parse(nodes);
@@ -880,6 +882,9 @@ wps.ui.load = function(ui, evt, nodes) {
       }
     }
     ui.redraw();
+    if (local) {
+      $('.open-success').fadeIn().delay(1500).fadeOut();
+    }
   }
 };
 
@@ -1074,7 +1079,7 @@ wps.ui.prototype.save = function(ui) {
     nodes.push(ui.nodes[i].getState());
   }
   localStorage.setItem(ui.localStorageKey, JSON.stringify(nodes));
-  $('.save-success').fadeIn().delay(2000).fadeOut();
+  $('.save-success').fadeIn().delay(1500).fadeOut();
 };
 
 wps.ui.prototype.resizeTabs = function() {
