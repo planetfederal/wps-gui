@@ -1293,7 +1293,7 @@ wps.ui.prototype.processAlgorithm = function(processId) {
 };
 
 wps.ui.prototype.showHelp = function() {
-  window.open('docs/build/html/usage.html', 'help');
+  window.open('docs/build/html/', 'help');
 };
 
 wps.ui.prototype.deleteInputMap = function(mapId) {
