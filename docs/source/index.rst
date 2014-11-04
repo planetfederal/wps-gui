@@ -127,7 +127,7 @@ Running a workflow
 
 A workflow can consist of one or more processes with appropriate inputs.
 
-When a workflow contains a single process, click the yellow process block to select it, and then click :guilabel:`Run Process`. To run a chain of processes, click the yellow process block that is the **final process in the chain**, and then click :guilabel:`Run Process`.
+When a workflow contains a single process, click any block to select it, and then click :guilabel:`Run Process`. To run a chain of processes, click a block associated with the **final process in the chain**, and then click :guilabel:`Run Process`.
 
 .. note:: Every process can be run as its own workflow, even when an intermediate step in a chain. The process for running an intermediate process workflow is the same, in which case all process that come "after" the selected process will be ignored.
 
