@@ -987,3 +987,6 @@ i.spinner {
 .wpsgui.form-control[readonly] {
   cursor: inherit;
 }
+#btn-zoom-zero, #btn-zoom-in, #btn-zoom-out {
+  font-size: 12px;
+}
