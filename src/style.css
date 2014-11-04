@@ -990,3 +990,6 @@ i.spinner {
 #btn-zoom-zero, #btn-zoom-in, #btn-zoom-out {
   font-size: 12px;
 }
+.wpsgui.dropdown-menu {
+  min-width: 275px;
+}
