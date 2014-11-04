@@ -993,3 +993,9 @@ i.spinner {
 .wpsgui.dropdown-menu {
   min-width: 275px;
 }
+.save-success {
+  display: none;
+  margin-left: 20px;
+  color: #5cb85c;
+  font-size: 16px;
+}
