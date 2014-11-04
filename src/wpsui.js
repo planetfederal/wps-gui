@@ -209,7 +209,11 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
 };
 
 wps.editor.prototype.showEditForm = function(node) {
-  if (node['type'] !== 'input' || (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1)) {
+  if (node.type === 'process') {
+    $('#tab-inputs').html('<div class="form-row-abstract">' + node._info._abstract.value + '</div>');
+    this.ui_.activateTab('tab-inputs');
+  }
+  if (node.type !== 'input' || (typeof node.value === "string" && node.value.indexOf(wps.SUBPROCESS) !== -1)) {
     return;
   }
   this.editingNode_ = node;
@@ -2143,10 +2147,6 @@ wps.ui.nodeMouseDown = function(ui, d) {
   me.clickTime = now;
   if (!d.selected) {
     me.clearSelection();
-  }
-  if (me.mousedownNode.type !== 'input') {
-    $('.input-map').detach();
-    $('#tab-inputs').html('');
   }
   me.mousedownNode.selected = true;
   me.movingSet.push({n:me.mousedownNode});
