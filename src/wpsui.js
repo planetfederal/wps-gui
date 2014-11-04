@@ -1074,6 +1074,7 @@ wps.ui.prototype.save = function(ui) {
     nodes.push(ui.nodes[i].getState());
   }
   localStorage.setItem(ui.localStorageKey, JSON.stringify(nodes));
+  $('.save-success').fadeIn().delay(2000).fadeOut();
 };
 
 wps.ui.prototype.resizeTabs = function() {
