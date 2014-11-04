@@ -971,7 +971,7 @@ wps.ui.prototype.exportClipboard = function(ui) {
   html += '</div>';
   html += '<div class="form-tips"> Select the text above and copy to the clipboard.</div>';
   $("#dialog-form").html(html);
-  $("#dialog").dialog("option", "title", "Export nodes to clipboard").dialog( "open" );
+  $("#dialog").dialog("option", "title", "Export to clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
   $("#node-input-export").val(JSON.stringify(nodes));
@@ -985,7 +985,7 @@ wps.ui.prototype.importClipboard = function(ui) {
   html += '</div>';
   $("#dialog-form").html(html);
   $("#node-input-import").val("");
-  $("#dialog").dialog("option", "title", "Import nodes from clipboard").dialog( "open" );
+  $("#dialog").dialog("option", "title", "Import from clipboard").dialog( "open" );
   // bootstrap's hide class has important, so we need to remove it
   $("#dialog").removeClass('hide');
 };
