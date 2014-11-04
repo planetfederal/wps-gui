@@ -34,7 +34,7 @@ Using the WPS-GUI involves the following steps:
 Adding a process to the workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To add a process to a workflow, select it from the Process List and drag it onto the Canvas. The process block will be added in the location where it is dropped. Attached to it will be one or more input blocks, representing each of the inputs used to run the process. Also attached is a green :guilabel:`result` block, for the output of the process. The block is only used when chaining to another process.
+To add a process to a workflow, select it from the Process List and drag it onto the Canvas. The process block will be added in the location where it is dropped. Attached to it will be one or more input blocks, representing each of the inputs used to run the process. Also attached is a green block, often called :guilabel:`result`, for the output of the process. The block is only used when chaining to another process.
 
 .. figure:: img/process.png
 
@@ -133,7 +133,7 @@ When a workflow contains a single process, click any block to select it, and the
 
 In all cases, a single request is sent to GeoServer, with chained processes encoded as nested inputs.
 
-Results are either shown on the :guilabel:`Results` tab of the I/O panel or, depending on the output format, downloaded.
+Results are either shown on the :guilabel:`Console` tab of the I/O panel or, depending on the output format, downloaded.
 
 For vector layers, results will be shown on a map if the coordinate reference system of the layer is either EPSG:4326 (Mercator) or EPSG:3857 (Web Mercator). 
 
