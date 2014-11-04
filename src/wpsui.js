@@ -1343,6 +1343,7 @@ wps.ui.prototype.execute = function(ui) {
     hasSelected = true;
     var processId = node.type === 'process' ? node.id : node._parent;
     if (ui.findNodeById(processId).complete !== true) {
+      alert('The process is not yet complete and cannot be run as yet. Make sure all required inputs have been set.');
       return;
     }
     var process = ui.processes[processId];
