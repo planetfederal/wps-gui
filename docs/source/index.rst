@@ -22,6 +22,32 @@ The Canvas panel is where the workflow is designed. Processes are dragged from t
 
 The I/O panel is where inputs to processes can be specified, and where the result of a workflow is displayed.
 
+Toolbar
+-------
+
+There is also a toolbar at the top of the application. This contains one menu and three buttons.
+
+.. figure:: img/toolbar.png
+
+   Toolbar
+
+* The :guilabel:`File` menu allows for the current state of the workflow to be saved and retrieved. The workflow can either saved to the local browser cache or to the clipboard, where the code to reproduce the workflow can be copied to a file. The menu also has options for loading data from the browser cache and from the clipboard.
+
+  .. figure:: img/filemenu.png
+
+     File menu
+
+  .. figure:: img/export.png
+
+     Exporting to clipboard
+
+* The :guilabel:`Clear` button will remove all contents of the Canvas.
+
+  .. warning:: This operation is not undoable.
+
+* The :guilabel:`Help` button brings up this content.
+* The :guilabel:`Run Process` button will execute the currently selected process or chain of processes in the Canvas. 
+
 Usage
 -----
 
