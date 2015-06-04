@@ -671,20 +671,14 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
       if (info && info.contents && info.contents.coverageSummary) {
         for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
           var coverage = {};
-          if (info.contents.coverageSummary[i].content) {
-            for (var j=0, jj=info.contents.coverageSummary[i].content.length; j<jj; ++j) {
-              var content = info.contents.coverageSummary[i].content[j];
-              if (content.name.localPart === "Identifier") {
-                coverage.name = content.value;
-              }
-              if (content.name.localPart === "WGS84BoundingBox") {
-                coverage.lowerCorner = content.value.lowerCorner;
-                coverage.upperCorner = content.value.upperCorner;
-              }
-              if (coverage.name && coverage.lowerCorner && coverage.upperCorner) {
-                coverages.push(coverage);
-              }
-            }
+          var covsum = info.contents.coverageSummary[i];
+          coverage.name = covsum.identifier;
+          if (covsum.wgs84BoundingBox && covsum.wgs84BoundingBox.length > 0) {
+            coverage.lowerCorner = covsum.wgs84BoundingBox[0].lowerCorner;
+            coverage.upperCorner = covsum.wgs84BoundingBox[0].lowerCorner;
+          }
+          if (coverage.name && coverage.lowerCorner && coverage.upperCorner) {
+            coverages.push(coverage);
           }
         }
       } else if (window.console) {
