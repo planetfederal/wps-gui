@@ -7,7 +7,9 @@
     "jquery-ui": "1.11.0",
     "d3": "3.4.11",
     "font-awesome": "4.2.0",
-    "jsonix": "highsource/jsonix#55c0667f6f6ce19d45e548c39f9923e14015f310",
+    "jsonix": "2.2.1",
+    "ogc-schemas": "2.2.0",
+    "w3c-schemas": "1.1.0",
     "vkBeautify": "vkiryukhin/vkBeautify#ecfc3b9e2b911ad8ebd49600c4089aca30619f29"
   }
 }

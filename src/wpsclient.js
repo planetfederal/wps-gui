@@ -1,3 +1,7 @@
+// JSONIX overrides
+WCS_1_1.defaultElementNamespaceURI = 'http:\/\/www.opengis.net\/wcs\/1.1.1';
+// end of JSONIX overrides
+
 if (!window.wps) {
   window.wps = {};
 }
@@ -574,7 +578,7 @@ wps.process.localWFS = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, WFS_1_1_0, GML_3_1_1, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, GML_3_1_1, WFS_1_1_0, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
   this.unmarshaller = this.context.createUnmarshaller();
   this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
