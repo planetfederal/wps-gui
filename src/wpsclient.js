@@ -642,7 +642,7 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
         for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
           var featureType = {};
           var ft = info.featureTypeList.featureType[i];
-          featureType.name = ft.name;
+          featureType.name = ft.name.prefix + ':' + ft.name.localPart;
           featureType.lowerCorner = ft.wgs84BoundingBox[0].lowerCorner;
           featureType.upperCorner = ft.wgs84BoundingBox[0].upperCorner;
           featureTypes.push(featureType);
