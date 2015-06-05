@@ -11,15 +11,8 @@ wps.editor = function(ui) {
 var extent = [-180, -90, 180, 90];
 
 wps.backgroundLayer = new ol.layer.Tile({
-  extent: extent,
-  source: new ol.source.TileWMS({
-    url: "/geoserver/wms",
-    params: {
-      'TILED': 'true',
-      'VERSION': '1.1.1',
-      'LAYERS': 'sf:NE2_HR_LC_SR_W',
-      'FORMAT': 'image/png'
-    }
+  source: new ol.source.MapQuest({
+    layer: "sat"
   })
 });
 
@@ -33,11 +26,9 @@ var projection = new ol.proj.Projection({
 ol.proj.addProjection(projection);
 
 wps.mapSettings = {
-  projection: 'EPSG:4326',
+  projection: 'EPSG:3857',
   center: [0, 0],
-  extent: extent,
-  zoom: 1,
-  minZoom: 1
+  zoom: 0
 };
 
 wps.editor.EMPTYTEXT = '<option value="" selected disabled>Select a value...</option>';
@@ -435,7 +426,7 @@ wps.editor.prototype.showEditForm = function(node) {
       this.ui_.inputMaps[mapId] = {};
       this.ui_.inputMaps[mapId].vectorWMS = {};
       this.ui_.inputMaps[mapId].rasterWMS = {};
-      this.ui_.inputMaps[mapId].source = new ol.source.Vector();
+      this.ui_.inputMaps[mapId].source = new ol.source.Vector({wrapX: false});
       this.ui_.inputMaps[mapId].vector = new ol.layer.Vector({source: this.ui_.inputMaps[mapId].source, style: function(feature) {
         var selection = d3.selectAll(".node_selected");
         if (selection[0].length > 0) {

@@ -117129,7 +117129,7 @@ goog.require('ol.proj.Projection');
 goog.require('ol.proj.ProjectionLike');
 goog.require('ol.proj.Units');
 goog.require('ol.source.ImageWMS');
-goog.require('ol.source.TileWMS');
+goog.require('ol.source.MapQuest');
 goog.require('ol.source.Vector');
 goog.require('ol.source.VectorEvent');
 goog.require('ol.source.VectorEventType');
@@ -117283,8 +117283,8 @@ goog.exportSymbol(
     ol.layer.Tile);
 
 goog.exportSymbol(
-    'ol.source.TileWMS',
-    ol.source.TileWMS);
+    'ol.source.MapQuest',
+    ol.source.MapQuest);
 
 goog.exportSymbol(
     'ol.layer.Image',
