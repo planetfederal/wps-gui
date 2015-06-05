@@ -578,9 +578,6 @@ wps.process.localWFS = function(options) {
 };
 
 wps.client = function(options) {
-  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, GML_3_1_1, WFS_1_1_0, SMIL_2_0, SMIL_2_0_Language, WCS_1_1]);
-  this.unmarshaller = this.context.createUnmarshaller();
-  this.marshaller = this.context.createMarshaller();
   this.version = options.version || "1.0.0";
   this.lazy = options.lazy !== undefined ? options.lazy : false;
   this.servers = {};
@@ -607,6 +604,14 @@ wps.client.getExceptionText = function(info) {
   return exception;
 };
 
+wps.client.prototype.setNamespacePrefixes = function(namespacePrefixes) {
+  this.context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0, Filter_2_0, OWS_1_0_0, Filter_1_1_0, GML_2_1_2, GML_3_1_1, WFS_1_1_0, SMIL_2_0, SMIL_2_0_Language, WCS_1_1], {
+    namespacePrefixes: namespacePrefixes
+  });
+  this.unmarshaller = this.context.createUnmarshaller();
+  this.marshaller = this.context.createMarshaller();
+};
+
 wps.client.prototype.execute = function(options) {
   var process = this.getProcess(options.server, options.process);
   process.execute({
@@ -629,24 +634,29 @@ wps.client.prototype.getProcess = function(serverID, processID, options) {
 };
 
 wps.client.prototype.getFeatureTypes = function(serverID, callback) {
+  var context = new Jsonix.Context([OWS_1_0_0, Filter_1_1_0, SMIL_2_0, SMIL_2_0_Language, XLink_1_0, GML_3_1_1, WFS_1_1_0]);
+  var unmarshaller = context.createUnmarshaller();
   var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WFS&VERSION=1.1.0&request=GetCapabilities';
   var me = this;
   xmlhttp.open("GET", url, true);
+  var namespaces = {};
   xmlhttp.onload = function() {
     var featureTypes = [];
     if (this.responseXML !== null) {
-      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      var info = unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.featureTypeList && info.featureTypeList.featureType) {
         for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
           var featureType = {};
           var ft = info.featureTypeList.featureType[i];
+          namespaces[ft.name.namespaceURI] = ft.name.prefix;
           featureType.name = ft.name.prefix + ':' + ft.name.localPart;
           featureType.lowerCorner = ft.wgs84BoundingBox[0].lowerCorner;
           featureType.upperCorner = ft.wgs84BoundingBox[0].upperCorner;
           featureTypes.push(featureType);
         }
+        me.setNamespacePrefixes(namespaces);
       } else if (window.console) {
         window.console.warn('No featureTypes found on WFS server: ' + server.url);
       }
@@ -659,6 +669,8 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
 };
 
 wps.client.prototype.getCoverages = function(serverID, callback) {
+  var context = new Jsonix.Context([SMIL_2_0, SMIL_2_0_Language, GML_3_1_1, XLink_1_0, OWS_1_1_0, WCS_1_1]);
+  var unmarshaller = context.createUnmarshaller();
   var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WCS&VERSION=1.1.0&request=GetCapabilities';
@@ -667,7 +679,7 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
   xmlhttp.onload = function() {
     var coverages = [];
     if (this.responseXML !== null) {
-      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      var info = unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.contents && info.contents.coverageSummary) {
         for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
           var coverage = {};
@@ -675,7 +687,7 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
           coverage.name = covsum.identifier;
           if (covsum.wgs84BoundingBox && covsum.wgs84BoundingBox.length > 0) {
             coverage.lowerCorner = covsum.wgs84BoundingBox[0].lowerCorner;
-            coverage.upperCorner = covsum.wgs84BoundingBox[0].lowerCorner;
+            coverage.upperCorner = covsum.wgs84BoundingBox[0].upperCorner;
           }
           if (coverage.name && coverage.lowerCorner && coverage.upperCorner) {
             coverages.push(coverage);
@@ -693,6 +705,8 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
 };
 
 wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
+  var context = new Jsonix.Context([XLink_1_0, OWS_1_1_0, WPS_1_0_0]);
+  var unmarshaller = context.createUnmarshaller();
   var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=GetCapabilities';
@@ -701,7 +715,7 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
     if (this.responseXML !== null) {
-      var info = me.unmarshaller.unmarshalDocument(this.responseXML).value;
+      var info = unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.exception) {
         alert(errorText + ' (' + wps.client.getExceptionText(info) + ')');
       } else if (info && info.processOfferings && info.processOfferings.process) {
