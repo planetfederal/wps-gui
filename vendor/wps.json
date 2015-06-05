@@ -10,6 +10,8 @@
     "ol.View#setZoom",
     "ol.Map",
     "ol.Map#getLayers",
+    "ol.Map#getView",
+    "ol.Map#setTarget",
     "ol.Collection#insertAt",
     "ol.Collection#getLength",
     "ol.Map#getSize",
@@ -69,8 +71,7 @@
       "externs/olx.js",
       "externs/proj4js.js",
       "externs/tilejson.js",
-      "externs/topojson.js",
-      "externs/vbarray.js"
+      "externs/topojson.js"
     ],
     "define": [
       "goog.dom.ASSUME_STANDARDS_MODE=true",
