@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<project name="wps-gui">
+<project name="wpsbuilder">
     <property name="build" location="build"/>
     <target name="copy">
         <copy file="index.html" todir="${build}/${ant.project.name}"/>
@@ -36,7 +36,6 @@
       </exec>
     </target>
     <target name="war" depends="npm,bower,gulp,docs,copy">
-        <property name="warfile" value="wps-gui"/> 
         <war needxmlfile="false" destfile="${build}/${ant.project.name}.war">
             <fileset dir="${build}/${ant.project.name}"/>
         </war>
