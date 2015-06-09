@@ -1,10 +1,17 @@
 var gulp = require('gulp'),
+    devServer = require('./dev-server.js'),
     gp_concat = require('gulp-concat'),
     gp_rename = require('gulp-rename'),
     gp_bower_files = require('main-bower-files'),
     gp_filter = require('gulp-filter'),
     gp_minify_css = require('gulp-minify-css'),
     gp_uglify = require('gulp-uglify');
+
+gulp.task('connect', function() {
+    devServer.run();
+});
+
+gulp.task('develop', ['connect', 'watch']);
 
 gulp.task('cssbuild', function() {
     gulp.src(['src/*.png'])
@@ -54,3 +61,5 @@ gulp.task('jsbuild', function(){
 //gulp.watch(['src/*.css', 'vendor/*.css'], ['cssbuild']);
 
 gulp.task('default', ['jsbuild', 'cssbuild'], function(){});
+
+gulp.task('develop', ['connect', 'jsbuild', 'cssbuild']);
