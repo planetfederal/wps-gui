@@ -1,5 +1,6 @@
 var gulp = require('gulp'),
     devServer = require('./dev-server.js'),
+    connect = require('gulp-connect'),
     gp_concat = require('gulp-concat'),
     gp_rename = require('gulp-rename'),
     gp_bower_files = require('main-bower-files'),
@@ -10,8 +11,6 @@ var gulp = require('gulp'),
 gulp.task('connect', function() {
     devServer.run();
 });
-
-gulp.task('develop', ['connect', 'watch']);
 
 gulp.task('cssbuild', function() {
     gulp.src(['src/*.png'])
@@ -57,9 +56,15 @@ gulp.task('jsbuild', function(){
         .pipe(gulp.dest('dist'));
 });
 
-//gulp.watch('src/*.js', ['jsbuild']);
-//gulp.watch(['src/*.css', 'vendor/*.css'], ['cssbuild']);
+gulp.task('watch', function() {
+  gulp.watch('src/*.js', ['jsbuild']).on('change', function(f) {
+    gulp.src([f.path]).pipe(connect.reload());
+  });
+  gulp.watch(['src/*.css', 'vendor/*.css'], ['cssbuild']).on('change', function(f) {
+    gulp.src([f.path]).pipe(connect.reload());
+  });
+});
 
 gulp.task('default', ['jsbuild', 'cssbuild'], function(){});
 
-gulp.task('develop', ['connect', 'jsbuild', 'cssbuild']);
+gulp.task('develop', ['connect', 'jsbuild', 'cssbuild', 'watch']);
