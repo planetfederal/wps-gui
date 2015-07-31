@@ -12,14 +12,6 @@
         <copy todir="${build}/${ant.project.name}/vendor">
             <fileset dir="vendor"/>
         </copy>
-        <copy todir="${build}/${ant.project.name}/docs/build/html">
-          <fileset dir="docs/build/html"/>
-        </copy>
-    </target>
-    <target name="docs">
-      <exec executable="make">
-        <arg line="-C docs -f Makefile html"/>
-      </exec>
     </target>
     <target name="npm">
       <exec executable="npm">
@@ -35,17 +27,12 @@
       <exec executable="gulp">
       </exec>
     </target>
-    <target name="war" depends="npm,bower,gulp,docs,copy">
+    <target name="war" depends="npm,bower,gulp,copy">
         <war needxmlfile="false" destfile="${build}/${ant.project.name}.war">
             <fileset dir="${build}/${ant.project.name}"/>
         </war>
     </target>
-    <target name="cleandocs">
-      <exec executable="make">
-        <arg line="-C docs -f Makefile clean"/>
-      </exec>
-    </target>
-    <target name="clean" depends="cleandocs">
+    <target name="clean">
         <delete dir="${build}"/>
     </target>
 </project>
