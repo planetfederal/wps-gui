@@ -36,6 +36,8 @@ wps.editor.PREFIX = "node-input-";
 wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
 wps.RASTERLAYER = 'raster|';
+wps.ONLINE_DOCS_URL = 'http://suite.opengeo.org/docs/latest/processing/wpsbuilder/';
+wps.LOCAL_DOCS_URL = '../opengeo-docs/processing/wpsbuilder/';
 
 wps.editor.prototype.addRasterLayer = function(id, node, value) {
   var mapId = node._parent;
@@ -1298,7 +1300,25 @@ wps.ui.prototype.processAlgorithm = function(processId) {
 };
 
 wps.ui.prototype.showHelp = function() {
-  window.open('docs/build/html/', 'help');
+  var urlExists = function(url, callback){
+    $.ajax({
+      type: 'HEAD',
+      url: url,
+      success: function(){
+        callback(true);
+      },
+      error: function() {
+        callback(false);
+      }
+    });
+  };
+  urlExists(wps.LOCAL_DOCS_URL, function(success) {
+    if (success) {
+      window.open(wps.LOCAL_DOCS_URL, 'help');
+    } else {
+      window.open(wps.ONLINE_DOCS_URL, 'help');
+    }
+  });
 };
 
 wps.ui.prototype.deleteInputMap = function(mapId) {
