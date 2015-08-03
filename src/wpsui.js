@@ -177,6 +177,8 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
     if (info.literalData.dataType) {
       var dataType = info.literalData.dataType.value;
       if (dataType === 'xs:double') {
+        // TODO use MinimumValue and rangeClosure etc. for validation
+        // see https://github.com/boundlessgeo/wps-gui/issues/207 for details
         return (value.match(/^-?\d*(\.\d+)?$/) !== null);
       } else if (dataType === 'xs:int') {
         return value.length > 0 && (Math.floor(value) == value);
