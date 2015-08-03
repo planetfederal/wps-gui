@@ -3,6 +3,7 @@
     "ol.proj.Projection",
     "ol.proj.addProjection",
     "ol.proj.getTransform",
+    "ol.proj.transformExtent",
     "ol.extent.applyTransform",
     "ol.View",
     "ol.View#fitExtent",

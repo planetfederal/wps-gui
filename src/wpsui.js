@@ -47,10 +47,10 @@ wps.editor.prototype.addRasterLayer = function(id, node, value) {
   for (var i=0, ii=this.ui_.coverages.length; i<ii; ++i) {
     var c = this.ui_.coverages[i];
     if (c.name === layer) {
-      extent[0] = c.lowerCorner[0];
-      extent[1] = c.lowerCorner[1];
-      extent[2] = c.upperCorner[0];
-      extent[3] = c.upperCorner[1];
+      extent[0] = Math.max(-180, c.lowerCorner[0]);
+      extent[1] = Math.max(-90, c.lowerCorner[1]);
+      extent[2] = Math.min(180, c.upperCorner[0]);
+      extent[3] = Math.min(90, c.upperCorner[1]);
       break;
     }
   }
@@ -72,7 +72,21 @@ wps.editor.prototype.addRasterLayer = function(id, node, value) {
   } else {
     this.ui_.inputMaps[mapId].rasterWMS[id].getSource().updateParams({'LAYERS': layer});
   }
-  map.getView().fitExtent(extent, map.getSize());
+  map.getView().fitExtent(
+    wps.editor.transformExtent(extent),
+    map.getSize()
+  );
+};
+
+wps.editor.transformExtent = function(extent) {
+  var reprojected = ol.proj.transformExtent(extent, 'EPSG:4326', wps.mapSettings.projection);
+  if (wps.mapSettings.projection === 'EPSG:3857') {
+    reprojected[0] = Math.max(-20037508.342789244, reprojected[0]);
+    reprojected[1] = Math.max(-20037508.342789244, reprojected[1]);
+    reprojected[2] = Math.min(20037508.342789244, reprojected[2]);
+    reprojected[3] = Math.min(20037508.342789244, reprojected[3]);
+  }
+  return reprojected;
 };
 
 wps.editor.prototype.addVectorLayer = function(id, node, value) {
@@ -83,10 +97,10 @@ wps.editor.prototype.addVectorLayer = function(id, node, value) {
   for (var i=0, ii=this.ui_.featureTypes.length; i<ii; ++i) {
     var ft = this.ui_.featureTypes[i];
     if (ft.name === layer) {
-      extent[0] = ft.lowerCorner[0];
-      extent[1] = ft.lowerCorner[1];
-      extent[2] = ft.upperCorner[0];
-      extent[3] = ft.upperCorner[1];
+      extent[0] = Math.max(-180, ft.lowerCorner[0]);
+      extent[1] = Math.max(-90, ft.lowerCorner[1]);
+      extent[2] = Math.min(180, ft.upperCorner[0]);
+      extent[3] = Math.min(90, ft.upperCorner[1]);
       break;
     }
   }
@@ -103,7 +117,10 @@ wps.editor.prototype.addVectorLayer = function(id, node, value) {
   } else {
     this.ui_.inputMaps[mapId].vectorWMS[id].getSource().updateParams({'LAYERS': layer});
   }
-  map.getView().fitExtent(extent, map.getSize());
+  map.getView().fitExtent(
+    wps.editor.transformExtent(extent),
+    map.getSize()
+  );
 };
 
 wps.editor.prototype.setValue = function(geom, id, val, node) {

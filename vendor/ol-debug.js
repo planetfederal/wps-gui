@@ -117155,6 +117155,10 @@ goog.exportSymbol(
     ol.proj.getTransform);
 
 goog.exportSymbol(
+    'ol.proj.transformExtent',
+    ol.proj.transformExtent);
+
+goog.exportSymbol(
     'ol.extent.applyTransform',
     ol.extent.applyTransform);
 
