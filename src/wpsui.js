@@ -229,7 +229,7 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<div class="form-row">';
     html += '<label for="' + id + '">' + nameText + '</label></div>';
 
-    if (node._info.literalData.allowedValues) {
+    if (node._info.literalData.allowedValues && !node._info.literalData.dataType) {
       html += '<select class="form-control input-sm" style="width: 70%;" id="' + id + '">';
       html += wps.editor.EMPTYTEXT;
 
