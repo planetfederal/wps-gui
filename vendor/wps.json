@@ -60,6 +60,7 @@
     "ol.Feature",
     "ol.geom.Polygon",
     "ol.Feature#setGeometry",
+    "ol.Feature#getGeometry",
     "ol.Feature#set",
     "ol.Feature#get",
     "ol.Feature#setStyle"

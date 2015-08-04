@@ -117418,6 +117418,11 @@ goog.exportProperty(
 
 goog.exportProperty(
     ol.Feature.prototype,
+    'getGeometry',
+    ol.Feature.prototype.getGeometry);
+
+goog.exportProperty(
+    ol.Feature.prototype,
     'set',
     ol.Feature.prototype.set);
 

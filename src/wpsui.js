@@ -578,7 +578,9 @@ wps.editor.prototype.showEditForm = function(node) {
           this.ui_.inputMaps[mapId].source.removeFeature(remove);
         }
         evt.feature.set('node', node.id);
-        node.value = this.WKT_.writeFeatures([evt.feature]);
+        var feature = evt.feature.clone();
+        feature.getGeometry().transform(wps.mapSettings.projection, 'EPSG:4326');
+        node.value = this.WKT_.writeFeatures([feature]);
         node.valid = evt.feature;
         if (node.valid) {
           this.setValue(true);
