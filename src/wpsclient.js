@@ -741,6 +741,8 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
 wps.client.prototype.describeProcess = function(serverID, processID, callback, scope) {
   var server = this.servers[serverID];
   if (!server.processDescription[processID]) {
+    // TODO see if we can prevent multiple calls to the same DescribeProcess identifier
+    // see: https://github.com/boundlessgeo/wps-gui/issues/211 for details and test case
     var xmlhttp = new XMLHttpRequest();
     var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=DescribeProcess&identifier=' + processID;
     xmlhttp.open("GET", url, true);
