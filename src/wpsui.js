@@ -11,8 +11,12 @@ wps.editor = function(ui) {
 var extent = [-180, -90, 180, 90];
 
 wps.backgroundLayer = new ol.layer.Tile({
-  source: new ol.source.MapQuest({
-    layer: "sat"
+  source: new ol.source.TileWMS({
+    url: 'http://maps.boundlessgeo.com/geowebcache/service/wms?',
+    params: {
+      'LAYERS': 'openstreetmap',
+      'VERSION': '1.1.1'
+    }
   })
 });
 
@@ -26,9 +30,11 @@ var projection = new ol.proj.Projection({
 ol.proj.addProjection(projection);
 
 wps.mapSettings = {
-  projection: 'EPSG:3857',
+  projection: 'EPSG:4326',
+  extent: extent,
   center: [0, 0],
-  zoom: 0
+  zoom: 1,
+  minZoom: 1
 };
 
 wps.editor.EMPTYTEXT = '<option value="" selected disabled>Select a value...</option>';

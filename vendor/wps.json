@@ -31,7 +31,7 @@
     "ol.layer.Vector",
     "ol.layer.Vector#changed",
     "ol.layer.Tile",
-    "ol.source.MapQuest",
+    "ol.source.TileWMS",
     "ol.layer.Image",
     "ol.layer.Image#getSource",
     "ol.source.ImageWMS",
