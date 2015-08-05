@@ -741,19 +741,15 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
 wps.client.prototype.describeProcess = function(serverID, processID, callback, scope) {
   var server = this.servers[serverID];
   if (!server.processDescription[processID]) {
-    if (!(processID in server.processDescription)) {
-      // set to null so we know a describeFeature request is pending
-      server.processDescription[processID] = null;
-      var xmlhttp = new XMLHttpRequest();
-      var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=DescribeProcess&identifier=' + processID;
-      xmlhttp.open("GET", url, true);
-      var me = this;
-      xmlhttp.onload = function() {
-        server.processDescription[processID] = this.responseText;
-        callback.call(scope, this.responseText);
-      };
-      xmlhttp.send();
-    }
+    var xmlhttp = new XMLHttpRequest();
+    var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=DescribeProcess&identifier=' + processID;
+    xmlhttp.open("GET", url, true);
+    var me = this;
+    xmlhttp.onload = function() {
+      server.processDescription[processID] = this.responseText;
+      callback.call(scope, this.responseText);
+    };
+    xmlhttp.send();
   } else {
     window.setTimeout(function() {
       callback.call(scope, server.processDescription[processID]);
