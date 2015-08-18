@@ -711,7 +711,8 @@ wps.client.prototype.getGroupedProcesses = function(serverID, callback) {
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WPS&VERSION=' + server.version + '&request=GetCapabilities';
   var me = this;
-  var errorText  = 'There was an error loading the WPS GetCapabilities document from: ' + server.url;
+  var errorText  = 'There was an error loading the WPS GetCapabilities document from: ' + server.url +
+      '. Is the GeoServer WPS extension installed?';
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
     if (this.responseXML !== null) {
