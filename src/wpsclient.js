@@ -132,7 +132,9 @@ wps.process.prototype.configure = function(options) {
         if (inputs[input.identifier.value] !== undefined) {
           if (!input.boundingBoxData && $.isArray(inputs[input.identifier.value])) {
             for (var j=0, jj=inputs[input.identifier.value].length; j<jj; ++j) {
-              this.setInputData(input, inputs[input.identifier.value][j]);
+              if (inputs[input.identifier.value][j] !== undefined) {
+                this.setInputData(input, inputs[input.identifier.value][j]);
+              }
             }
           } else {
             this.setInputData(input, inputs[input.identifier.value]);
