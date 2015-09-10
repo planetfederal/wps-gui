@@ -128,7 +128,8 @@
           };
           for (var group in groups) {
             if (skip.indexOf(group) === -1) {
-              var content = wpsui.createProcessCategory(descriptions[group]);
+              var description = descriptions[group] ? descriptions[group] : group;
+              var content = wpsui.createProcessCategory(description);
               for (var i=0, ii=groups[group].length; i<ii; ++i) {
                 $(content).append(wpsui.createProcess(groups[group][i]));
               }
