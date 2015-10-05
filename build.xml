@@ -3,12 +3,15 @@
     <property name="build" location="build"/>
     <target name="copy">
         <copy file="index.html" todir="${build}/${ant.project.name}"/>
+        <mkdir dir="${build}/${ant.project.name}/dist"/>
         <copy todir="${build}/${ant.project.name}/dist">
             <fileset dir="dist"/>
         </copy>
+        <mkdir dir="${build}/${ant.project.name}/components"/>
         <copy todir="${build}/${ant.project.name}/components">
             <fileset dir="components"/>
         </copy>
+        <mkdir dir="${build}/${ant.project.name}/vendor"/>
         <copy todir="${build}/${ant.project.name}/vendor">
             <fileset dir="vendor"/>
         </copy>
