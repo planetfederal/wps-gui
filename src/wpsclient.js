@@ -510,9 +510,9 @@ wps.process.prototype.getOutputIndex = function(outputs, identifier) {
 wps.process.prototype.chainProcess = function(input, inputValue, chainLink) {
   var output = this.getOutputIndex(
     chainLink.process.description.processOutputs.output, chainLink.output);
-  inputValue.reference.mimeType = this.findMimeType(
+  inputValue.reference.mimeType = input.complexData ? this.findMimeType(
     input.complexData.supported.format,
-    chainLink.process.description.processOutputs.output[output].complexOutput.supported.format);
+    chainLink.process.description.processOutputs.output[output].complexOutput.supported.format) : input.literalData.dataType.value;
   var formats = {};
   formats[inputValue.reference.mimeType] = true;
   chainLink.process.setResponseForm({

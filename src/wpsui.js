@@ -2019,6 +2019,11 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
           return false;
         }
         var match = false;
+        if (input._info.literalData && output._info.literalOutput) {
+          if (input._info.literalData.dataType.value.split(':').pop() === output._info.literalOutput.dataType.value.split(':').pop()) {
+            match = true;
+          }
+        }
         if (input._info.complexData && output._info.complexOutput) {
           for (var f=0, ff=input._info.complexData.supported.format.length; f<ff; ++f) {
             for (var g=0, gg=output._info.complexOutput.supported.format.length; g<gg; ++g) {
