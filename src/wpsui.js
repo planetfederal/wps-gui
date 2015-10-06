@@ -2014,6 +2014,10 @@ wps.ui.portMouseUp = function(ui, portType, portIndex, d) {
     }
     if (!existingLink) {
       var checkMatch = function(input, output) {
+        // input already connected
+        if (input.value !== undefined && input.value.indexOf(wps.SUBPROCESS) !== -1) {
+          return false;
+        }
         var match = false;
         if (input._info.complexData && output._info.complexOutput) {
           for (var f=0, ff=input._info.complexData.supported.format.length; f<ff; ++f) {
