@@ -69,12 +69,12 @@ wps.process = function(options) {
 wps.process.prototype.describe = function(options) {
   options = options || {};
   if (!this.description) {
-    this.client.describeProcess(this.server, this.identifier, function(description) {
-      if (!this.description) {
+    this.client.describeProcess(this.server, this.identifier, function(description, error, statusText) {
+      if (!error && !this.description) {
         this.parseDescription(description);
       }
       if (options.callback) {
-        options.callback.call(options.scope || this, this.description);
+        options.callback.call(options.scope || this, this.description, error, statusText);
       }
     }, this);
   } else if (options.callback) {
@@ -752,7 +752,10 @@ wps.client.prototype.describeProcess = function(serverID, processID, callback, s
     var me = this;
     xmlhttp.onload = function() {
       server.processDescription[processID] = this.responseText;
-      callback.call(scope, this.responseText);
+      callback.call(scope, this.responseText, this.status !== 200, this.statusText);
+    };
+    xmlhttp.onerror = function() {
+      callback.call(scope, this.responseText, true, this.statusText);
     };
     xmlhttp.send();
   } else {

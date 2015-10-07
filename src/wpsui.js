@@ -1762,7 +1762,12 @@ wps.ui.prototype.createDropTarget = function() {
     drop: function( event, ui ) {
       d3.event = event;
       var selected_tool = $(ui.draggable[0]).data('type');
-      var process = me.client_.getProcess(me.defaultServer_, selected_tool, {callback: function(info) {
+      var process = me.client_.getProcess(me.defaultServer_, selected_tool, {callback: function(info, error, statusText) {
+        if (error === true) {
+          $('#tab-results').html('Error getting process description, details: ' + statusText);
+          me.activateTab('tab-results');
+          return;
+        }
         var mousePos = d3.touches(this)[0]||d3.mouse(this);
         mousePos[1] += this.scrollTop;
         mousePos[0] += this.scrollLeft;
