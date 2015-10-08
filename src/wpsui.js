@@ -701,8 +701,12 @@ wps.ui = function(options) {
   this.client_ = options.client;
   this.defaultServer_ = options.defaultServer;
   if (options.getVectorLayers === true) {
-    this.client_.getFeatureTypes(this.defaultServer_, function(featureTypes) {
+    this.client_.getFeatureTypes(this.defaultServer_, function(featureTypes, error, url, statusText) {
       me.featureTypes = featureTypes;
+      if (error) {
+        $('#tab-results').html('There was an error getting WFS GetCapabilities from: ' + url + ' (' + statusText + ')');
+        ui.activateTab('tab-results');
+      }
     });
     this.client_.getCoverages(this.defaultServer_, function(coverages) {
       me.coverages = coverages;

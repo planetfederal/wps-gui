@@ -643,10 +643,10 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
   var url = server.url + '?service=WFS&VERSION=1.1.0&request=GetCapabilities';
   var me = this;
   xmlhttp.open("GET", url, true);
-  var namespaces = {};
+  var namespaces = {}, featureTypes = [];
   xmlhttp.onload = function() {
-    var featureTypes = [];
-    if (this.responseXML !== null) {
+    var error = (this.status !== 200);
+    if (!error && this.responseXML !== null) {
       var info = unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.featureTypeList && info.featureTypeList.featureType) {
         for (var i=0, ii=info.featureTypeList.featureType.length; i<ii; ++i) {
@@ -662,10 +662,11 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
       } else if (window.console) {
         window.console.warn('No featureTypes found on WFS server: ' + server.url);
       }
-    } else if (window.console) {
-      window.console.error('There was an error loading WFS 1.1.0 GetCapabilities from: ' + server.url);
     }
-    callback.call(me, featureTypes);
+    callback.call(me, featureTypes, error, server.url, this.statusText);
+  };
+  xmlhttp.onerror = function() {
+    callback.call(me, featureTypes, true, server.url, this.statusText);
   };
   xmlhttp.send();
 };
