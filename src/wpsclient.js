@@ -198,8 +198,18 @@ wps.process.prototype.execute = function(options) {
           var xmlhttp = new XMLHttpRequest();
           xmlhttp.open('POST', me.client.servers[me.server].url, true);
           xmlhttp.setRequestHeader('Content-type', 'application/xml');
+          xmlhttp.onerror = function() {
+            if (options.failure) {
+              options.failure.call(options.scope, 'Network error on WPS:Execute request', body);
+            }
+          };
           xmlhttp.onload = function() {
-
+            if (this.status !== 200) {
+              if (options.failure) {
+                options.failure.call(options.scope, 'HTTP status error on WPS:Execute request: ' + this.statusText, body);
+                return;
+              }
+            }
             // check for exceptions
             if (this.responseText.indexOf('ExceptionText') !== -1) {
               var info = me.client.unmarshaller.unmarshalDocument(this.responseXML).value;
