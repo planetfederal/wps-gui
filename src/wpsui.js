@@ -712,7 +712,7 @@ wps.ui = function(options) {
     this.client_.getCoverages(this.defaultServer_, function(coverages, error, url, statusText) {
       me.coverages = coverages;
       if (error) {
-        $('#tab-results').append('<p>There was an error getting WCS 1.1.0 GetCapabilities from: ' + url + ' (' + statusText + ')');
+        $('#tab-results').append('<p>There was an error getting WCS 1.1.0 GetCapabilities from: ' + url + ' (' + statusText + ')</p>');
         ui.activateTab('tab-results');
       }
     });
