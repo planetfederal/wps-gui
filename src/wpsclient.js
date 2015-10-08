@@ -17,10 +17,18 @@ wps.hiddenForm = function(unmarshaller, options, url, fields, body) {
   }
   $('body').append('<iframe class="x-hidden" id="hiddenform-iframe" name="iframe"></iframe>');
   $('#hiddenform-iframe').on('load', function(evt) {
-    var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
-    var exception = wps.client.getExceptionText(info);
-    if (options.failure) {
-      options.failure.call(options.scope, exception, body);
+    var doc = evt.target.contentDocument;
+    if (doc.firstChild && doc.firstChild.nodeName === 'html') {
+      var statusText = doc.getElementsByTagName('title')[0].childNodes[0].nodeValue;
+      if (options.failure) {
+        options.failure.call(options.scope, 'Error performing WPS Execute through form POST, status: ' + statusText, body);
+      }
+    } else {
+      var info = unmarshaller.unmarshalDocument(evt.target.contentDocument).value;
+      var exception = wps.client.getExceptionText(info);
+      if (options.failure) {
+        options.failure.call(options.scope, exception, body);
+      }
     }
   });
   if ($('#hiddenform-form').length) {
