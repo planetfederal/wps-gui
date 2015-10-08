@@ -677,11 +677,11 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
   var server = this.servers[serverID];
   var xmlhttp = new XMLHttpRequest();
   var url = server.url + '?service=WCS&VERSION=1.1.0&request=GetCapabilities';
-  var me = this;
+  var me = this, coverages = [];
   xmlhttp.open("GET", url, true);
   xmlhttp.onload = function() {
-    var coverages = [];
-    if (this.responseXML !== null) {
+    var error = (this.status !== 200);
+    if (!error && this.responseXML !== null) {
       var info = unmarshaller.unmarshalDocument(this.responseXML).value;
       if (info && info.contents && info.contents.coverageSummary) {
         for (var i=0, ii=info.contents.coverageSummary.length; i<ii; ++i) {
@@ -699,10 +699,11 @@ wps.client.prototype.getCoverages = function(serverID, callback) {
       } else if (window.console) {
         window.console.warn('No coverages found on WCS server: ' + server.url);
       }
-    } else if (window.console) {
-      window.console.error('There was an error loading WCS 1.1.0 GetCapabilities from: ' + server.url);
     }
-    callback.call(me, coverages);
+    callback.call(me, coverages, error, server.url, this.statusText);
+  };
+  xmlhttp.onerror = function() {
+    callback.call(me, coverages, true, server.url, this.statusText);
   };
   xmlhttp.send();
 };

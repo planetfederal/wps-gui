@@ -701,15 +701,20 @@ wps.ui = function(options) {
   this.client_ = options.client;
   this.defaultServer_ = options.defaultServer;
   if (options.getVectorLayers === true) {
+    $('#tab-results').html('');
     this.client_.getFeatureTypes(this.defaultServer_, function(featureTypes, error, url, statusText) {
       me.featureTypes = featureTypes;
       if (error) {
-        $('#tab-results').html('There was an error getting WFS GetCapabilities from: ' + url + ' (' + statusText + ')');
+        $('#tab-results').append('<p>There was an error getting WFS 1.1.0 GetCapabilities from: ' + url + ' (' + statusText + ')</p>');
         ui.activateTab('tab-results');
       }
     });
-    this.client_.getCoverages(this.defaultServer_, function(coverages) {
+    this.client_.getCoverages(this.defaultServer_, function(coverages, error, url, statusText) {
       me.coverages = coverages;
+      if (error) {
+        $('#tab-results').append('<p>There was an error getting WCS 1.1.0 GetCapabilities from: ' + url + ' (' + statusText + ')');
+        ui.activateTab('tab-results');
+      }
     });
   }
   this.spaceWidth = options.spaceWidth || 5000;
