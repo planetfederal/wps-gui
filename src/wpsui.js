@@ -253,7 +253,8 @@ wps.editor.prototype.showEditForm = function(node) {
     nameText += ' (optional)';
   }
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
-  var saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '\')">Save</button>';
+  var inputId = id;
+  var saveButton  = '<div class="form-row input-validate">';
   var selected;
 
   html += '<div class="form-row-abstract">' + node._info._abstract.value + '</div>';
@@ -327,7 +328,8 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
       // update the id with '-txt'
-      saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-txt' + '\')">Save</button></div>';
+      inputId += '-txt';
+      saveButton = '<div class="form-row input-validate"></div>';
       html += saveButton;
       // end tab-pane, begin map-pane
       html += '</div><div class="tab-pane active" id="map-input">';
@@ -369,7 +371,8 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
       // update the id with '-map'
-      saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-map' + '\')">Save</button></div>';
+      inputId += '-map';
+      saveButton = '<div class="form-row input-validate"></div>';
       html += saveButton;
     }
     hasMap = true;
@@ -436,7 +439,8 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<input type="text" value="' + maxy + '" id="' + pref + '-maxy' +'" class="form-control input-sm">';
     html += '</div>';
     // update the id with '-txt'
-    saveButton = '<div class="form-row input-validate"><button type="button" class="btn btn-success btn-sm" id="input-save" onclick="window.wpsui.checkInput(\'' + node.id + '\',\'' + name + '\',\'' + id + '-txt' + '\')">Save</button>';
+    inputId += '-txt';
+    saveButton = '<div class="form-row input-validate">';
     html += saveButton;
     html += '</div>'; // saveButton's div
 
@@ -451,8 +455,14 @@ wps.editor.prototype.showEditForm = function(node) {
   // we need to remove any input map div if we had one before, otherwise the map won't render again
   $('.input-map').detach();
   $('#tab-inputs').html(html);
-  this.ui_.activateTab('tab-inputs');
   var me = this;
+  $('#' + inputId).keyup(function(event) {
+    me.ui_.checkInput(node.id, name, inputId);
+  });
+  $('#' + inputId).change(function(event) {
+    me.ui_.checkInput(node.id, name, inputId);
+  });
+  this.ui_.activateTab('tab-inputs');
   if (hasMap === true) {
     var map;
     var mapId = node._parent;
@@ -1081,29 +1091,29 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
   // Finally add listeners in case field changes
   var _this = this;
   nodeEl.keyup(function(event) {
-    $('.form-row.input-validate').children('span').remove();
+    //$('.form-row.input-validate').children('span').remove();
     // find node and mark it as not complete
-    for (i=0, ii=_this.nodes.length; i<ii; ++i) {
+    /*for (i=0, ii=_this.nodes.length; i<ii; ++i) {
       if (_this.nodes[i].id === node.id) {
         _this.nodes[i].complete = false;
         _this.nodes[i].dirty = true;
         _this.redraw();
         break;
       }
-    }
+    }*/
   });
   // try select dropdown
   nodeEl.change(function() {
-    $('.form-row.input-validate').children('span').remove();
+    //$('.form-row.input-validate').children('span').remove();
     // find node and mark it as not complete
-    for (i=0, ii=_this.nodes.length; i<ii; ++i) {
+    /*for (i=0, ii=_this.nodes.length; i<ii; ++i) {
       if (_this.nodes[i].id === node.id) {
         _this.nodes[i].complete = false;
         _this.nodes[i].dirty = true;
         _this.redraw();
         break;
       }
-    }
+    }*/
   });
 
 
