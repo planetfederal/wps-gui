@@ -185,7 +185,11 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
         node.value = value;
       }
     } else {
-      node.value = value;
+      if (value === "") {
+        node.value = undefined;
+      } else {
+        node.value = value;
+      }
     }
   } else if (node._info.boundingBoxData) {
     node.value = val;
@@ -196,6 +200,9 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
 };
 
 wps.editor.prototype.validateNodeProperty = function(info, value) {
+  if (value === "") {
+    return true;
+  }
   if (info.literalData) {
     if (info.literalData.dataType) {
       var dataType = info.literalData.dataType.value;
