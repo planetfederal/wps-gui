@@ -158,7 +158,11 @@ wps.editor.prototype.setValue = function(geom, id, val, node) {
   var value;
   node._geom = geom;
   if (geom !== true && formField.length > 0) {
-    value = formField.val();
+    if (formField.is(':checkbox')) {
+      value = formField.is(':checked');
+    } else {
+      value = formField.val();
+    }
     if (typeof value === "string" && (value.indexOf(wps.VECTORLAYER) !== -1 || value.indexOf(wps.RASTERLAYER) !== -1)) {
       $('#bbox-filter-clear').parent().removeClass('disabled');
       $('#bbox-filter').parent().removeClass('disabled');
@@ -213,7 +217,7 @@ wps.editor.prototype.validateNodeProperty = function(info, value) {
       } else if (dataType === 'xs:int') {
         return value.length > 0 && (Math.floor(value) == value);
       } else if (dataType === 'xs:boolean') {
-        return (value === "true" || value === "false");
+        return (value === true || value === false);
       } else {
         return true;
       }
@@ -273,13 +277,11 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '</select>';
     } else if (node._info.literalData.dataType && node._info.literalData.dataType.value === 'xs:boolean') {
-      html += '<select  class="form-control input-sm" style="width: 70% !important;" id="' + id + '">';
-      html += wps.editor.EMPTYTEXT;
-      selected = (node.value === "false") ? 'selected' : '';
-      html += '<option ' + selected + ' value="'+false+'">False</option>';
-      selected = (node.value === "true") ? 'selected' : '';
-      html += '<option ' + selected + ' value="'+true+'">True</option>';
-      html += '</select>';
+      if (node.value === true) {
+        html += '<input type="checkbox" id="' + id + '" checked>';
+      } else {
+        html += '<input type="checkbox" id="' + id + '">';
+      }
     } else {
       var value = node.value;
       value = (value === undefined) ? '' : value;
@@ -1055,7 +1057,11 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
       $('#' + wps.editor.PREFIX + node.id + '-' + name + '-maxy').val()
     ];    
   } else {
-    value = nodeEl.val();
+    if (nodeEl.is(':checkbox')) {
+      value = nodeEl.is(':checked');
+    } else {
+      value = nodeEl.val();
+    }
   }
   if (node._info.complexData !== undefined) {
     node.valid = (value !== null);

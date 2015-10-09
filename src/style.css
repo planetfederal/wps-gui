@@ -616,7 +616,9 @@ button.input-append-right {
     padding-left: 4px !important;
     padding-right: 4px !important;
 }
-
+.form-horizontal input[type='checkbox'] {
+    margin-left: 10px;
+}
 .form-tips {
     background: lightgoldenrodyellow;
     font-size: 12px;
