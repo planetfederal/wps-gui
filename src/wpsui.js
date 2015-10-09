@@ -37,7 +37,7 @@ wps.mapSettings = {
   minZoom: 1
 };
 
-wps.editor.EMPTYTEXT = '<option value="" selected disabled>Select a value...</option>';
+wps.editor.EMPTYTEXT = '<option value="" selected>Select a value or clear value ...</option>';
 wps.editor.PREFIX = "node-input-";
 wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
