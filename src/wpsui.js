@@ -1087,36 +1087,6 @@ wps.ui.prototype.checkInput = function(nodeId, name, id) {
     $("#" + name + "-field").addClass("has-success");
     this.editor_.setValue(false, id, value);
   }
-
-  // Finally add listeners in case field changes
-  var _this = this;
-  nodeEl.keyup(function(event) {
-    //$('.form-row.input-validate').children('span').remove();
-    // find node and mark it as not complete
-    /*for (i=0, ii=_this.nodes.length; i<ii; ++i) {
-      if (_this.nodes[i].id === node.id) {
-        _this.nodes[i].complete = false;
-        _this.nodes[i].dirty = true;
-        _this.redraw();
-        break;
-      }
-    }*/
-  });
-  // try select dropdown
-  nodeEl.change(function() {
-    //$('.form-row.input-validate').children('span').remove();
-    // find node and mark it as not complete
-    /*for (i=0, ii=_this.nodes.length; i<ii; ++i) {
-      if (_this.nodes[i].id === node.id) {
-        _this.nodes[i].complete = false;
-        _this.nodes[i].dirty = true;
-        _this.redraw();
-        break;
-      }
-    }*/
-  });
-
-
 };
 
 wps.ui.prototype.save = function(ui) {
