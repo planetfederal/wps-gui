@@ -441,8 +441,10 @@ wps.editor.prototype.showEditForm = function(node) {
     html += '<label for="' + pref + '-maxy' + '">max y</label>';
     html += '<input type="text" value="' + maxy + '" id="' + pref + '-maxy' +'" class="form-control input-sm">';
     html += '</div>';
-    // update the id with '-txt'
-    inputId += '-txt';
+    inputIds.push(pref + '-minx');
+    inputIds.push(pref + '-miny');
+    inputIds.push(pref + '-maxx');
+    inputIds.push(pref + '-maxy');
     saveButton = '<div class="form-row input-validate">';
     html += saveButton;
     html += '</div>'; // saveButton's div
