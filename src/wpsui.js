@@ -346,6 +346,7 @@ wps.editor.prototype.showEditForm = function(node) {
     if (rasterLayer === true) {
       html += '<p class="form-row"><p><small>Select from existing:</small></p>';
       html += '<select class="form-control input-sm" style="width: 60%;margin-bottom: 5px;" id="' + id + '">';
+      inputIds.push(id);
       html += wps.editor.EMPTYTEXT;
       prefix = wps.RASTERLAYER;
       values = node.value ? node.value.split('|') : [];
