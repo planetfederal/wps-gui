@@ -468,8 +468,8 @@ wps.editor.prototype.showEditForm = function(node) {
   } else {
     ids = [inputId];
   }
-  for (var inp = 0, inpcount = inputIds.length; inp < inpcount; inp++) {
-    var inpId = inputIds[inp];
+  for (var inp = 0, inpcount = ids.length; inp < inpcount; inp++) {
+    var inpId = ids[inp];
     $('#' + inpId).keyup(function(event) {
       me.ui_.checkInput(node.id, name, inpId);
     });
