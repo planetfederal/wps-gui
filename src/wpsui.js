@@ -258,6 +258,7 @@ wps.editor.prototype.showEditForm = function(node) {
   }
   var pId, id = wps.editor.PREFIX + node._parent + '-' + name.replace(/ /g, '_');
   var inputId = id;
+  var inputIds = [];
   var saveButton  = '<div class="form-row input-validate">';
   var selected;
 
@@ -330,7 +331,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += '<input type="text" placeholder="WKT or GML" id="' + id + '-txt" value="' + value + '" class="form-control input-sm"></div>';
       // update the id with '-txt'
-      inputId += '-txt';
+      inputIds.push(id + '-txt');
       saveButton = '<div class="form-row input-validate"></div>';
       html += saveButton;
       // end tab-pane, begin map-pane
@@ -373,7 +374,7 @@ wps.editor.prototype.showEditForm = function(node) {
       }
       html += "</select>";
       // update the id with '-map'
-      inputId += '-map';
+      inputIds.push(id + '-map');
       saveButton = '<div class="form-row input-validate"></div>';
       html += saveButton;
     }
@@ -458,12 +459,21 @@ wps.editor.prototype.showEditForm = function(node) {
   $('.input-map').detach();
   $('#tab-inputs').html(html);
   var me = this;
-  $('#' + inputId).keyup(function(event) {
-    me.ui_.checkInput(node.id, name, inputId);
-  });
-  $('#' + inputId).change(function(event) {
-    me.ui_.checkInput(node.id, name, inputId);
-  });
+  var ids;
+  if (inputIds.length > 0) {
+    ids = inputIds;
+  } else {
+    ids = [inputId];
+  }
+  for (var inp = 0, inpcount = inputIds.length; inp < inpcount; inp++) {
+    var inpId = inputIds[inp];
+    $('#' + inpId).keyup(function(event) {
+      me.ui_.checkInput(node.id, name, inpId);
+    });
+    $('#' + inpId).change(function(event) {
+      me.ui_.checkInput(node.id, name, inpId);
+    });
+  }
   this.ui_.activateTab('tab-inputs');
   if (hasMap === true) {
     var map;
