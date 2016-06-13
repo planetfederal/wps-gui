@@ -36,6 +36,12 @@ body {
     font-size: 40px;
     color: #fff;
 }
+#header {
+    background: url("wpsbuilder-header.png");
+    display: inline-block;
+    height: 40px;
+    width: 420px;
+}
 
 div.btn-group, a.btn {
     -webkit-user-select: none;
@@ -53,10 +59,7 @@ a.brand span {
     font-size: 24px !important;
     color: white;
 }
-a.brand img {
-    margin-top: -3px;
-    margin-right: 2px;
-}
+
 .navbar {
     height: 60px;
 }
@@ -70,7 +73,13 @@ a.brand img {
 .navbar-inner > .container-fluid {
     padding-right: 10px;
     padding-left: 20px;
-    padding-top: 13px;
+    padding-top: 9px;
+    position: relative;
+
+}
+
+.navbar-inner > .container-fluid > .btn-group {
+    margin-bottom: 30px;
 }
 
 #workspace {
@@ -349,6 +358,7 @@ a.brand img {
 
 #btn-run-process {
   display: none;
+  margin-top: 4px;
 }
 
 #workspace, #palette, #sidebar {
