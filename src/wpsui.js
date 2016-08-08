@@ -43,7 +43,7 @@ wps.SUBPROCESS = 'process|';
 wps.VECTORLAYER = 'vector|';
 wps.RASTERLAYER = 'raster|';
 wps.ONLINE_DOCS_URL = 'http://suite.opengeo.org/docs/latest/processing/wpsbuilder/';
-wps.LOCAL_DOCS_URL = '../opengeo-docs/processing/wpsbuilder/';
+wps.LOCAL_DOCS_URL = '../suite-docs/processing/wpsbuilder/';
 
 wps.editor.prototype.addRasterLayer = function(id, node, value) {
   var mapId = node._parent;
