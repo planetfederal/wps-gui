@@ -9,7 +9,7 @@ exports.run = function() {
         livereload: true,
         middleware: function(connect, o) {
             var gsProxy = (function() {
-                var options = url.parse('http://horizon.boundlessgeo.com/geoserver');
+                var options = url.parse('http://localhost:8080/geoserver');
                 options.route = '/geoserver';
                 return proxy(options);
             })();
