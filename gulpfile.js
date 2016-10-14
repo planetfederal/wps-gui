@@ -15,6 +15,8 @@ gulp.task('connect', function() {
 gulp.task('cssbuild', function() {
     gulp.src(['src/*.png'])
       .pipe(gulp.dest('dist'));
+    gulp.src(['src/favicon.ico'])
+      .pipe(gulp.dest('dist'));
     gulp.src(['vendor/ol.css', 'vendor/highlight/styles/default.css ', 'src/style.css'])
       .pipe(gp_filter('**/*.css'))
       .pipe(gp_concat('wps-gui.css'))
