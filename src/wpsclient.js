@@ -678,6 +678,7 @@ wps.client.prototype.getFeatureTypes = function(serverID, callback) {
         }
         me.setNamespacePrefixes(namespaces);
       } else if (window.console) {
+        me.setNamespacePrefixes();
         window.console.warn('No featureTypes found on WFS server: ' + server.url);
       }
     }
