@@ -41,8 +41,9 @@ body {
 #header {
     background: url("wpsbuilder-header.png");
     display: inline-block;
-    height: 40px;
-    width: 420px;
+    height: 60px;
+    width: 426px;
+    margin-right: 20px;
 }
 
 div.btn-group, a.btn {
@@ -63,7 +64,7 @@ a.brand span {
 }
 
 .navbar {
-    height: 60px;
+    height: 80px;
 }
 .navbar.navbar-inverse {
   background-color: #28728d;
@@ -75,13 +76,14 @@ a.brand span {
 .navbar-inner > .container-fluid {
     padding-right: 10px;
     padding-left: 20px;
-    padding-top: 9px;
+    padding-top: 8px;
     position: relative;
 
 }
 
 .navbar-inner > .container-fluid > .btn-group {
-    margin-bottom: 30px;
+    margin-top: 12px;
+    margin-bottom: 65px;
 }
 
 #workspace {
@@ -291,7 +293,7 @@ a.brand span {
 /* ---------- Layout ---------- */
 #main-container {
     position: absolute;
-    top:65px; left:0; bottom: 0; right:0;
+    top:85px; left:0; bottom: 0; right:0;
     overflow:hidden;
 }
 #palette {
@@ -360,7 +362,7 @@ a.brand span {
 
 #btn-run-process {
   display: none;
-  margin-top: 4px;
+  margin-top: 0px;
 }
 
 #workspace, #palette, #sidebar {
